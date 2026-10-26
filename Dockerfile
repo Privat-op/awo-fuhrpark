@@ -28,7 +28,7 @@ COPY package.json package-lock.json ./
 COPY server ./server
 COPY public ./public
 
-RUN mkdir -p /app/data/uploads/vehicles /app/data/uploads/receipts /app/data/backups \
+RUN mkdir -p /app/data/uploads/vehicles /app/data/uploads/receipts /app/data/uploads/branding /app/data/backups \
   && chown -R node:node /app
 
 USER node

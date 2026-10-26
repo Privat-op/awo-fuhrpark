@@ -23,7 +23,7 @@ const {
   todayISO,
   combineDateTime
 } = require('../lib/validation');
-const { storeVehicleImage, storeReceipt, deleteUpload, uploadPath } = require('../lib/files');
+const { storeVehicleImage, storeReceipt, storeBrandingLogo, deleteUpload, uploadPath } = require('../lib/files');
 const { writeAudit } = require('../lib/audit');
 
 const router = express.Router();
@@ -604,6 +604,33 @@ router.patch('/settings', (req, res, next) => {
     audit(req, 'update', 'settings', '1', { orgName });
     sendState(req, res);
   } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/branding', requireAdmin, async (req, res, next) => {
+  let newLogoFile = null;
+  try {
+    const theme = oneOf(req.body?.theme, ['awo', 'neutral'], 'Erscheinungsbild');
+    const current = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+    if (!current) throw new HttpError(404, 'Einstellungen wurden nicht gefunden.');
+    let brandName = current.brand_name || current.org_name || '';
+    if (theme === 'neutral') {
+      brandName = requiredString(req.body?.brandName ?? brandName, 'Anzeigename', { max: 120 });
+    } else if (req.body?.brandName !== undefined) {
+      brandName = optionalString(req.body.brandName, { max: 120 });
+    }
+    if (req.body?.logoData) newLogoFile = await storeBrandingLogo(req.body.logoData);
+    const removeLogo = booleanValue(req.body?.removeLogo, false);
+    const logoFile = newLogoFile || (removeLogo ? null : current.logo_file);
+    const now = isoNow();
+    db.prepare('UPDATE settings SET theme = ?, brand_name = ?, logo_file = ?, updated_at = ? WHERE id = 1')
+      .run(theme, brandName, logoFile, now);
+    if (current.logo_file && current.logo_file !== logoFile) deleteUpload(current.logo_file);
+    audit(req, 'update', 'branding', '1', { theme, brandName, logoChanged: Boolean(newLogoFile), logoRemoved: removeLogo });
+    sendState(req, res);
+  } catch (error) {
+    if (newLogoFile) deleteUpload(newLogoFile);
     next(error);
   }
 });

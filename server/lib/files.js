@@ -117,6 +117,25 @@ function deleteUpload(relative) {
   }
 }
 
+async function storeBrandingLogo(dataUrl) {
+  const { buffer } = parseDataUrl(dataUrl, IMAGE_MIME_TYPES);
+  if (buffer.length > 8 * 1024 * 1024) throw new HttpError(400, 'Das Logo ist zu groß (max. 8 MB).');
+  try {
+    const processed = await sharp(buffer, { limitInputPixels: 50_000_000 })
+      .rotate()
+      .resize({ width: 1200, height: 600, fit: 'inside', withoutEnlargement: true })
+      .png()
+      .toBuffer();
+    const file = `${crypto.randomUUID()}.png`;
+    const fullPath = path.join(UPLOAD_DIR, 'branding', file);
+    fs.writeFileSync(fullPath, processed);
+    return relativePath(fullPath);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(400, 'Das Logo konnte nicht verarbeitet werden.');
+  }
+}
+
 function uploadPath(relative) {
   const fullPath = resolveUpload(relative);
   if (!fullPath || !fs.existsSync(fullPath)) return null;
@@ -126,6 +145,7 @@ function uploadPath(relative) {
 module.exports = {
   storeVehicleImage,
   storeReceipt,
+  storeBrandingLogo,
   deleteUpload,
   uploadPath
 };

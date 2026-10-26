@@ -1,22 +1,22 @@
 <!doctype html>
-<html lang="de">
+<html lang="de" data-theme="{{THEME}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#e2001a">
+  <meta name="theme-color" content="{{THEME_COLOR}}">
   <meta name="robots" content="noindex, nofollow">
-  <title>Anmelden · AWO Fuhrparkmanagement</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23e2001a'/%3E%3Ctext x='32' y='42' font-family='Arial,sans-serif' font-size='25' font-weight='800' fill='white' text-anchor='middle'%3EAWO%3C/text%3E%3C/svg%3E">
+  <title>{{LOGIN_PAGE_TITLE}}</title>
+  <link rel="icon" href="{{FAVICON}}">
   <link rel="stylesheet" href="/login.css">
 </head>
 <body>
   <main class="login-shell">
-    <section class="login-brand-panel" aria-label="AWO Fuhrparkmanagement">
+    <section class="login-brand-panel" aria-label="{{BRAND_NAME}} Fuhrparkmanagement">
       <div class="brand-lockup">
-        <span class="brand-mark">AWO</span>
+        <span class="brand-mark {{BRAND_MARK_CLASS}}">{{BRAND_MARK}}</span>
         <span class="brand-copy">
-          <strong>AWO Bremerhaven</strong>
-          <span>Fuhrparkmanagement</span>
+          <strong>{{BRAND_NAME}}</strong>
+          <span>{{BRAND_SUBTITLE}}</span>
         </span>
       </div>
 
@@ -38,8 +38,8 @@
     <section class="login-form-panel">
       <div class="login-card">
         <div class="login-mobile-brand">
-          <span class="brand-mark">AWO</span>
-          <div><strong>AWO Bremerhaven</strong><span>Fuhrparkmanagement</span></div>
+          <span class="brand-mark {{BRAND_MARK_CLASS}}">{{BRAND_MARK}}</span>
+          <div><strong>{{BRAND_NAME}}</strong><span>{{BRAND_SUBTITLE}}</span></div>
         </div>
 
         <div class="login-heading">
@@ -54,7 +54,7 @@
           <input type="hidden" name="_csrf" value="{{CSRF_TOKEN}}">
           <div class="login-field">
             <label for="email">E-Mail-Adresse</label>
-            <input id="email" name="email" type="email" value="{{EMAIL}}" placeholder="name@awo-bremerhaven.de" autocomplete="username" required autofocus>
+            <input id="email" name="email" type="email" value="{{EMAIL}}" placeholder="name@organisation.de" autocomplete="username" required autofocus>
           </div>
           <div class="login-field">
             <label for="password">Passwort</label>
@@ -70,8 +70,8 @@
       </div>
 
       <footer class="login-footer">
-        <span>© <span id="year">2026</span> AWO Bremerhaven</span>
-        <span>Internes System · AWO Bremerhaven</span>
+        <span>© <span id="year">2026</span> {{LOGIN_FOOTER_BRAND}}</span>
+        <span>Internes System · {{LOGIN_FOOTER_BRAND}}</span>
       </footer>
     </section>
   </main>

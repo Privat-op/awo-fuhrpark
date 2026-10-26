@@ -13,6 +13,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Wartungsplan mit automatischer Kostenübernahme bei Erledigung
 - Kostenverwaltung inklusive Beleg-Upload (JPG, PNG, PDF)
 - Dashboard, Suche und Benachrichtigungen mit Gelesen-Status
+- **Globales Erscheinungsbild:** Allgemeines AWO-Theme mit offiziellem Logo oder neutrales Theme mit eigenem Anzeigenamen und optionalem Logo
 - DATEV-unabhängiger JSON-Export; CSV-Export des Fahrtenbuchs
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
@@ -100,6 +101,17 @@ Danach den Container neu starten. Der Server sollte nicht ungeschützt direkt au
 
 Nur Administratoren können weitere Konten anlegen, Rollen ändern, Konten deaktivieren und Passwörter zurücksetzen. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
 
+## Erscheinungsbild
+
+Unter **Einstellungen → Erscheinungsbild** kann ausschließlich ein Administrator das Theme global für alle Nutzer:innen und die Anmeldeseite wählen:
+
+- **AWO:** allgemeines AWO-Theme mit offiziellem AWO-Logo, ohne Ortsverband-Zusatz
+- **Neutral:** eigenes Branding mit frei wählbarem Anzeigenamen und optionalem Logo (PNG, JPG oder WebP)
+
+Die Einstellung wird in der Datenbank gespeichert und ist nicht pro Benutzerkonto wählbar. Andere angemeldete Nutzer sehen sie nach dem nächsten Laden der Seite.
+
+Das AWO-Logo ist eine eingetragene Wort-/Bildmarke der Arbeiterwohlfahrt. Die Nutzung setzt eine entsprechende Berechtigung voraus. Quelle der eingebundenen Logo-Datei: Wikimedia Commons, `Awo-logo-08.svg`.
+
 ## Datenhaltung und Sicherung
 
 Dauerhafte Daten liegen im Docker-Volume `awo_fuhrpark_data` unter `/app/data`:
@@ -137,7 +149,7 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 ```text
 .
 ├─ server/             Express-Anwendung, API, Schema, Bootstrap und Backup
-├─ public/             CSS und Browser-JavaScript
+├─ public/             CSS, Browser-JavaScript und Branding-Dateien
 ├─ server/views/       HTML für Anwendung und Login
 ├─ Dockerfile
 ├─ docker-compose.yml

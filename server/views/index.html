@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="de">
+<html lang="de" data-theme="{{THEME}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#e2001a">
-  <meta name="description" content="Internes Fuhrparkmanagement der AWO Bremerhaven – Fahrzeuge, Buchungen, Wartung und Kosten.">
+  <meta name="theme-color" content="{{THEME_COLOR}}">
+  <meta name="description" content="Internes Fuhrparkmanagement – Fahrzeuge, Buchungen, Wartung und Kosten.">
   <meta name="robots" content="noindex, nofollow">
-  <title>AWO Bremerhaven · Fuhrparkmanagement</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23e2001a'/%3E%3Ctext x='32' y='42' font-family='Arial,sans-serif' font-size='25' font-weight='800' fill='white' text-anchor='middle'%3EAWO%3C/text%3E%3C/svg%3E">
+  <title>{{PAGE_TITLE}}</title>
+  <link rel="icon" href="{{FAVICON}}">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -64,11 +64,11 @@
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="Hauptnavigation">
       <div class="brand">
-        <a class="brand-link" href="#/dashboard" aria-label="AWO Fuhrparkmanagement – zum Dashboard">
-          <span class="brand-mark">AWO</span>
+        <a class="brand-link" href="#/dashboard" aria-label="{{BRAND_NAME}} Fuhrparkmanagement – zum Dashboard">
+          <span class="brand-mark {{BRAND_MARK_CLASS}}" id="brandMark">{{BRAND_MARK}}</span>
           <span class="brand-text">
-            <strong id="brandName">AWO Bremerhaven</strong>
-            <span>Fuhrparkmanagement</span>
+            <strong id="brandName">{{BRAND_NAME}}</strong>
+            <span id="brandSubtitle">{{BRAND_SUBTITLE}}</span>
           </span>
         </a>
         <button class="sidebar-close icon-btn" id="sidebarClose" aria-label="Navigation schließen">
@@ -150,7 +150,7 @@
         </button>
 
         <div class="topbar-context">
-          <span class="context-eyebrow" id="topbarOrg">AWO Bremerhaven</span>
+          <span class="context-eyebrow" id="topbarOrg">{{BRAND_TOP}}</span>
           <span class="context-title" id="topbarTitle">Dashboard</span>
         </div>
 
@@ -199,7 +199,7 @@
       </main>
 
       <footer class="app-footer">
-        <span>© 2026 <span id="footerOrg">AWO Bremerhaven</span> · Fuhrparkmanagement</span>
+        <span>© 2026 <span id="footerOrg">{{FOOTER_BRAND}}</span> · Fuhrparkmanagement</span>
         <span class="footer-save"><span class="status-dot"></span><span id="saveIndicator">Wird synchronisiert …</span></span>
       </footer>
     </div>

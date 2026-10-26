@@ -1,5 +1,5 @@
 /* =========================================================
-   AWO Bremerhaven · Fuhrparkmanagement
+   AWO · Fuhrparkmanagement
    ========================================================= */
 :root {
   --awo: #e2001a;
@@ -31,6 +31,12 @@
   --shadow: 0 1px 2px rgba(20, 24, 33, .04), 0 12px 32px rgba(20, 24, 33, .055);
   --shadow-lg: 0 24px 70px rgba(15, 18, 25, .18);
   --font: "Segoe UI", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+}
+
+:root[data-theme="neutral"] {
+  --awo: #0f766e;
+  --awo-dark: #0b5f59;
+  --awo-soft: #e8f7f4;
 }
 
 *,
@@ -147,6 +153,35 @@ p, h1, h2, h3, h4 { margin: 0; }
   font-size: 16px;
   font-weight: 900;
   letter-spacing: -.055em;
+}
+.brand-mark.has-image {
+  padding: 4px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(10, 14, 20, .18), inset 0 0 0 1px rgba(20, 24, 33, .05);
+}
+.brand-logo {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.brand-initials {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  color: #fff;
+  background: var(--awo);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+[data-theme="neutral"] .brand-mark {
+  box-shadow: 0 8px 22px rgba(15, 118, 110, .24), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+[data-theme="neutral"] .brand-mark.has-image {
+  box-shadow: 0 8px 22px rgba(10, 14, 20, .18), inset 0 0 0 1px rgba(20, 24, 33, .05);
 }
 
 .brand-text { display: flex; flex-direction: column; min-width: 0; }
@@ -1992,6 +2027,118 @@ p, h1, h2, h3, h4 { margin: 0; }
 .mini-icon.tint-gray { color: #5d6675; background: #f0f2f5; }
 .mini-icon.tint-red { color: var(--red); background: var(--red-soft); }
 
+/* Erscheinungsbild */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.theme-choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfcfd;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.theme-choice:hover { border-color: #cfd5dd; background: #fff; }
+.theme-choice:focus-within { outline: 3px solid rgba(226, 0, 26, .18); outline-offset: 2px; }
+.theme-choice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.theme-choice.is-selected {
+  border-color: var(--awo);
+  background: #fff;
+  box-shadow: 0 0 0 3px var(--awo-soft);
+}
+.theme-choice-preview {
+  height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: #fff;
+}
+.theme-choice-preview > img {
+  display: block;
+  max-width: 78%;
+  max-height: 52px;
+  object-fit: contain;
+}
+.theme-preview-awo { background: linear-gradient(135deg, #fff 55%, #fff3f4); }
+.theme-preview-neutral { background: linear-gradient(135deg, #f2f6f6, #fff); }
+.theme-preview-neutral .theme-initials { background: #0f766e; }
+.theme-initials {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: #fff;
+  background: var(--awo);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.image-upload-preview .theme-initials {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  font-size: 27px;
+}
+.theme-choice-copy { display: flex; flex-direction: column; gap: 2px; }
+.theme-choice-copy strong { color: var(--ink); font-size: 11.5px; font-weight: 700; }
+.theme-choice-copy span { color: var(--muted); font-size: 9.5px; line-height: 1.45; }
+.branding-logo-field { margin-top: 18px; }
+.branding-logo-field > label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+.branding-logo-field > label .optional { color: #a2a8b3; font-weight: 500; }
+.branding-logo-field .image-upload { margin-top: 0; }
+#brandingLogoPreview img {
+  object-fit: contain;
+  padding: 8px;
+  background: #fff;
+}
+
+[data-theme="neutral"] .sidebar {
+  background:
+    radial-gradient(circle at 12% -8%, rgba(15, 118, 110, .34), transparent 38%),
+    linear-gradient(175deg, #182126 0%, #11181c 100%);
+}
+[data-theme="neutral"] .nav-item.is-active {
+  background: linear-gradient(90deg, rgba(15, 118, 110, .38), rgba(15, 118, 110, .08));
+}
+[data-theme="neutral"] .nav-item.is-active::before {
+  background: #2dd4bf;
+  box-shadow: 0 0 14px rgba(45, 212, 191, .5);
+}
+[data-theme="neutral"] .nav-item.is-active .icon { color: #5eead4; }
+[data-theme="neutral"] .sidebar-card-icon { color: #5eead4; background: rgba(15, 118, 110, .2); }
+[data-theme="neutral"] .avatar-red {
+  background: linear-gradient(145deg, #14b8a6, #0f766e);
+  box-shadow: 0 4px 10px rgba(15, 118, 110, .22);
+}
+[data-theme="neutral"] .btn-primary { box-shadow: 0 6px 16px rgba(15, 118, 110, .2); }
+[data-theme="neutral"] .btn-primary:hover { box-shadow: 0 8px 20px rgba(15, 118, 110, .26); }
+[data-theme="neutral"] .theme-choice:focus-within { outline-color: rgba(15, 118, 110, .22); }
+[data-theme="neutral"] .theme-choice.is-selected { box-shadow: 0 0 0 3px var(--awo-soft); }
+
 /* =========================================================
    Empty states / misc
    ========================================================= */
@@ -2035,7 +2182,7 @@ p, h1, h2, h3, h4 { margin: 0; }
   font-weight: 750;
 }
 .onboarding-step strong { display: block; color: var(--ink-2); font-size: 11px; font-weight: 650; }
-.onboarding-step span { display: block; margin-top: 1px; color: var(--muted); font-size: 9.5px; line-height: 1.45; }
+.onboarding-step > div > span { display: block; margin-top: 1px; color: var(--muted); font-size: 9.5px; line-height: 1.45; }
 .onboarding-aside {
   display: flex;
   flex-direction: column;
@@ -2313,6 +2460,7 @@ p, h1, h2, h3, h4 { margin: 0; }
   .image-upload { flex-direction: column; align-items: stretch; }
   .image-upload-preview { width: 100%; flex-basis: auto; height: 132px; }
   .checkbox-grid { grid-template-columns: 1fr 1fr; }
+  .theme-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -13,6 +13,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 fs.mkdirSync(path.join(UPLOAD_DIR, 'vehicles'), { recursive: true });
 fs.mkdirSync(path.join(UPLOAD_DIR, 'receipts'), { recursive: true });
+fs.mkdirSync(path.join(UPLOAD_DIR, 'branding'), { recursive: true });
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -23,6 +24,17 @@ db.pragma('synchronous = NORMAL');
 function initSchema() {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
+
+  const settingsColumns = db.prepare('PRAGMA table_info(settings)').all();
+  if (!settingsColumns.some((column) => column.name === 'theme')) {
+    db.exec("ALTER TABLE settings ADD COLUMN theme TEXT NOT NULL DEFAULT 'awo'");
+  }
+  if (!settingsColumns.some((column) => column.name === 'logo_file')) {
+    db.exec('ALTER TABLE settings ADD COLUMN logo_file TEXT');
+  }
+  if (!settingsColumns.some((column) => column.name === 'brand_name')) {
+    db.exec('ALTER TABLE settings ADD COLUMN brand_name TEXT');
+  }
 }
 
 module.exports = {

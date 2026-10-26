@@ -17,6 +17,8 @@ const SQLiteSessionStore = require('./lib/session-store');
 const { randomToken, safeEqual, ensureCsrfToken, csrfProtection } = require('./lib/security');
 const { HttpError } = require('./lib/validation');
 const { writeAudit } = require('./lib/audit');
+const { getBranding } = require('./lib/branding');
+const { uploadPath } = require('./lib/files');
 const apiRouter = require('./routes/api');
 
 const app = express();
@@ -38,15 +40,38 @@ if (!sessionSecret || sessionSecret.length < 32) {
 }
 
 const loginTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'login.html'), 'utf8');
+const indexTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'index.html'), 'utf8');
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
+function currentBranding() {
+  const settings = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  return { settings, branding: getBranding(settings || {}) };
+}
+
+function applyBrandingTemplate(template, branding) {
+  return template
+    .replaceAll('{{THEME}}', escapeHtml(branding.theme))
+    .replaceAll('{{THEME_COLOR}}', escapeHtml(branding.themeColor))
+    .replaceAll('{{BRAND_MARK_CLASS}}', escapeHtml(branding.markClass))
+    .replaceAll('{{BRAND_MARK}}', branding.logoMarkup)
+    .replaceAll('{{BRAND_NAME}}', escapeHtml(branding.name))
+    .replaceAll('{{BRAND_SUBTITLE}}', escapeHtml(branding.subtitle))
+    .replaceAll('{{BRAND_TOP}}', escapeHtml(branding.topName))
+    .replaceAll('{{FOOTER_BRAND}}', escapeHtml(branding.footerName))
+    .replaceAll('{{LOGIN_FOOTER_BRAND}}', escapeHtml(branding.loginFooter))
+    .replaceAll('{{PAGE_TITLE}}', escapeHtml(branding.pageTitle))
+    .replaceAll('{{LOGIN_PAGE_TITLE}}', escapeHtml(branding.loginPageTitle))
+    .replaceAll('{{FAVICON}}', escapeHtml(branding.favicon));
+}
+
 function renderLogin(req, res, { status = 200, error = '', email = '' } = {}) {
   const csrfToken = ensureCsrfToken(req);
   const errorMarkup = error ? `<div class="login-error" role="alert">${escapeHtml(error)}</div>` : '';
-  const html = loginTemplate
+  const { branding } = currentBranding();
+  const html = applyBrandingTemplate(loginTemplate, branding)
     .replaceAll('{{CSRF_TOKEN}}', escapeHtml(csrfToken))
     .replaceAll('{{ERROR}}', errorMarkup)
     .replaceAll('{{EMAIL}}', escapeHtml(email));
@@ -54,6 +79,12 @@ function renderLogin(req, res, { status = 200, error = '', email = '' } = {}) {
     .set('Cache-Control', 'no-store')
     .type('html')
     .send(html);
+}
+
+function renderApp(res) {
+  const { branding } = currentBranding();
+  const html = applyBrandingTemplate(indexTemplate, branding);
+  res.set('Cache-Control', 'no-store').type('html').send(html);
 }
 
 function wantsJson(req) {
@@ -120,6 +151,15 @@ app.get('/healthz', (req, res) => {
 
 app.get('/robots.txt', (req, res) => {
   res.type('text/plain').send('User-agent: *\nDisallow: /\n');
+});
+
+app.get('/branding/logo', (req, res) => {
+  const settings = db.prepare('SELECT logo_file FROM settings WHERE id = 1').get();
+  if (!settings?.logo_file) return res.status(404).type('text').send('Kein Logo hinterlegt.');
+  const fullPath = uploadPath(settings.logo_file);
+  if (!fullPath) return res.status(404).type('text').send('Logo nicht gefunden.');
+  res.set('Cache-Control', 'public, max-age=300');
+  return res.type('image/png').sendFile(fullPath);
 });
 
 const loginLimiter = rateLimit({
@@ -194,10 +234,10 @@ app.use('/api', apiLimiter, requireAuth, (req, res, next) => {
 }, csrfProtection, apiRouter);
 
 app.get('/', requireAuth, (req, res) => {
-  res.set('Cache-Control', 'no-store').sendFile(path.join(VIEWS_DIR, 'index.html'));
+  renderApp(res);
 });
 app.get('/index.html', requireAuth, (req, res) => {
-  res.set('Cache-Control', 'no-store').sendFile(path.join(VIEWS_DIR, 'index.html'));
+  renderApp(res);
 });
 
 app.use((req, res) => {

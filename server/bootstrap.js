@@ -8,8 +8,8 @@ function ensureSettings(db) {
   if (existing) return;
   const now = new Date().toISOString();
   db.prepare(`
-    INSERT INTO settings (id, org_name, location, email, phone, seeded_at, updated_at)
-    VALUES (1, ?, ?, ?, ?, ?, ?)
+    INSERT INTO settings (id, org_name, location, email, phone, theme, logo_file, seeded_at, updated_at)
+    VALUES (1, ?, ?, ?, ?, 'awo', NULL, ?, ?)
   `).run(
     process.env.ORG_NAME || 'AWO Bremerhaven',
     process.env.ORG_LOCATION || 'Bremerhaven',

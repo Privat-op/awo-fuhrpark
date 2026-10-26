@@ -104,6 +104,9 @@ CREATE TABLE IF NOT EXISTS settings (
   location TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL DEFAULT '',
   phone TEXT NOT NULL DEFAULT '',
+  theme TEXT NOT NULL DEFAULT 'awo' CHECK (theme IN ('awo', 'neutral')),
+  brand_name TEXT,
+  logo_file TEXT,
   seeded_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

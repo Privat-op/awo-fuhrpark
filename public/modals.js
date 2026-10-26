@@ -1062,7 +1062,7 @@ function openDriverModal(driverId = null) {
           </div>
           <div class="field">
             <label for="driverEmail">E-Mail</label>
-            <input class="input" id="driverEmail" name="email" type="email" value="${esc(driver.email)}" placeholder="name@awo-bremerhaven.de">
+            <input class="input" id="driverEmail" name="email" type="email" value="${esc(driver.email)}" placeholder="name@organisation.de">
           </div>
           <div class="field field-full">
             <label>Führerscheinklassen</label>

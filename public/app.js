@@ -114,7 +114,7 @@ function applyState(state) {
   if (!state || typeof state !== 'object') throw new Error('Der Server hat keine gültigen Daten geliefert.');
   db = {
     meta: state.meta || { version: 1, seededAt: null },
-    settings: state.settings || { orgName: 'AWO Bremerhaven', location: '', email: '', phone: '' },
+    settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', logoUrl: null },
     vehicles: Array.isArray(state.vehicles) ? state.vehicles : [],
     drivers: Array.isArray(state.drivers) ? state.drivers : [],
     bookings: Array.isArray(state.bookings) ? state.bookings : [],
@@ -223,15 +223,62 @@ function updateSaveIndicator() {
 /* =========================================================
    App-Chrome
    ========================================================= */
-function updateChrome() {
-  if (!db) return;
+function brandDisplayName() {
+  if (db?.settings?.theme === 'neutral') return db.settings.brandName || db.settings.orgName || 'Fuhrparkmanagement';
+  return 'AWO';
+}
+
+function getClientBranding() {
+  const theme = db.settings.theme === 'neutral' ? 'neutral' : 'awo';
+  const name = theme === 'awo' ? 'AWO' : (db.settings.brandName || db.settings.orgName || 'Fuhrparkmanagement');
+  const logoUrl = theme === 'awo' ? '/branding/awo-logo.svg' : db.settings.logoUrl;
+  const markClass = logoUrl ? 'has-image' : 'is-initials';
+  const markHtml = logoUrl
+    ? `<img class="brand-logo" src="${esc(logoUrl)}" alt="${esc(name)}">`
+    : `<span class="brand-initials">${esc(initials(name))}</span>`;
+  const favicon = logoUrl || '/branding/neutral-favicon.svg';
+  return {
+    theme,
+    name,
+    subtitle: 'Fuhrparkmanagement',
+    topName: theme === 'awo' ? 'AWO' : name,
+    footerName: name,
+    logoUrl,
+    markClass,
+    markHtml,
+    favicon,
+    themeColor: theme === 'awo' ? '#e2001a' : '#0f766e'
+  };
+}
+
+function applyBranding() {
+  if (!db?.settings) return;
+  const branding = getClientBranding();
+  document.documentElement.dataset.theme = branding.theme;
+  const mark = $('#brandMark');
+  if (mark) {
+    mark.className = `brand-mark ${branding.markClass}`;
+    mark.innerHTML = branding.markHtml;
+  }
   const brandName = $('#brandName');
+  const brandSubtitle = $('#brandSubtitle');
   const topbarOrg = $('#topbarOrg');
   const footerOrg = $('#footerOrg');
-  if (brandName) brandName.textContent = db.settings.orgName;
-  if (topbarOrg) topbarOrg.textContent = db.settings.orgName;
-  if (footerOrg) footerOrg.textContent = db.settings.orgName;
+  const brandLink = $('.brand-link');
+  if (brandName) brandName.textContent = branding.name;
+  if (brandSubtitle) brandSubtitle.textContent = branding.subtitle;
+  if (topbarOrg) topbarOrg.textContent = branding.topName;
+  if (footerOrg) footerOrg.textContent = branding.footerName;
+  if (brandLink) brandLink.setAttribute('aria-label', `${branding.name} Fuhrparkmanagement – zum Dashboard`);
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) themeColor.setAttribute('content', branding.themeColor);
+  const favicon = document.querySelector('link[rel="icon"]');
+  if (favicon) favicon.setAttribute('href', branding.favicon);
+}
 
+function updateChrome() {
+  if (!db) return;
+  applyBranding();
   const userName = $('#userName');
   const userRole = $('#userRole');
   const userAvatar = $('#userAvatar');
@@ -330,7 +377,7 @@ function renderRoute(scrollToTop = true) {
     history.replaceState(null, '', '#/dashboard');
   }
   const page = PAGES.find((entry) => entry.route === ui.route) || PAGES[0];
-  document.title = `${page.title} · ${db.settings.orgName} Fuhrpark`;
+  document.title = `${page.title} · ${brandDisplayName()}`;
   const topbarTitle = $('#topbarTitle');
   if (topbarTitle) topbarTitle.textContent = page.title;
   updateNavActive(ui.route);
@@ -541,8 +588,8 @@ function downloadFile(filename, content, mimeType = 'text/plain;charset=utf-8') 
 }
 
 function exportData() {
-  downloadFile(
-    `awo-fuhrpark-daten-${todayISO()}.json`,
+    downloadFile(
+    `fuhrpark-daten-${todayISO()}.json`,
     JSON.stringify(db, null, 2),
     'application/json;charset=utf-8'
   );
@@ -580,7 +627,7 @@ function exportLogbook() {
     ];
   });
   const csv = [header, ...rows].map((row) => row.map(csvEscape).join(';')).join('\r\n');
-  downloadFile(`fahrtenbuch-awo-bremerhaven-${todayISO()}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
+  downloadFile(`fahrtenbuch-${todayISO()}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
   toast('Fahrtenbuch exportiert', `${trips.length} Fahrten wurden als CSV heruntergeladen.`);
 }
 
@@ -625,6 +672,7 @@ function dispatchAction(element) {
     case 'export-data': exportData(); break;
     case 'logout': logout(); break;
     case 'change-password': openPasswordModal(); break;
+    case 'remove-branding-logo': removeBrandingLogoPreview(); break;
     default: break;
   }
 }
@@ -634,6 +682,51 @@ function refreshVehicleGrid() {
   const count = $('#vehicleCount');
   if (grid) grid.innerHTML = renderVehicleGrid();
   if (count) count.textContent = vehicleCountText(filteredVehicles().length);
+}
+
+function updateBrandingThemeUI() {
+  const form = $('#brandingForm');
+  if (!form) return;
+  const selected = form.querySelector('input[name="brandingTheme"]:checked')?.value || 'awo';
+  form.querySelectorAll('.theme-choice').forEach((choice) => {
+    choice.classList.toggle('is-selected', Boolean(choice.querySelector('input')?.checked));
+  });
+  const logoField = $('#brandingLogoField');
+  if (logoField) logoField.hidden = selected !== 'neutral';
+}
+
+function setBrandingLogoPreview(html) {
+  const preview = $('#brandingLogoPreview');
+  const neutralPreview = $('#brandingNeutralPreview');
+  if (preview) preview.innerHTML = html;
+  if (neutralPreview) neutralPreview.innerHTML = html;
+}
+
+function previewBrandingLogo(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    toast('Kein Bild', 'Bitte wählen Sie eine PNG-, JPG- oder WebP-Datei aus.', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    setBrandingLogoPreview(`<img src="${reader.result}" alt="Logo-Vorschau">`);
+    const removeLogo = $('#brandingRemoveLogo');
+    if (removeLogo) removeLogo.value = '0';
+    const removeButton = $('#brandingLogoRemove');
+    if (removeButton) removeButton.hidden = false;
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeBrandingLogoPreview() {
+  const removeLogo = $('#brandingRemoveLogo');
+  if (removeLogo) removeLogo.value = '1';
+  const input = $('#brandingLogoInput');
+  if (input) input.value = '';
+  const removeButton = $('#brandingLogoRemove');
+  if (removeButton) removeButton.hidden = true;
+  const name = $('#brandingName')?.value?.trim() || db.settings.brandName || db.settings.orgName || 'Fuhrparkmanagement';
+  setBrandingLogoPreview(`<span class="theme-initials">${esc(initials(name))}</span>`);
 }
 
 /* =========================================================
@@ -743,13 +836,56 @@ function bindEvents() {
     } else if (event.target.id === 'logPeriod') {
       ui.logPeriod = event.target.value;
       renderCurrentView();
+    } else if (event.target.name === 'brandingTheme') {
+      updateBrandingThemeUI();
+    } else if (event.target.id === 'brandingLogoInput') {
+      const file = event.target.files?.[0];
+      if (file) previewBrandingLogo(file);
     }
   });
 
   view?.addEventListener('submit', async (event) => {
-    if (event.target.id !== 'settingsForm') return;
-    event.preventDefault();
     const form = event.target;
+    if (form.id === 'brandingForm') {
+      event.preventDefault();
+      const data = new FormData(form);
+      const theme = String(data.get('brandingTheme') || 'awo');
+      const brandName = String(data.get('brandingName') || '').trim();
+      if (theme === 'neutral' && !brandName) {
+        toast('Anzeigename fehlt', 'Bitte geben Sie einen Namen für das neutrale Theme an.', 'error');
+        return;
+      }
+      let logoData = null;
+      let removeLogo = false;
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      try {
+        if (theme === 'neutral') {
+          const logoInput = form.querySelector('#brandingLogoInput');
+          const file = logoInput?.files?.[0];
+          removeLogo = form.querySelector('#brandingRemoveLogo')?.value === '1';
+          if (file) {
+            logoData = await resizeVehicleImage(file);
+            removeLogo = false;
+          }
+        }
+        const state = await apiFetch('/api/branding', {
+          method: 'PATCH',
+          body: { theme, brandName, logoData, removeLogo }
+        });
+        applyServerState(state);
+        renderRoute(false);
+        toast('Erscheinungsbild gespeichert', 'Das Theme gilt jetzt für alle Nutzer:innen.');
+      } catch (error) {
+        toast('Erscheinungsbild konnte nicht gespeichert werden', error.message, 'error');
+      } finally {
+        if (submitButton) submitButton.disabled = false;
+      }
+      return;
+    }
+
+    if (form.id !== 'settingsForm') return;
+    event.preventDefault();
     const data = new FormData(form);
     const orgName = String(data.get('orgName') || '').trim();
     if (!orgName) {
@@ -769,6 +905,7 @@ function bindEvents() {
         }
       });
       applyServerState(state);
+      if (ui.route === 'einstellungen') renderCurrentView();
       toast('Einstellungen gespeichert', 'Die Organisationsdaten wurden auf dem Server aktualisiert.');
     } catch (error) {
       toast('Speichern fehlgeschlagen', error.message, 'error');

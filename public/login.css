@@ -1,6 +1,9 @@
 :root {
   --awo: #e2001a;
   --awo-dark: #b80015;
+  --awo-soft: #fdecef;
+  --awo-glow: rgba(226, 0, 26, .2);
+  --awo-glow-strong: rgba(226, 0, 26, .26);
   --ink: #181c23;
   --muted: #737a87;
   --line: #e5e8ed;
@@ -9,6 +12,14 @@
   --green: #15845a;
   --danger: #c91d2c;
   --font: "Segoe UI", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+}
+
+:root[data-theme="neutral"] {
+  --awo: #0f766e;
+  --awo-dark: #0b5f59;
+  --awo-soft: #e8f7f4;
+  --awo-glow: rgba(15, 118, 110, .2);
+  --awo-glow-strong: rgba(15, 118, 110, .26);
 }
 
 *,
@@ -46,6 +57,12 @@ button, input { font: inherit; }
     radial-gradient(circle at 82% 16%, rgba(255, 255, 255, .12), transparent 25%),
     radial-gradient(circle at 0% 100%, rgba(0, 0, 0, .28), transparent 44%),
     linear-gradient(148deg, #c80017 0%, #e2001a 48%, #a40012 100%);
+}
+:root[data-theme="neutral"] .login-brand-panel {
+  background:
+    radial-gradient(circle at 82% 16%, rgba(255, 255, 255, .12), transparent 25%),
+    radial-gradient(circle at 0% 100%, rgba(0, 0, 0, .3), transparent 44%),
+    linear-gradient(148deg, #0b5f59 0%, #0f766e 48%, #083e3a 100%);
 }
 
 .login-brand-panel::before,
@@ -93,6 +110,35 @@ button, input { font: inherit; }
   font-size: 16px;
   font-weight: 900;
   letter-spacing: -.055em;
+}
+.brand-mark.has-image {
+  padding: 4px;
+  background: #fff;
+  border-color: rgba(255, 255, 255, .75);
+  box-shadow: 0 10px 25px rgba(20, 24, 33, .2);
+}
+.brand-mark.is-initials {
+  background: var(--awo);
+  border-color: rgba(255, 255, 255, .3);
+  box-shadow: 0 10px 25px var(--awo-glow);
+}
+.brand-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.brand-initials {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  color: #fff;
+  background: var(--awo);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .01em;
 }
 
 .brand-copy { display: flex; flex-direction: column; }
@@ -255,9 +301,9 @@ button, input { font: inherit; }
 }
 .login-field input::placeholder { color: #a1a8b3; }
 .login-field input:focus {
-  border-color: rgba(226, 0, 26, .55);
+  border-color: var(--awo);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(226, 0, 26, .08);
+  box-shadow: 0 0 0 3px var(--awo-soft);
 }
 
 .login-button {
@@ -268,13 +314,13 @@ button, input { font: inherit; }
   border-radius: 9px;
   color: #fff;
   background: var(--awo);
-  box-shadow: 0 8px 20px rgba(226, 0, 26, .2);
+  box-shadow: 0 8px 20px var(--awo-glow);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   transition: background .15s ease, box-shadow .15s ease, transform .15s ease;
 }
-.login-button:hover { background: var(--awo-dark); box-shadow: 0 10px 24px rgba(226, 0, 26, .25); }
+.login-button:hover { background: var(--awo-dark); box-shadow: 0 10px 24px var(--awo-glow-strong); }
 .login-button:active { transform: translateY(1px); }
 
 .login-help {
@@ -308,7 +354,7 @@ button, input { font: inherit; }
     min-height: 100vh;
     padding: 30px 18px 18px;
     background:
-      radial-gradient(circle at 50% -10%, rgba(226, 0, 26, .16), transparent 34%),
+      radial-gradient(circle at 50% -10%, var(--awo-soft), transparent 34%),
       #f6f7f9;
   }
   .login-card { max-width: 430px; padding: 28px; }
@@ -327,11 +373,14 @@ button, input { font: inherit; }
     border: 0;
     color: #fff;
     background: var(--awo);
-    box-shadow: 0 7px 18px rgba(226, 0, 26, .2);
+    box-shadow: 0 7px 18px var(--awo-glow);
   }
+  .login-mobile-brand .brand-mark.has-image { background: #fff; }
+  .login-mobile-brand .brand-mark.is-initials { background: var(--awo); }
   .login-mobile-brand div { display: flex; flex-direction: column; }
   .login-mobile-brand strong { font-size: 12.5px; }
-  .login-mobile-brand span { color: var(--muted); font-size: 10px; }
+  .login-mobile-brand div > span { color: var(--muted); font-size: 10px; }
+  .login-mobile-brand .brand-initials { color: #fff; font-size: 13px; }
 }
 
 @media (max-width: 520px) {

@@ -349,7 +349,7 @@ function renderDashboard() {
   }).join('');
 
   return `
-    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Hier ist der aktuelle Überblick über den Fuhrpark der AWO Bremerhaven.',
+    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Hier ist der aktuelle Überblick über Ihren Fuhrpark.',
       `<button class="btn btn-ghost" type="button" data-action="new-vehicle">${icon('plus')} Fahrzeug</button>
        <button class="btn btn-primary" type="button" data-action="new-booking">${icon('plus')} Neue Buchung</button>`)}
 
@@ -1075,6 +1075,68 @@ function renderDrivers() {
 /* =========================================================
    Einstellungen
    ========================================================= */
+function renderBrandingCard() {
+  if (!capabilities.manageUsers) return '';
+  const theme = db.settings.theme === 'neutral' ? 'neutral' : 'awo';
+  const neutralName = db.settings.brandName || db.settings.orgName || 'Fuhrparkmanagement';
+  const initialsValue = initials(neutralName);
+  const neutralLogoPreview = db.settings.logoUrl
+    ? `<img src="${esc(db.settings.logoUrl)}" alt="Aktuelles Logo">`
+    : `<span class="theme-initials">${esc(initialsValue)}</span>`;
+  return `
+    <form class="card settings-card" id="brandingForm">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Erscheinungsbild</h3><p class="card-sub">Global für alle Nutzer:innen und die Anmeldeseite.</p></div>
+        <span class="badge badge-red no-dot">Administration</span>
+      </div>
+      <div class="card-body">
+        <div class="theme-grid">
+          <label class="theme-choice ${theme === 'awo' ? 'is-selected' : ''}">
+            <input type="radio" name="brandingTheme" value="awo" ${theme === 'awo' ? 'checked' : ''}>
+            <span class="theme-choice-preview theme-preview-awo"><img src="/branding/awo-logo.svg" alt="AWO"></span>
+            <span class="theme-choice-copy"><strong>AWO</strong><span>Allgemeines AWO-Theme mit offiziellem Logo.</span></span>
+          </label>
+          <label class="theme-choice ${theme === 'neutral' ? 'is-selected' : ''}">
+            <input type="radio" name="brandingTheme" value="neutral" ${theme === 'neutral' ? 'checked' : ''}>
+            <span class="theme-choice-preview theme-preview-neutral" id="brandingNeutralPreview">${neutralLogoPreview}</span>
+            <span class="theme-choice-copy"><strong>Neutral</strong><span>Eigenes Branding ohne feste Organisation.</span></span>
+          </label>
+        </div>
+
+        <div class="branding-logo-field" id="brandingLogoField" ${theme === 'neutral' ? '' : 'hidden'}>
+          <div class="field">
+            <label for="brandingName">Anzeigename <span class="optional">*</span></label>
+            <input class="input" id="brandingName" name="brandingName" type="text" value="${esc(neutralName)}" maxlength="120">
+            <p class="field-hint">Erscheint im Menü, auf der Anmeldeseite und im Footer des neutralen Themes.</p>
+          </div>
+          <label>Eigenes Logo <span class="optional">optional</span></label>
+          <div class="image-upload">
+            <div class="image-upload-preview" id="brandingLogoPreview">${neutralLogoPreview}</div>
+            <div class="image-upload-copy">
+              <strong>Logo für das neutrale Theme</strong>
+              <p>PNG, JPG oder WebP. Das Logo wird auf weißem Hintergrund angezeigt und automatisch verkleinert.</p>
+              <div class="image-upload-actions">
+                <label class="btn btn-ghost btn-sm" for="brandingLogoInput">${icon('download')} Logo auswählen</label>
+                <button class="btn btn-ghost btn-sm" type="button" id="brandingLogoRemove" data-action="remove-branding-logo" ${db.settings.logoUrl ? '' : 'hidden'}>${icon('trash')} Entfernen</button>
+              </div>
+            </div>
+            <input class="sr-only" id="brandingLogoInput" type="file" accept="image/png,image/jpeg,image/webp">
+            <input type="hidden" id="brandingRemoveLogo" value="0">
+          </div>
+        </div>
+
+        <div class="info-banner" style="margin-top:16px">
+          ${icon('info')}
+          <div><strong>Zentrale Einstellung</strong><p>Diese Auswahl gilt für alle Benutzer:innen und die Anmeldeseite. Andere Nutzer sehen die Änderung beim nächsten Laden. Individuelle Themes pro Konto gibt es nicht.</p></div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">Das Theme wird beim Speichern sofort übernommen.</span>
+        <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Erscheinungsbild speichern</button>
+      </div>
+    </form>`;
+}
+
 function renderSettings() {
   const roleLabel = ROLE_LABELS[currentUser?.role] || currentUser?.role || '—';
   const adminLink = capabilities.manageUsers
@@ -1084,6 +1146,7 @@ function renderSettings() {
     ${pageHead('Organisation', 'Einstellungen', 'Organisation, Konto und Datenexport verwalten.', '')}
     <div class="settings-grid">
       <div class="stack">
+        ${renderBrandingCard()}
         <form class="card settings-card" id="settingsForm">
           <div class="card-head bordered">
             <div><h3 class="card-title">Organisation</h3><p class="card-sub">Diese Angaben erscheinen in der Anwendung.</p></div>
@@ -1094,6 +1157,7 @@ function renderSettings() {
               <div class="field field-full">
                 <label for="orgName">Name der Einrichtung</label>
                 <input class="input" id="orgName" name="orgName" value="${esc(db.settings.orgName)}" required>
+                <p class="field-hint">Wird in den Stammdaten und in der Organisation verwendet.</p>
               </div>
               <div class="field">
                 <label for="orgLocation">Standort</label>
@@ -1166,7 +1230,7 @@ function renderSettings() {
         </section>
 
         <section class="card">
-          <div class="card-head"><div><h3 class="card-title">Über diese Installation</h3><p class="card-sub">Fuhrparkmanagement für die AWO Bremerhaven</p></div></div>
+          <div class="card-head"><div><h3 class="card-title">Über diese Installation</h3><p class="card-sub">Fuhrparkmanagement für ${esc(brandDisplayName())}</p></div></div>
           <div class="card-body">
             <div class="detail-list">
               <div class="detail-list-item">
@@ -1184,7 +1248,7 @@ function renderSettings() {
             </div>
             <div class="info-banner" style="margin-top:14px">
               ${icon('info')}
-              <div><strong>Betrieb durch die AWO</strong><p>Diese Instanz ist für den internen Gebrauch bestimmt. Zugriff, Aufbewahrungsfristen und Datenschutz müssen organisatorisch geregelt sein.</p></div>
+              <div><strong>Interner Betrieb</strong><p>Diese Instanz ist für den internen Gebrauch bestimmt. Zugriff, Aufbewahrungsfristen und Datenschutz müssen organisatorisch geregelt sein.</p></div>
             </div>
           </div>
         </section>

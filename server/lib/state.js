@@ -120,9 +120,14 @@ function getState(db, user) {
     },
     settings: {
       orgName: settingsRow?.org_name || 'AWO Bremerhaven',
+      brandName: settingsRow?.brand_name || '',
       location: settingsRow?.location || 'Bremerhaven',
       email: settingsRow?.email || '',
-      phone: settingsRow?.phone || ''
+      phone: settingsRow?.phone || '',
+      theme: settingsRow?.theme === 'neutral' ? 'neutral' : 'awo',
+      logoUrl: settingsRow?.logo_file
+        ? `/branding/logo?v=${encodeURIComponent(settingsRow.updated_at || '')}`
+        : null
     },
     vehicles,
     drivers,
