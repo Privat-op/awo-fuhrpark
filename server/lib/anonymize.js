@@ -38,7 +38,8 @@ function anonymizeUser(userId, { actorId = null, reason = 'manual' } = {}) {
     const randomPassword = bcrypt.hashSync(crypto.randomBytes(32).toString('hex'), 12);
     db.prepare(`
       UPDATE users SET
-        email = ?, name = ?, password_hash = ?, active = 0, last_login_at = NULL,
+        email = ?, name = ?, password_hash = ?, permission_overrides = '{}', object_permissions = '{}',
+        active = 0, last_login_at = NULL,
         deactivated_at = COALESCE(deactivated_at, updated_at), anonymized_at = ?, updated_at = ?
       WHERE id = ?
     `).run(anonymizedEmail, 'Anonymisiertes Konto', randomPassword, now, now, user.id);

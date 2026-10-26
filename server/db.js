@@ -60,6 +60,11 @@ function initSchema() {
     db.exec('ALTER TABLE settings ADD COLUMN auto_anonymize_days INTEGER NOT NULL DEFAULT 0');
   }
 
+  const roleColumns = db.prepare('PRAGMA table_info(roles)').all();
+  if (roleColumns.length && !roleColumns.some((column) => column.name === 'object_permissions')) {
+    db.exec("ALTER TABLE roles ADD COLUMN object_permissions TEXT NOT NULL DEFAULT '{}'");
+  }
+
   const userColumns = db.prepare('PRAGMA table_info(users)').all();
   if (!userColumns.some((column) => column.name === 'anonymized_at')) {
     db.exec('ALTER TABLE users ADD COLUMN anonymized_at TEXT');
@@ -67,6 +72,48 @@ function initSchema() {
   if (!userColumns.some((column) => column.name === 'deactivated_at')) {
     db.exec('ALTER TABLE users ADD COLUMN deactivated_at TEXT');
     db.exec("UPDATE users SET deactivated_at = updated_at WHERE active = 0 AND anonymized_at IS NULL");
+  }
+
+  const updatedUserColumns = db.prepare('PRAGMA table_info(users)').all();
+  if (!updatedUserColumns.some((column) => column.name === 'permission_overrides')) {
+    db.exec("ALTER TABLE users ADD COLUMN permission_overrides TEXT NOT NULL DEFAULT '{}'");
+  }
+  if (!updatedUserColumns.some((column) => column.name === 'object_permissions')) {
+    db.exec("ALTER TABLE users ADD COLUMN object_permissions TEXT NOT NULL DEFAULT '{}'");
+  }
+
+  const usersSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
+  if (/CHECK\s*\(\s*role\s+IN/i.test(usersSql)) {
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE users_new (
+            id TEXT PRIMARY KEY,
+            email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL,
+            permission_overrides TEXT NOT NULL DEFAULT '{}',
+            object_permissions TEXT NOT NULL DEFAULT '{}',
+            active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+            last_login_at TEXT,
+            deactivated_at TEXT,
+            anonymized_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        db.exec(`
+          INSERT INTO users_new (id, email, name, password_hash, role, permission_overrides, object_permissions, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at)
+          SELECT id, email, name, password_hash, role, permission_overrides, object_permissions, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at FROM users
+        `);
+        db.exec('DROP TABLE users');
+        db.exec('ALTER TABLE users_new RENAME TO users');
+      })();
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
   }
 }
 

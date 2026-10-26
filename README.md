@@ -5,7 +5,8 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 ## Funktionen
 
 - Zentrale Anmeldung mit Sessions, CSRF-Schutz und Rate-Limits
-- Rollen: **Administrator** und **Fuhrparkleitung**
+- Rollen: **Administrator** und **Fuhrparkleitung** sowie frei anlegbare Rollen
+- Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
 - Benutzerverwaltung inklusive Rollen, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
 - Automatische Anonymisierung deaktivierter Konten nach einer global einstellbaren Frist
 - Fahrzeuge mit Bild-Upload, Standort, Kilometerstand, HU/AU und Service
@@ -93,20 +94,49 @@ TRUST_PROXY=1
 
 Danach den Container neu starten. Der Server sollte nicht ungeschützt direkt aus dem Internet auf Port 3000 erreichbar sein.
 
-## Rollen
+## Rollen und Rechte
 
 | Rolle | Rechte |
 | --- | --- |
-| Administrator | Alle Fuhrparkfunktionen, Einstellungen und Benutzerverwaltung |
-| Fuhrparkleitung | Alle Fuhrparkfunktionen und Einstellungen, keine Benutzerverwaltung |
+| Administrator | Alle Fuhrparkfunktionen, Einstellungen und Benutzerverwaltung; immer vollständig und geschützt |
+| Fuhrparkleitung | Standardrolle mit allen Fuhrparkfunktionen und Einstellungen, ohne Benutzerverwaltung; Rechte und Objekt-Ausnahmen können angepasst werden |
+| Eigene Rollen | Frei anlegbare Rollen mit individuellen Modul- und Objekt-Ausnahmen |
 
-Nur Administratoren können weitere Konten anlegen, Rollen ändern, Konten deaktivieren und Passwörter zurücksetzen. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
+Nur Administratoren können Konten anlegen, Rollen ändern, Benutzer-Ausnahmen pflegen, Konten deaktivieren und Passwörter zurücksetzen. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
+
+### Rechte-Hierarchie
+
+Die Rechte werden in dieser Reihenfolge aufgelöst, von der spezifischsten zur allgemeinsten Regel:
+
+1. **Benutzer-Objekt-Ausnahme** – gilt für genau ein Objekt und einen Benutzer.
+2. **Benutzer-Modul-Ausnahme** – gilt für einen Benutzer und ein Modul.
+3. **Rollen-Objekt-Ausnahme** – gilt für genau ein Objekt und eine Rolle.
+4. **Rollenrecht** – gilt für die gesamte Rolle.
+
+Auf derselben Ebene gewinnt bei Konflikten die Verweigerung. Eine Objekt-Ausnahme kann ein Recht erlauben oder verweigern, auch wenn das Rollenrecht anders lautet. Die Administrator-Rolle ignoriert Benutzer-Ausnahmen und bleibt immer vollständig.
+
+### Objekt-Ausnahmen
+
+Unter **Rollen & Rechte → Objekt-Ausnahmen** lassen sich pro Rolle und Objekt einzelne Aktionen auf **Standard**, **Erlauben** oder **Verweigern** stellen. Unterstützt werden:
+
+- Fahrzeuge
+- Fahrer:innen
+- Buchungen
+- Kostenpositionen
+- Wartungen
+
+Die Einstellungen gelten serverseitig für Datenanzeige und Aktionen. Ein Benutzer sieht ein Objekt nur, wenn die effektive Berechtigung es zulässt; die gleiche Prüfung greift bei Bearbeitung, Buchung, Kosten, Wartung und Belegen.
+
+### Benutzer-Ausnahmen
+
+Unter **Benutzer → Benutzer-Ausnahmen** können Administrator:innen persönliche Modul- und Objekt-Ausnahmen pflegen. Diese haben Vorrang vor den Rollenrechten. Beim Wechsel in die Administrator-Rolle oder bei der Anonymisierung werden persönliche Ausnahmen entfernt.
 
 ## Benutzerkonten und Anonymisierung
 
 Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Deaktivierte Konten können anschließend anonymisiert werden:
 
 - Name, E-Mail-Adresse und Passwort werden dauerhaft entfernt.
+- Persönliche Rechte-Ausnahmen werden entfernt.
 - Alle Sitzungen des Kontos werden beendet.
 - Verknüpfte Buchungen, Kosten und Audit-Einträge bleiben erhalten.
 - E-Mail-Adressen in zugehörigen Audit-Einträgen werden bereinigt.
@@ -179,7 +209,7 @@ Für einen echten Produktivbetrieb sind zusätzlich einzuplanen:
 - SSO/Entra ID und Mehrfaktor-Authentifizierung
 - E-Mail-/Teams-Erinnerungen für TÜV und Wartungen
 - zentrale Virenprüfung für hochgeladene PDF-Belege
-- feinere Rechte- und Standorttrennung
+- standortbezogene Sichtbarkeit und Freigabeprozesse
 - revisionssichere Audit-Auswertung im UI
 - Aufbewahrungs- und Löschkonzept nach DSGVO
 - Datenschutz-Folgenabschätzung und Betriebsvereinbarung bei personenbezogenen Fahrerdaten

@@ -6,7 +6,10 @@
 let db;
 let currentUser = null;
 let csrfToken = '';
-let capabilities = { manageFleet: false, manageUsers: false, viewCosts: false };
+let permissions = new Set();
+let permissionGroups = [];
+let objectTypes = [];
+let capabilities = { isAdmin: false, manageUsers: false, viewCosts: false };
 let ui = {
   route: 'dashboard',
   vehicleQuery: '',
@@ -21,6 +24,40 @@ let ui = {
 };
 
 const ROLE_LABELS = { admin: 'Administrator', manager: 'Fuhrparkleitung' };
+
+function can(permission) {
+  if (!permission) return true;
+  if (capabilities.isAdmin || permissions.has(permission)) return true;
+  return Boolean(db?.access?.modules?.[permission]);
+}
+
+function canBase(permission) {
+  if (!permission) return true;
+  return Boolean(capabilities.isAdmin || permissions.has(permission));
+}
+
+function canOn(type, id, permission) {
+  if (capabilities.isAdmin) return true;
+  return Boolean(db?.access?.objects?.[type]?.[id]?.[permission]);
+}
+
+function roleLabel(roleId) {
+  const role = db?.roles?.find((entry) => entry.id === roleId);
+  if (role) return role.name;
+  if (currentUser?.role === roleId && currentUser?.roleName) return currentUser.roleName;
+  return ROLE_LABELS[roleId] || roleId || '—';
+}
+
+function routeAllowed(route) {
+  if (route === 'benutzer' || route === 'rollen') return Boolean(capabilities.isAdmin);
+  const permission = ROUTE_PERMISSIONS[route];
+  return !permission || can(permission);
+}
+
+function firstAllowedRoute() {
+  const order = ['dashboard', 'fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'einstellungen'];
+  return order.find((route) => routeAllowed(route)) || 'dashboard';
+}
 
 function getVehicle(id) {
   return db.vehicles.find((vehicle) => vehicle.id === id);
@@ -121,7 +158,20 @@ function applyState(state) {
     maintenance: Array.isArray(state.maintenance) ? state.maintenance : [],
     costs: Array.isArray(state.costs) ? state.costs : [],
     notificationReads: Array.isArray(state.notificationReads) ? state.notificationReads : [],
-    users: Array.isArray(state.users) ? state.users : []
+    users: Array.isArray(state.users) ? state.users : [],
+    roles: Array.isArray(state.roles) ? state.roles : [],
+    access: state.access && typeof state.access === 'object'
+      ? {
+          modules: state.access.modules || {},
+          objects: {
+            vehicle: state.access.objects?.vehicle || {},
+            driver: state.access.objects?.driver || {},
+            booking: state.access.objects?.booking || {},
+            cost: state.access.objects?.cost || {},
+            maintenance: state.access.objects?.maintenance || {}
+          }
+        }
+      : { modules: {}, objects: { vehicle: {}, driver: {}, booking: {}, cost: {}, maintenance: {} } }
   };
 }
 
@@ -162,7 +212,14 @@ async function refreshSession() {
   const session = await apiFetch('/api/session');
   currentUser = session.user;
   csrfToken = session.csrfToken;
-  capabilities = session.capabilities;
+  permissions = new Set(Array.isArray(session.permissions) ? session.permissions : []);
+  permissionGroups = Array.isArray(session.permissionGroups) ? session.permissionGroups : [];
+  objectTypes = Array.isArray(session.objectTypes) ? session.objectTypes : [];
+  capabilities = {
+    isAdmin: Boolean(session.capabilities?.isAdmin),
+    manageUsers: Boolean(session.capabilities?.manageUsers),
+    viewCosts: Boolean(session.capabilities?.viewCosts)
+  };
 }
 
 function applyServerState(state) {
@@ -344,13 +401,19 @@ function updateChrome() {
   const userName = $('#userName');
   const userRole = $('#userRole');
   const userAvatar = $('#userAvatar');
-  const navUsers = $('#navUsers');
   if (currentUser) {
     if (userName) userName.textContent = currentUser.name;
-    if (userRole) userRole.textContent = ROLE_LABELS[currentUser.role] || currentUser.role;
+    if (userRole) userRole.textContent = currentUser.roleName || roleLabel(currentUser.role);
     if (userAvatar) userAvatar.textContent = initials(currentUser.name);
   }
-  if (navUsers) navUsers.hidden = !capabilities.manageUsers;
+  $$('.nav-item').forEach((item) => {
+    const route = item.dataset.route;
+    if (route) item.hidden = !routeAllowed(route);
+  });
+  $$('.nav-group').forEach((group) => {
+    const items = $$('.nav-item', group);
+    if (items.length) group.hidden = items.every((item) => item.hidden);
+  });
 
   const today = todayISO();
   const todayBookings = db.bookings.filter((booking) => booking.start.slice(0, 10) === today && booking.status !== 'canceled').length;
@@ -429,14 +492,10 @@ function getRouteFromHash() {
 }
 
 function renderRoute(scrollToTop = true) {
-  ui.route = getRouteFromHash();
-  if (ui.route === 'benutzer' && !capabilities.manageUsers) {
-    ui.route = 'dashboard';
-    history.replaceState(null, '', '#/dashboard');
-  }
-  if (ui.route === 'kosten' && !capabilities.viewCosts) {
-    ui.route = 'dashboard';
-    history.replaceState(null, '', '#/dashboard');
+  const requestedRoute = getRouteFromHash();
+  ui.route = routeAllowed(requestedRoute) ? requestedRoute : firstAllowedRoute();
+  if (ui.route !== requestedRoute) {
+    history.replaceState(null, '', `#/${ui.route}`);
   }
   const page = PAGES.find((entry) => entry.route === ui.route) || PAGES[0];
   document.title = `${page.title} · ${brandDisplayName()}`;
@@ -488,7 +547,7 @@ function renderSearchResults() {
     return;
   }
 
-  const pages = PAGES.filter((page) => (capabilities.manageUsers || page.route !== 'benutzer') && (capabilities.viewCosts || page.route !== 'kosten') && `${page.title} ${page.description}`.toLowerCase().includes(query)).slice(0, 4);
+  const pages = PAGES.filter((page) => routeAllowed(page.route) && `${page.title} ${page.description}`.toLowerCase().includes(query)).slice(0, 4);
   const vehicles = db.vehicles.filter((vehicle) => `${vehicle.name} ${vehicle.plate} ${vehicle.location} ${vehicle.department} ${vehicle.type}`.toLowerCase().includes(query)).slice(0, 4);
   const drivers = db.drivers.filter((driver) => `${driver.name} ${driver.role} ${driver.department}`.toLowerCase().includes(query)).slice(0, 4);
   const bookings = db.bookings.filter((booking) => {
@@ -559,6 +618,10 @@ function closeSidebar() {
    Aktionen
    ========================================================= */
 async function startBooking(bookingId) {
+  if (!canOn('booking', bookingId, 'bookings_manage')) {
+    toast('Keine Berechtigung', 'Für diese Buchung fehlt die Berechtigung zum Starten.', 'error');
+    return;
+  }
   const booking = db.bookings.find((item) => item.id === bookingId);
   const vehicle = booking ? getVehicle(booking.vehicleId) : null;
   try {
@@ -573,6 +636,10 @@ async function startBooking(bookingId) {
 }
 
 function cancelBooking(bookingId) {
+  if (!canOn('booking', bookingId, 'bookings_manage')) {
+    toast('Keine Berechtigung', 'Für diese Buchung fehlt die Berechtigung zum Stornieren.', 'error');
+    return;
+  }
   const booking = db.bookings.find((item) => item.id === bookingId);
   if (!booking) return;
   const vehicle = getVehicle(booking.vehicleId);
@@ -595,6 +662,10 @@ function cancelBooking(bookingId) {
 }
 
 function deleteBooking(bookingId) {
+  if (!canOn('booking', bookingId, 'bookings_manage')) {
+    toast('Keine Berechtigung', 'Für diese Buchung fehlt die Berechtigung zum Löschen.', 'error');
+    return;
+  }
   const booking = db.bookings.find((item) => item.id === bookingId);
   if (!booking) return;
   openConfirm({
@@ -616,6 +687,10 @@ function deleteBooking(bookingId) {
 }
 
 function deleteCost(costId) {
+  if (!canOn('cost', costId, 'costs_manage')) {
+    toast('Keine Berechtigung', 'Für diese Kostenposition fehlt die Berechtigung zum Löschen.', 'error');
+    return;
+  }
   const cost = db.costs.find((item) => item.id === costId);
   if (!cost) return;
   const vehicle = getVehicle(cost.vehicleId);
@@ -650,7 +725,11 @@ function downloadFile(filename, content, mimeType = 'text/plain;charset=utf-8') 
 }
 
 function exportData() {
-    downloadFile(
+  if (!canBase('export_data')) {
+    toast('Keine Berechtigung', 'Für den Datenexport fehlt die erforderliche Berechtigung.', 'error');
+    return;
+  }
+  downloadFile(
     `fuhrpark-daten-${todayISO()}.json`,
     JSON.stringify(db, null, 2),
     'application/json;charset=utf-8'
@@ -665,6 +744,10 @@ function csvEscape(value) {
 }
 
 function exportLogbook() {
+  if (!can('logbook_export')) {
+    toast('Keine Berechtigung', 'Für den Fahrtenbuch-Export fehlt die erforderliche Berechtigung.', 'error');
+    return;
+  }
   const trips = getCompletedBookings(ui.logPeriod);
   if (!trips.length) {
     toast('Keine Fahrten', 'Im ausgewählten Zeitraum gibt es keine Einträge.', 'info');
@@ -704,6 +787,11 @@ function dispatchAction(element) {
     case 'new-cost': openCostModal(); break;
     case 'new-log': openLogModal(); break;
     case 'new-user': openUserModal(); break;
+    case 'edit-user-permissions': openUserPermissionModal(id); break;
+    case 'new-role': openRoleModal(); break;
+    case 'edit-role': openRoleModal(id); break;
+    case 'edit-role-objects': openRoleObjectModal(id); break;
+    case 'delete-role': openDeleteRoleConfirm(id); break;
     case 'vehicle-details': openVehicleDetails(id); break;
     case 'edit-vehicle': openVehicleModal(id); break;
     case 'book-vehicle': openBookingModal({ vehicleId: id }); break;

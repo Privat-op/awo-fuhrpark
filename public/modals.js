@@ -101,6 +101,10 @@ function openConfirm({ title = 'Sind Sie sicher?', text = '', confirmLabel = 'Be
    Buchungen
    ========================================================= */
 function openBookingModal(prefill = {}) {
+  if (!can('bookings_create')) {
+    toast('Keine Berechtigung', 'Ihre Rolle darf keine Buchungen anlegen.', 'error');
+    return;
+  }
   const availableVehicles = db.vehicles;
   const prefillVehicle = prefill.vehicleId ? getVehicle(prefill.vehicleId) : null;
   const selectedVehicle = prefillVehicle || availableVehicles.find((vehicle) => vehicle.status === 'available') || availableVehicles[0];
@@ -221,10 +225,11 @@ function openBookingDetails(bookingId) {
   const vehicle = getVehicle(booking.vehicleId);
   const driver = getDriver(booking.driverId);
   const distance = booking.startKm != null && booking.endKm != null ? Math.max(0, Number(booking.endKm) - Number(booking.startKm)) : null;
-  const canStart = booking.status === 'planned';
-  const canEnd = booking.status === 'active';
-  const canCancel = booking.status === 'planned';
-  const canDelete = booking.status === 'canceled';
+  const canManage = canOn('booking', booking.id, 'bookings_manage');
+  const canStart = canManage && booking.status === 'planned';
+  const canEnd = canManage && booking.status === 'active';
+  const canCancel = canManage && booking.status === 'planned';
+  const canDelete = canManage && booking.status === 'canceled';
 
   const footerActions = [
     canDelete ? `<button class="btn btn-danger-ghost" type="button" data-action="delete-booking" data-id="${booking.id}">${icon('trash')} Löschen</button>` : '',
@@ -275,6 +280,10 @@ function openBookingDetails(bookingId) {
 }
 
 function openEndTripModal(bookingId) {
+  if (!canOn('booking', bookingId, 'bookings_manage')) {
+    toast('Keine Berechtigung', 'Für diese Buchung fehlt die Berechtigung zum Beenden.', 'error');
+    return;
+  }
   const booking = db.bookings.find((item) => item.id === bookingId);
   if (!booking) return;
   const vehicle = getVehicle(booking.vehicleId);
@@ -425,6 +434,11 @@ async function prepareCostReceipt(file) {
 }
 
 function openVehicleModal(vehicleId = null) {
+  const allowed = vehicleId ? canOn('vehicle', vehicleId, 'vehicles_manage') : canBase('vehicles_manage');
+  if (!allowed) {
+    toast('Keine Berechtigung', 'Ihre Rolle darf dieses Fahrzeug nicht bearbeiten.', 'error');
+    return;
+  }
   const existing = vehicleId ? getVehicle(vehicleId) : null;
   const defaults = {
     name: '', plate: '', type: 'Pkw', fuel: 'Diesel', seats: 5, status: 'available',
@@ -648,12 +662,17 @@ function openVehicleModal(vehicleId = null) {
 function openVehicleDetails(vehicleId) {
   const vehicle = getVehicle(vehicleId);
   if (!vehicle) return;
-  const upcoming = sortByDateAsc(db.bookings.filter((booking) => booking.vehicleId === vehicleId &&
+  const canManageVehicle = canOn('vehicle', vehicleId, 'vehicles_manage');
+  const canBookVehicle = canOn('vehicle', vehicleId, 'bookings_create');
+  const showBookings = canOn('vehicle', vehicleId, 'bookings_view');
+  const showMaintenance = canOn('vehicle', vehicleId, 'maintenance_view');
+  const showCosts = canOn('vehicle', vehicleId, 'costs_view');
+  const upcoming = showBookings ? sortByDateAsc(db.bookings.filter((booking) => booking.vehicleId === vehicleId &&
     ['planned', 'active'].includes(booking.status) &&
-    booking.start.slice(0, 10) >= todayISO())).slice(0, 3);
-  const maintenance = [...db.maintenance.filter((item) => item.vehicleId === vehicleId)]
-    .sort((a, b) => String(b.dueDate).localeCompare(String(a.dueDate))).slice(0, 3);
-  const costTotal = getCostsLastMonths(6).filter((cost) => cost.vehicleId === vehicleId).reduce((sum, cost) => sum + Number(cost.amount), 0);
+    booking.start.slice(0, 10) >= todayISO())).slice(0, 3) : [];
+  const maintenance = showMaintenance ? [...db.maintenance.filter((item) => item.vehicleId === vehicleId)]
+    .sort((a, b) => String(b.dueDate).localeCompare(String(a.dueDate))).slice(0, 3) : [];
+  const costTotal = showCosts ? getCostsLastMonths(6).filter((cost) => cost.vehicleId === vehicleId).reduce((sum, cost) => sum + Number(cost.amount), 0) : 0;
   const status = VEHICLE_STATUS[vehicle.status] || VEHICLE_STATUS.available;
   const tuvDays = daysUntil(vehicle.tuv);
   const serviceDays = daysUntil(vehicle.nextService);
@@ -696,7 +715,7 @@ function openVehicleDetails(vehicleId) {
         <div class="detail-stat"><span>${icon('wrench')} Inspektion</span><strong>${formatDate(vehicle.nextService)}</strong></div>
         <div class="detail-stat"><span>${icon('fuel')} Kraftstoff</span><strong>${esc(vehicle.fuel)}</strong></div>
         <div class="detail-stat"><span>${icon('seat')} Sitzplätze</span><strong>${vehicle.seats}</strong></div>
-        <div class="detail-stat"><span>${icon('receipt')} Kosten 6 Monate</span><strong>${formatMoney(costTotal)}</strong></div>
+        ${showCosts ? `<div class="detail-stat"><span>${icon('receipt')} Kosten 6 Monate</span><strong>${formatMoney(costTotal)}</strong></div>` : ''}
       </div>
       <div class="detail-section">
         <p class="detail-section-title">Stammdaten</p>
@@ -715,19 +734,21 @@ function openVehicleDetails(vehicleId) {
           </div>
         </div>
       </div>
-      <div class="detail-sections-grid">
-        <div class="detail-section">
+      ${(showBookings || showMaintenance) ? `<div class="detail-sections-grid">
+        ${showBookings ? `<div class="detail-section">
           <p class="detail-section-title">Nächste Buchungen</p>
           <div class="detail-list">${bookingRows}</div>
-        </div>
-        <div class="detail-section">
+        </div>` : ''}
+        ${showMaintenance ? `<div class="detail-section">
           <p class="detail-section-title">Wartungshistorie</p>
           <div class="detail-list">${maintenanceRows}</div>
-        </div>
-      </div>`,
-    footer: `
-      <button class="btn btn-ghost" type="button" data-action="edit-vehicle" data-id="${vehicle.id}">${icon('edit')} Bearbeiten</button>
-      <button class="btn btn-primary" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${vehicle.status === 'maintenance' ? 'disabled title="Fahrzeug in Wartung"' : ''}>${icon('calendar')} Fahrzeug buchen</button>`
+        </div>` : ''}
+      </div>` : ''}`,
+    footer: [
+      canManageVehicle ? `<button class="btn btn-ghost" type="button" data-action="edit-vehicle" data-id="${vehicle.id}">${icon('edit')} Bearbeiten</button>` : '',
+      canBookVehicle ? `<button class="btn btn-primary" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${vehicle.status === 'maintenance' ? 'disabled title="Fahrzeug in Wartung"' : ''}>${icon('calendar')} Fahrzeug buchen</button>` : '',
+      !canManageVehicle && !canBookVehicle ? `<button class="btn btn-ghost" type="button" data-close-modal>Schließen</button>` : ''
+    ].join('')
   });
 }
 
@@ -735,11 +756,16 @@ function openVehicleDetails(vehicleId) {
    Wartung & Kosten
    ========================================================= */
 function openMaintenanceModal() {
-  if (!db.vehicles.length) {
-    toast('Kein Fahrzeug vorhanden', 'Bitte legen Sie zuerst ein Fahrzeug an.', 'info');
+  if (!can('maintenance_manage')) {
+    toast('Keine Berechtigung', 'Ihre Rolle darf Wartungen nicht erfassen.', 'error');
     return;
   }
-  const vehicleOptions = db.vehicles.map((vehicle) => `<option value="${vehicle.id}">${esc(vehicle.name)} · ${esc(vehicle.plate)}</option>`).join('');
+  const vehicles = db.vehicles.filter((vehicle) => canOn('vehicle', vehicle.id, 'maintenance_manage'));
+  if (!vehicles.length) {
+    toast('Kein Fahrzeug freigegeben', 'Für Ihre Rolle ist aktuell kein Fahrzeug für Wartungen freigegeben.', 'info');
+    return;
+  }
+  const vehicleOptions = vehicles.map((vehicle) => `<option value="${vehicle.id}">${esc(vehicle.name)} · ${esc(vehicle.plate)}</option>`).join('');
   showModal({
     title: 'Wartung erfassen',
     eyebrow: 'Werkstatt',
@@ -818,11 +844,16 @@ function openMaintenanceModal() {
 }
 
 function openCostModal() {
-  if (!db.vehicles.length) {
-    toast('Kein Fahrzeug vorhanden', 'Bitte legen Sie zuerst ein Fahrzeug an.', 'info');
+  if (!can('costs_manage')) {
+    toast('Keine Berechtigung', 'Ihre Rolle darf Kosten nicht erfassen.', 'error');
     return;
   }
-  const vehicleOptions = db.vehicles.map((vehicle) => `<option value="${vehicle.id}">${esc(vehicle.name)} · ${esc(vehicle.plate)}</option>`).join('');
+  const vehicles = db.vehicles.filter((vehicle) => canOn('vehicle', vehicle.id, 'costs_manage'));
+  if (!vehicles.length) {
+    toast('Kein Fahrzeug freigegeben', 'Für Ihre Rolle ist aktuell kein Fahrzeug für Kosten freigegeben.', 'info');
+    return;
+  }
+  const vehicleOptions = vehicles.map((vehicle) => `<option value="${vehicle.id}">${esc(vehicle.name)} · ${esc(vehicle.plate)}</option>`).join('');
   let pendingReceipt = null;
   showModal({
     title: 'Kosten erfassen',
@@ -968,6 +999,10 @@ function openCostModal() {
 }
 
 function openReceiptModal(costId) {
+  if (!canOn('cost', costId, 'costs_view')) {
+    toast('Keine Berechtigung', 'Für diese Kostenposition fehlt die Berechtigung zum Beleg.', 'error');
+    return;
+  }
   const cost = db.costs.find((item) => item.id === costId);
   if (!cost || !cost.receipt) return;
   const vehicle = getVehicle(cost.vehicleId);
@@ -997,6 +1032,10 @@ function openReceiptModal(costId) {
 }
 
 function openMaintenanceDoneConfirm(maintenanceId) {
+  if (!canOn('maintenance', maintenanceId, 'maintenance_manage')) {
+    toast('Keine Berechtigung', 'Für diese Wartung fehlt die Berechtigung zum Bearbeiten.', 'error');
+    return;
+  }
   const item = db.maintenance.find((entry) => entry.id === maintenanceId);
   if (!item) return;
   const vehicle = getVehicle(item.vehicleId);
@@ -1022,6 +1061,11 @@ function openMaintenanceDoneConfirm(maintenanceId) {
    Fahrer:innen
    ========================================================= */
 function openDriverModal(driverId = null) {
+  const allowed = driverId ? canOn('driver', driverId, 'drivers_manage') : canBase('drivers_manage');
+  if (!allowed) {
+    toast('Keine Berechtigung', 'Ihre Rolle darf diese Fahrer:in nicht bearbeiten.', 'error');
+    return;
+  }
   const existing = driverId ? getDriver(driverId) : null;
   const defaults = { name: '', role: '', department: '', phone: '', email: '', status: 'available', license: ['B'] };
   const driver = existing || defaults;
@@ -1189,6 +1233,10 @@ function openPasswordModal() {
    Benutzerverwaltung
    ========================================================= */
 function openAnonymizeUserConfirm(userId) {
+  if (!capabilities.isAdmin) {
+    toast('Keine Berechtigung', 'Nur Administratoren dürfen Benutzerkonten anonymisieren.', 'error');
+    return;
+  }
   const user = db.users?.find((entry) => entry.id === userId);
   if (!user) return;
   if (user.active) {
@@ -1218,7 +1266,7 @@ function openAnonymizeUserConfirm(userId) {
 }
 
 function openUserModal(userId = null) {
-  if (!capabilities.manageUsers) {
+  if (!capabilities.isAdmin) {
     toast('Keine Berechtigung', 'Nur Administratoren dürfen Benutzer verwalten.', 'error');
     return;
   }
@@ -1227,7 +1275,13 @@ function openUserModal(userId = null) {
     toast('Konto anonymisiert', 'Anonymisierte Konten können nicht mehr bearbeitet werden.', 'info');
     return;
   }
-  const user = existing || { name: '', email: '', role: 'manager', active: true };
+  const roles = db.roles?.length ? db.roles : [
+    { id: 'admin', name: 'Administrator' },
+    { id: 'manager', name: 'Fuhrparkleitung' }
+  ];
+  const defaultRole = roles.find((role) => role.id === 'manager')?.id || roles[0]?.id || 'manager';
+  const user = existing || { name: '', email: '', role: defaultRole, active: true };
+  const roleOptions = roles.map((role) => `<option value="${esc(role.id)}" ${user.role === role.id ? 'selected' : ''}>${esc(role.name)}</option>`).join('');
   showModal({
     title: existing ? 'Benutzer bearbeiten' : 'Benutzer anlegen',
     eyebrow: 'Zugänge',
@@ -1246,10 +1300,8 @@ function openUserModal(userId = null) {
           </div>
           <div class="field">
             <label for="accountRole">Rolle</label>
-            <select class="select" id="accountRole" name="role">
-              <option value="manager" ${user.role === 'manager' ? 'selected' : ''}>Fuhrparkleitung</option>
-              <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Administrator</option>
-            </select>
+            <select class="select" id="accountRole" name="role">${roleOptions}</select>
+            <p class="field-hint">Berechtigungen werden unter „Rollen &amp; Rechte“ verwaltet.</p>
           </div>
           <div class="field">
             <label for="accountPassword">${existing ? 'Neues Passwort' : 'Passwort'} ${existing ? '<span class="optional">optional</span>' : '<span class="optional">*</span>'}</label>
@@ -1282,7 +1334,7 @@ function openUserModal(userId = null) {
     const body = {
       name,
       email,
-      role: String(data.get('role') || 'manager'),
+      role: String(data.get('role') || defaultRole),
       active: existing ? data.get('active') === 'on' : true
     };
     if (password) body.password = password;
@@ -1296,7 +1348,7 @@ function openUserModal(userId = null) {
       await refreshSession();
       applyServerState(state);
       closeModal(false);
-      if (ui.route === 'benutzer' && !capabilities.manageUsers) {
+      if (ui.route === 'benutzer' && !capabilities.isAdmin) {
         location.hash = '#/dashboard';
       } else {
         renderCurrentView();
@@ -1311,9 +1363,485 @@ function openUserModal(userId = null) {
 }
 
 /* =========================================================
+   Benutzer-Ausnahmen
+   ========================================================= */
+function openUserPermissionModal(userId) {
+  if (!capabilities.isAdmin) {
+    toast('Keine Berechtigung', 'Nur Administratoren dürfen Benutzer-Ausnahmen verwalten.', 'error');
+    return;
+  }
+  const user = db.users?.find((entry) => entry.id === userId);
+  if (!user) {
+    toast('Benutzer nicht gefunden', 'Der Zugang ist nicht mehr verfügbar.', 'error');
+    return;
+  }
+  if (user.anonymizedAt) {
+    toast('Konto anonymisiert', 'Anonymisierte Konten können nicht mehr bearbeitet werden.', 'info');
+    return;
+  }
+  if (user.role === 'admin') {
+    toast('Geschützter Zugang', 'Die Administrator-Rolle hat immer vollständigen Zugriff.', 'info');
+    return;
+  }
+  const role = db.roles?.find((entry) => entry.id === user.role);
+  const overrides = user.permissionOverrides || { allow: [], deny: [] };
+  const currentGlobal = {
+    allow: new Set(overrides.allow || []),
+    deny: new Set(overrides.deny || [])
+  };
+  const currentRules = user.objectPermissions || {};
+  const permissionLabels = new Map(permissionGroups.flatMap((group) => group.permissions.map((permission) => [permission.key, `${group.label} · ${permission.label}`])));
+  const dataByKey = {
+    vehicles: db.vehicles,
+    drivers: db.drivers,
+    bookings: db.bookings,
+    costs: db.costs,
+    maintenance: db.maintenance
+  };
+
+  const objectLabel = (typeKey, item) => {
+    if (typeKey === 'vehicle') return `${item.name} · ${item.plate}`;
+    if (typeKey === 'driver') return `${item.name} · ${item.role || 'Fahrer:in'}`;
+    if (typeKey === 'booking') {
+      const vehicle = getVehicle(item.vehicleId);
+      return `${item.purpose} · ${formatDate(item.start)}${vehicle ? ` · ${vehicle.name}` : ''}`;
+    }
+    if (typeKey === 'cost') {
+      const vehicle = getVehicle(item.vehicleId);
+      return `${item.category} · ${formatDate(item.date)}${vehicle ? ` · ${vehicle.name}` : ''} · ${formatMoney(item.amount, 2)}`;
+    }
+    const vehicle = getVehicle(item.vehicleId);
+    return `${item.title} · ${formatDate(item.dueDate)}${vehicle ? ` · ${vehicle.name}` : ''}`;
+  };
+
+  const globalSections = permissionGroups.map((group) => `
+    <fieldset class="permission-group">
+      <legend>${esc(group.label)}</legend>
+      ${group.permissions.map((permission) => {
+        const value = currentGlobal.allow.has(permission.key) ? 'allow' : currentGlobal.deny.has(permission.key) ? 'deny' : 'standard';
+        return `<label class="object-permission">
+          <span>${esc(permission.label)}</span>
+          <select class="select select-sm" data-user-permission="${permission.key}">
+            <option value="standard" ${value === 'standard' ? 'selected' : ''}>Standard</option>
+            <option value="allow" ${value === 'allow' ? 'selected' : ''}>Erlauben</option>
+            <option value="deny" ${value === 'deny' ? 'selected' : ''}>Verweigern</option>
+          </select>
+        </label>`;
+      }).join('')}
+    </fieldset>`).join('');
+
+  const objectSections = objectTypes.map((type, index) => {
+    const items = dataByKey[type.dataKey] || [];
+    const typeRules = currentRules[type.key] || {};
+    const overrideCount = Object.keys(typeRules).length;
+    const rules = items.map((item) => {
+      const rule = typeRules[item.id] || { allow: [], deny: [] };
+      const count = rule.allow.length + rule.deny.length;
+      return `
+        <details class="object-rule" ${count ? 'open' : ''}>
+          <summary>
+            <span class="object-rule-title">${esc(objectLabel(type.key, item))}</span>
+            <span class="badge badge-${count ? 'violet' : 'gray'} no-dot">${count ? `${count} Ausnahmen` : 'Standard'}</span>
+          </summary>
+          <div class="object-rule-body">
+            <div class="object-rule-grid">
+              ${type.permissions.map((permission) => {
+                const value = rule.allow.includes(permission) ? 'allow' : rule.deny.includes(permission) ? 'deny' : 'standard';
+                return `<label class="object-permission">
+                  <span>${esc(permissionLabels.get(permission) || permission)}</span>
+                  <select class="select select-sm" data-user-object-type="${type.key}" data-user-object-id="${item.id}" data-user-permission-key="${permission}">
+                    <option value="standard" ${value === 'standard' ? 'selected' : ''}>Standard</option>
+                    <option value="allow" ${value === 'allow' ? 'selected' : ''}>Erlauben</option>
+                    <option value="deny" ${value === 'deny' ? 'selected' : ''}>Verweigern</option>
+                  </select>
+                </label>`;
+              }).join('')}
+            </div>
+            <button class="btn-link" type="button" data-user-reset-object="${type.key}:${item.id}">Auf Standard zurücksetzen</button>
+          </div>
+        </details>`;
+    }).join('');
+    return `
+      <details class="object-type" ${index === 0 ? 'open' : ''}>
+        <summary>
+          <span><strong>${esc(type.label)}</strong><em>${items.length} Objekte</em></span>
+          <span class="badge badge-${overrideCount ? 'violet' : 'gray'} no-dot">${overrideCount ? `${overrideCount} Objekte mit Ausnahmen` : 'Keine Ausnahmen'}</span>
+        </summary>
+        <div class="object-type-body">
+          ${items.length ? rules : emptyState('filter', 'Keine Objekte vorhanden', `Für ${esc(type.label)} sind noch keine Einträge vorhanden.`, '', true)}
+        </div>
+      </details>`;
+  }).join('');
+
+  showModal({
+    title: 'Benutzer-Ausnahmen',
+    eyebrow: user.name,
+    subtitle: `Persönliche Rechte für ${role ? role.name : user.role}`,
+    size: 'modal-xl',
+    body: `
+      <form id="userPermissionForm" novalidate>
+        ${formAlertMarkup()}
+        <div class="info-banner">
+          ${icon('shield')}
+          <div><strong>Persönliche Regel hat Vorrang</strong><p>Benutzer-Ausnahmen überschreiben die Rollenrechte und die Objekt-Ausnahmen der Rolle. Innerhalb der persönlichen Regeln gilt: Objekt vor global, Erlauben/Verweigern vor Standard. Bei Konflikten gewinnt die Verweigerung.</p></div>
+        </div>
+        <div class="detail-section">
+          <p class="detail-section-title">Modul-Ausnahmen</p>
+          <p class="field-hint">„Standard“ übernimmt das Recht der Rolle „${esc(role ? role.name : user.role)}“. „Erlauben“ und „Verweigern“ gelten unabhängig davon.</p>
+          <div class="permission-grid">${globalSections}</div>
+        </div>
+        <div class="detail-section">
+          <p class="detail-section-title">Objekt-Ausnahmen</p>
+          <p class="field-hint">Feinsteuerung pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung.</p>
+          <div class="object-type-list">${objectSections}</div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="userPermissionForm">${icon('check')} Benutzer-Ausnahmen speichern</button>`
+  });
+
+  const form = $('#userPermissionForm');
+  form.querySelectorAll('[data-user-reset-object]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const [type, id] = String(button.dataset.userResetObject || '').split(':');
+      form.querySelectorAll(`select[data-user-object-type="${CSS.escape(type)}"][data-user-object-id="${CSS.escape(id)}"]`).forEach((select) => {
+        select.value = 'standard';
+      });
+      const details = button.closest('.object-rule');
+      const badge = details?.querySelector('summary .badge');
+      if (badge) {
+        badge.textContent = 'Standard';
+        badge.className = 'badge badge-gray no-dot';
+      }
+    });
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const permissionOverrides = { allow: [], deny: [] };
+    form.querySelectorAll('select[data-user-permission]').forEach((select) => {
+      if (select.value === 'allow') permissionOverrides.allow.push(select.dataset.userPermission);
+      if (select.value === 'deny') permissionOverrides.deny.push(select.dataset.userPermission);
+    });
+    const objectPermissions = {};
+    form.querySelectorAll('select[data-user-object-type][data-user-object-id][data-user-permission-key]').forEach((select) => {
+      if (!['allow', 'deny'].includes(select.value)) return;
+      const type = select.dataset.userObjectType;
+      const id = select.dataset.userObjectId;
+      const permission = select.dataset.userPermissionKey;
+      objectPermissions[type] ||= {};
+      objectPermissions[type][id] ||= { allow: [], deny: [] };
+      objectPermissions[type][id][select.value].push(permission);
+    });
+    const submitButton = modalRoot.querySelector('button[form="userPermissionForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch(`/api/users/${encodeURIComponent(user.id)}/permissions`, {
+        method: 'PATCH',
+        body: { permissionOverrides, objectPermissions }
+      });
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast('Benutzer-Ausnahmen gespeichert', `${user.name} wurde aktualisiert.`);
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+/* =========================================================
+   Rollen & Rechte
+   ========================================================= */
+function openRoleModal(roleId = null) {
+  if (!capabilities.isAdmin) {
+    toast('Keine Berechtigung', 'Nur Administratoren dürfen Rollen verwalten.', 'error');
+    return;
+  }
+  const existing = roleId ? db.roles?.find((role) => role.id === roleId) : null;
+  if (roleId && !existing) {
+    toast('Rolle nicht gefunden', 'Die Rolle ist nicht mehr verfügbar.', 'error');
+    return;
+  }
+  if (existing?.id === 'admin') {
+    toast('Geschützte Rolle', 'Die Administrator-Rolle kann nicht bearbeitet werden.', 'info');
+    return;
+  }
+  if (!permissionGroups.length) {
+    toast('Berechtigungen nicht geladen', 'Bitte laden Sie die Seite neu.', 'error');
+    return;
+  }
+
+  const role = existing || { name: '', permissions: [] };
+  const currentPermissions = new Set(role.permissions || []);
+  const permissionMarkup = permissionGroups.map((group) => `
+    <fieldset class="permission-group">
+      <legend>${esc(group.label)}</legend>
+      ${group.permissions.map((permission) => `
+        <label class="permission-option">
+          <input type="checkbox" name="permissions" value="${esc(permission.key)}" ${currentPermissions.has(permission.key) ? 'checked' : ''}>
+          <span>${esc(permission.label)}</span>
+        </label>`).join('')}
+    </fieldset>`).join('');
+
+  showModal({
+    title: existing ? 'Rolle bearbeiten' : 'Neue Rolle',
+    eyebrow: 'Rollen & Rechte',
+    subtitle: existing ? role.name : 'Eigene Rolle mit individuellen Berechtigungen anlegen.',
+    size: 'modal-lg',
+    body: `
+      <form id="roleForm" novalidate autocomplete="off">
+        ${formAlertMarkup()}
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="roleName">Rollenname <span class="optional">*</span></label>
+            <input class="input" id="roleName" name="name" type="text" value="${esc(role.name)}" required maxlength="120" placeholder="z. B. Buchungsteam">
+          </div>
+        </div>
+        <div class="detail-section">
+          <p class="detail-section-title">Berechtigungen</p>
+          <div class="permission-grid">${permissionMarkup}</div>
+          <div class="info-banner" style="margin-top:14px">
+            ${icon('shield')}
+            <div><strong>Ansichtsrechte werden mitgedacht</strong><p>Verwaltungsrechte ergänzen automatisch die notwendigen Ansichtsrechte. Die Administrator-Rolle bleibt immer vollständig und geschützt.</p></div>
+          </div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="roleForm">${icon('check')} ${existing ? 'Änderungen speichern' : 'Rolle anlegen'}</button>`
+  });
+
+  const form = $('#roleForm');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const name = String(data.get('name') || '').trim();
+    const selectedPermissions = data.getAll('permissions').map(String);
+    if (!name) {
+      showFormError(form, 'Bitte geben Sie einen Rollennamen an.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="roleForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch(existing ? `/api/roles/${encodeURIComponent(existing.id)}` : '/api/roles', {
+        method: existing ? 'PATCH' : 'POST',
+        body: { name, permissions: selectedPermissions }
+      });
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast(existing ? 'Rolle aktualisiert' : 'Rolle angelegt', `${name} wurde gespeichert.`);
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function openRoleObjectModal(roleId) {
+  if (!capabilities.isAdmin) {
+    toast('Keine Berechtigung', 'Nur Administratoren dürfen Objekt-Ausnahmen verwalten.', 'error');
+    return;
+  }
+  const role = db.roles?.find((entry) => entry.id === roleId);
+  if (!role) {
+    toast('Rolle nicht gefunden', 'Die Rolle ist nicht mehr verfügbar.', 'error');
+    return;
+  }
+  if (role.id === 'admin') {
+    toast('Geschützte Rolle', 'Die Administrator-Rolle kann nicht bearbeitet werden.', 'info');
+    return;
+  }
+  if (!objectTypes.length) {
+    toast('Objekttypen nicht geladen', 'Bitte laden Sie die Seite neu.', 'error');
+    return;
+  }
+
+  const permissionLabels = new Map(permissionGroups.flatMap((group) => group.permissions.map((permission) => [permission.key, `${group.label} · ${permission.label}`])));
+  const dataByKey = {
+    vehicles: db.vehicles,
+    drivers: db.drivers,
+    bookings: db.bookings,
+    costs: db.costs,
+    maintenance: db.maintenance
+  };
+  const currentRules = role.objectPermissions || {};
+
+  const objectLabel = (typeKey, item) => {
+    if (typeKey === 'vehicle') return `${item.name} · ${item.plate}`;
+    if (typeKey === 'driver') return `${item.name} · ${item.role || 'Fahrer:in'}`;
+    if (typeKey === 'booking') {
+      const vehicle = getVehicle(item.vehicleId);
+      return `${item.purpose} · ${formatDate(item.start)}${vehicle ? ` · ${vehicle.name}` : ''}`;
+    }
+    if (typeKey === 'cost') {
+      const vehicle = getVehicle(item.vehicleId);
+      return `${item.category} · ${formatDate(item.date)}${vehicle ? ` · ${vehicle.name}` : ''} · ${formatMoney(item.amount, 2)}`;
+    }
+    const vehicle = getVehicle(item.vehicleId);
+    return `${item.title} · ${formatDate(item.dueDate)}${vehicle ? ` · ${vehicle.name}` : ''}`;
+  };
+
+  const objectSections = objectTypes.map((type, index) => {
+    const items = dataByKey[type.dataKey] || [];
+    const typeRules = currentRules[type.key] || {};
+    const overrideCount = Object.keys(typeRules).length;
+    const rules = items.map((item) => {
+      const rule = typeRules[item.id] || { allow: [], deny: [] };
+      const count = rule.allow.length + rule.deny.length;
+      return `
+        <details class="object-rule" ${count ? 'open' : ''}>
+          <summary>
+            <span class="object-rule-title">${esc(objectLabel(type.key, item))}</span>
+            <span class="badge badge-${count ? 'violet' : 'gray'} no-dot">${count ? `${count} Ausnahmen` : 'Standard'}</span>
+          </summary>
+          <div class="object-rule-body">
+            <div class="object-rule-grid">
+              ${type.permissions.map((permission) => {
+                const value = rule.allow.includes(permission) ? 'allow' : rule.deny.includes(permission) ? 'deny' : 'standard';
+                return `<label class="object-permission">
+                  <span>${esc(permissionLabels.get(permission) || permission)}</span>
+                  <select class="select select-sm" data-object-type="${type.key}" data-object-id="${item.id}" data-permission="${permission}">
+                    <option value="standard" ${value === 'standard' ? 'selected' : ''}>Standard</option>
+                    <option value="allow" ${value === 'allow' ? 'selected' : ''}>Erlauben</option>
+                    <option value="deny" ${value === 'deny' ? 'selected' : ''}>Verweigern</option>
+                  </select>
+                </label>`;
+              }).join('')}
+            </div>
+            <button class="btn-link" type="button" data-reset-object="${type.key}:${item.id}">Auf Standard zurücksetzen</button>
+          </div>
+        </details>`;
+    }).join('');
+    return `
+      <details class="object-type" ${index === 0 ? 'open' : ''}>
+        <summary>
+          <span><strong>${esc(type.label)}</strong><em>${items.length} Objekte</em></span>
+          <span class="badge badge-${overrideCount ? 'violet' : 'gray'} no-dot">${overrideCount ? `${overrideCount} Objekte mit Ausnahmen` : 'Keine Ausnahmen'}</span>
+        </summary>
+        <div class="object-type-body">
+          ${items.length ? rules : emptyState('filter', 'Keine Objekte vorhanden', `Für ${esc(type.label)} sind noch keine Einträge vorhanden.`, '', true)}
+        </div>
+      </details>`;
+  }).join('');
+
+  showModal({
+    title: 'Objekt-Ausnahmen',
+    eyebrow: role.name,
+    subtitle: 'Feinsteuerung pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung.',
+    size: 'modal-xl',
+    body: `
+      <form id="roleObjectForm" novalidate>
+        ${formAlertMarkup()}
+        <div class="info-banner">
+          ${icon('shield')}
+          <div><strong>Objekt-Regel hat Vorrang</strong><p>„Erlauben“ überschreibt ein fehlendes Rollenrecht für genau dieses Objekt. „Verweigern“ entzieht das Recht für dieses Objekt. Bei Konflikten gewinnt die Verweigerung. „Standard“ bedeutet: Es gilt das Rollenrecht.</p></div>
+        </div>
+        <div class="object-type-list">${objectSections}</div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="roleObjectForm">${icon('check')} Objekt-Ausnahmen speichern</button>`
+  });
+
+  const form = $('#roleObjectForm');
+  form.querySelectorAll('[data-reset-object]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const [type, id] = String(button.dataset.resetObject || '').split(':');
+      form.querySelectorAll(`select[data-object-type="${CSS.escape(type)}"][data-object-id="${CSS.escape(id)}"]`).forEach((select) => {
+        select.value = 'standard';
+      });
+      const details = button.closest('.object-rule');
+      const badge = details?.querySelector('summary .badge');
+      if (badge) {
+        badge.textContent = 'Standard';
+        badge.className = 'badge badge-gray no-dot';
+      }
+    });
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const objectPermissions = {};
+    form.querySelectorAll('select[data-object-type][data-object-id][data-permission]').forEach((select) => {
+      const effect = select.value;
+      if (!['allow', 'deny'].includes(effect)) return;
+      const type = select.dataset.objectType;
+      const id = select.dataset.objectId;
+      const permission = select.dataset.permission;
+      objectPermissions[type] ||= {};
+      objectPermissions[type][id] ||= { allow: [], deny: [] };
+      objectPermissions[type][id][effect].push(permission);
+    });
+    const submitButton = modalRoot.querySelector('button[form="roleObjectForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch(`/api/roles/${encodeURIComponent(role.id)}/object-permissions`, {
+        method: 'PATCH',
+        body: { objectPermissions }
+      });
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast('Objekt-Ausnahmen gespeichert', `${role.name} wurde aktualisiert.`);
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function openDeleteRoleConfirm(roleId) {
+  if (!capabilities.isAdmin) {
+    toast('Keine Berechtigung', 'Nur Administratoren dürfen Rollen löschen.', 'error');
+    return;
+  }
+  const role = db.roles?.find((entry) => entry.id === roleId);
+  if (!role) return;
+  if (role.isSystem) {
+    toast('Systemrolle', 'Systemrollen können nicht gelöscht werden.', 'info');
+    return;
+  }
+  if (role.userCount > 0) {
+    toast('Rolle ist zugewiesen', 'Weisen Sie die Benutzer:innen zuerst einer anderen Rolle zu.', 'info');
+    return;
+  }
+  openConfirm({
+    title: 'Rolle löschen?',
+    text: `Die Rolle <strong>${esc(role.name)}</strong> wird dauerhaft entfernt. Diese Aktion kann nicht rückgängig gemacht werden.`,
+    confirmLabel: 'Rolle löschen',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/roles/${encodeURIComponent(role.id)}`, { method: 'DELETE' });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Rolle gelöscht', `${role.name} wurde entfernt.`);
+      } catch (error) {
+        toast('Rolle konnte nicht gelöscht werden', error.message, 'error');
+      }
+    }
+  });
+}
+
+/* =========================================================
    Fahrtenbuch
    ========================================================= */
 function openLogModal() {
+  if (!can('logbook_manage')) {
+    toast('Keine Berechtigung', 'Ihre Rolle darf keine Fahrten nachtragen.', 'error');
+    return;
+  }
   const vehicles = db.vehicles;
   const drivers = db.drivers.filter((driver) => driver.status !== 'away');
   if (!vehicles.length || !drivers.length) {

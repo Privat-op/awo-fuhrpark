@@ -26,6 +26,15 @@ const {
 const { storeVehicleImage, storeReceipt, storeBrandingLogo, deleteUpload, uploadPath } = require('../lib/files');
 const { writeAudit } = require('../lib/audit');
 const { anonymizeUser, runAutoAnonymization } = require('../lib/anonymize');
+const {
+  PERMISSION_GROUPS,
+  normalizePermissions,
+  normalizePermissionOverrides,
+  normalizeObjectPermissions,
+  requirePermission,
+  hasEffectivePermission,
+  publicObjectTypes
+} = require('../lib/permissions');
 
 const router = express.Router();
 
@@ -34,12 +43,23 @@ const FUEL_TYPES = ['Diesel', 'Benzin', 'Elektro', 'Hybrid'];
 const VEHICLE_STATUSES = ['available', 'in_use', 'maintenance'];
 const DRIVER_STATUSES = ['available', 'away'];
 const COST_CATEGORIES = ['Kraftstoff', 'Laden', 'Wartung', 'Versicherung', 'Kfz-Steuer', 'Sonstiges'];
-const ROLE_VALUES = ['admin', 'manager'];
 const VEHICLE_COLORS = ['#2563eb', '#0f766e', '#7c3aed', '#059669', '#e2600f', '#0891b2', '#4338ca', '#b45309', '#be123c', '#475569'];
 const DRIVER_COLORS = ['#e2001a', '#0f766e', '#7c3aed', '#2563eb', '#b45309', '#be123c', '#0f8f8a', '#4338ca'];
 
 function sendState(req, res, status = 200) {
-  res.status(status).json(getState(db, req.user));
+  res.status(status).json(getState(db, req.user, req.auth));
+}
+
+function assertCan(req, permission, context = {}) {
+  if (!hasEffectivePermission(req, permission, context)) {
+    throw new HttpError(403, 'Für diese Aktion fehlt die erforderliche Berechtigung.');
+  }
+}
+
+function assertRoleExists(roleId) {
+  const role = db.prepare('SELECT id FROM roles WHERE id = ?').get(roleId);
+  if (!role) throw new HttpError(400, 'Die ausgewählte Rolle existiert nicht.');
+  return roleId;
 }
 
 function getVehicle(id) {
@@ -117,12 +137,15 @@ function mapSessionUser(user) {
    ========================================================= */
 router.get('/session', (req, res) => {
   res.json({
-    user: mapSessionUser(req.user),
+    user: { ...mapSessionUser(req.user), roleName: req.roleName, isAdmin: req.user.role === 'admin' },
     csrfToken: req.session.csrfToken,
+    permissions: [...req.permissions],
+    permissionGroups: PERMISSION_GROUPS,
+    objectTypes: publicObjectTypes(),
     capabilities: {
-      manageFleet: true,
       manageUsers: req.user.role === 'admin',
-      viewCosts: true
+      isAdmin: req.user.role === 'admin',
+      viewCosts: req.permissions.has('costs_view')
     }
   });
 });
@@ -195,7 +218,7 @@ function parseVehiclePayload(body) {
   };
 }
 
-router.post('/vehicles', async (req, res, next) => {
+router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, next) => {
   let imageFile = null;
   try {
     const values = parseVehiclePayload(req.body || {});
@@ -230,6 +253,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
   let newImageFile = null;
   try {
     const existing = ensureVehicleExists(req.params.id);
+    assertCan(req, 'vehicles_manage', { vehicle: existing });
     const values = parseVehiclePayload(req.body || {});
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ? AND id <> ?').get(values.plate, existing.id);
     if (duplicate) throw new HttpError(409, `Das Kennzeichen ${values.plate} ist bereits vergeben.`);
@@ -266,6 +290,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
 router.get('/vehicles/:id/image', (req, res, next) => {
   try {
     const vehicle = ensureVehicleExists(req.params.id);
+    assertCan(req, 'vehicles_view', { vehicle });
     if (!vehicle.image_file) throw new HttpError(404, 'Für dieses Fahrzeug ist kein Bild hinterlegt.');
     const fullPath = uploadPath(vehicle.image_file);
     if (!fullPath) throw new HttpError(404, 'Das Bild wurde nicht gefunden.');
@@ -294,7 +319,7 @@ function parseDriverPayload(body) {
   };
 }
 
-router.post('/drivers', (req, res, next) => {
+router.post('/drivers', requirePermission('drivers_manage'), (req, res, next) => {
   try {
     const values = parseDriverPayload(req.body || {});
     const id = crypto.randomUUID();
@@ -313,6 +338,7 @@ router.post('/drivers', (req, res, next) => {
 router.patch('/drivers/:id', (req, res, next) => {
   try {
     const existing = ensureDriverExists(req.params.id);
+    assertCan(req, 'drivers_manage', { driver: existing });
     const values = parseDriverPayload(req.body || {});
     db.prepare(`
       UPDATE drivers SET name = ?, role = ?, department = ?, phone = ?, email = ?, license = ?, status = ?, color = ?, updated_at = ?
@@ -342,6 +368,7 @@ router.post('/bookings', (req, res, next) => {
     if (end <= start) throw new HttpError(400, 'Das Ende der Buchung muss nach dem Beginn liegen.');
     const vehicle = ensureVehicleExists(vehicleId);
     const driver = ensureDriverExists(driverId);
+    assertCan(req, 'bookings_create', { vehicle, driver });
     if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
     if (driver.status === 'away') throw new HttpError(409, `${driver.name} ist aktuell abwesend.`);
     assertBookingConflict(vehicle.id, driver.id, start, end, vehicle.name, driver.name);
@@ -366,6 +393,8 @@ router.post('/bookings/:id/start', (req, res, next) => {
       if (!booking) throw new HttpError(404, 'Buchung wurde nicht gefunden.');
       if (booking.status !== 'planned') throw new HttpError(409, 'Nur geplante Fahrten können gestartet werden.');
       const vehicle = ensureVehicleExists(booking.vehicle_id);
+      const driver = getDriver(booking.driver_id);
+      assertCan(req, 'bookings_manage', { booking, vehicle, driver });
       if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
       const activeVehicle = db.prepare("SELECT id FROM bookings WHERE vehicle_id = ? AND status = 'active' AND id <> ? LIMIT 1").get(vehicle.id, booking.id);
       if (activeVehicle) throw new HttpError(409, 'Für dieses Fahrzeug läuft bereits eine andere Fahrt.');
@@ -392,6 +421,8 @@ router.post('/bookings/:id/end', (req, res, next) => {
       if (!booking) throw new HttpError(404, 'Buchung wurde nicht gefunden.');
       if (booking.status !== 'active') throw new HttpError(409, 'Nur aktive Fahrten können beendet werden.');
       const vehicle = ensureVehicleExists(booking.vehicle_id);
+      const driver = getDriver(booking.driver_id);
+      assertCan(req, 'bookings_manage', { booking, vehicle, driver });
       const startKm = booking.start_km ?? vehicle.mileage;
       if (endKm < startKm) throw new HttpError(400, 'Der Endkilometerstand darf nicht kleiner als der Startkilometerstand sein.');
       const now = isoNow();
@@ -417,6 +448,9 @@ router.post('/bookings/:id/cancel', (req, res, next) => {
       const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(req.params.id);
       if (!booking) throw new HttpError(404, 'Buchung wurde nicht gefunden.');
       if (!['planned', 'active'].includes(booking.status)) throw new HttpError(409, 'Diese Buchung kann nicht storniert werden.');
+      const vehicle = ensureVehicleExists(booking.vehicle_id);
+      const driver = getDriver(booking.driver_id);
+      assertCan(req, 'bookings_manage', { booking, vehicle, driver });
       const now = isoNow();
       db.prepare("UPDATE bookings SET status = 'canceled', updated_at = ? WHERE id = ?").run(now, booking.id);
       if (booking.status === 'active') syncVehicleStatus(booking.vehicle_id);
@@ -434,6 +468,9 @@ router.delete('/bookings/:id', (req, res, next) => {
     const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(req.params.id);
     if (!booking) throw new HttpError(404, 'Buchung wurde nicht gefunden.');
     if (booking.status !== 'canceled') throw new HttpError(409, 'Nur stornierte Buchungen können gelöscht werden.');
+    const vehicle = ensureVehicleExists(booking.vehicle_id);
+    const driver = getDriver(booking.driver_id);
+    assertCan(req, 'bookings_manage', { booking, vehicle, driver });
     db.prepare('DELETE FROM bookings WHERE id = ?').run(booking.id);
     audit(req, 'delete', 'booking', booking.id, { purpose: booking.purpose });
     sendState(req, res);
@@ -447,13 +484,14 @@ router.post('/trips', (req, res, next) => {
     const body = req.body || {};
     const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
     const driver = ensureDriverExists(requiredString(body.driverId, 'Fahrer:in'));
+    assertCan(req, 'logbook_manage', { vehicle, driver });
     const date = requiredDate(body.date, 'Datum');
     const start = combineDateTime(date, String(body.startTime || ''), 'Start');
     const end = combineDateTime(date, String(body.endTime || ''), 'Ende');
     if (end <= start) throw new HttpError(400, 'Die Ankunftszeit muss nach der Abfahrtszeit liegen.');
     const startKm = intValue(body.startKm, 'Startkilometerstand', { min: 0, max: 10_000_000, required: true });
     const endKm = intValue(body.endKm, 'Endkilometerstand', { min: 0, max: 10_000_000, required: true });
-    if (endKm < startKm) throw new HttpError(400, 'Der Endkilometerstand muss grö�xer oder gleich dem Startkilometerstand sein.');
+    if (endKm < startKm) throw new HttpError(400, 'Der Endkilometerstand muss größer oder gleich dem Startkilometerstand sein.');
 
     const transaction = db.transaction(() => {
       const id = crypto.randomUUID();
@@ -481,7 +519,8 @@ router.post('/maintenance', (req, res, next) => {
   try {
     const body = req.body || {};
     const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
-    const title = requiredString(body.title, 'Ma�xnahme', { max: 160 });
+    assertCan(req, 'maintenance_manage', { vehicle });
+    const title = requiredString(body.title, 'Ma?nahme', { max: 160 });
     const dueDate = requiredDate(body.dueDate, 'Fälligkeitsdatum');
     const id = crypto.randomUUID();
     const now = isoNow();
@@ -503,6 +542,7 @@ router.post('/maintenance/:id/done', (req, res, next) => {
       if (!item) throw new HttpError(404, 'Wartung wurde nicht gefunden.');
       if (item.completed_at || item.status === 'done') throw new HttpError(409, 'Diese Wartung ist bereits erledigt.');
       const vehicle = ensureVehicleExists(item.vehicle_id);
+      assertCan(req, 'maintenance_manage', { maintenance: item, vehicle });
       const now = isoNow();
       db.prepare("UPDATE maintenance SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ?").run(todayISO(), now, item.id);
       let costId = null;
@@ -534,6 +574,7 @@ router.post('/costs', async (req, res, next) => {
   try {
     const body = req.body || {};
     const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
+    assertCan(req, 'costs_manage', { vehicle });
     const date = requiredDate(body.date, 'Datum');
     const category = oneOf(body.category, COST_CATEGORIES, 'Kostenart');
     const amount = numericValue(body.amount, 'Betrag', { min: 0.01, max: 10_000_000 });
@@ -562,6 +603,8 @@ router.delete('/costs/:id', (req, res, next) => {
   try {
     const cost = getCost(req.params.id);
     if (!cost) throw new HttpError(404, 'Kostenposition wurde nicht gefunden.');
+    const vehicle = getVehicle(cost.vehicle_id);
+    assertCan(req, 'costs_manage', { cost, vehicle });
     db.prepare('DELETE FROM costs WHERE id = ?').run(cost.id);
     if (cost.receipt_file) deleteUpload(cost.receipt_file);
     audit(req, 'delete', 'cost', cost.id, { category: cost.category, amount: cost.amount });
@@ -575,6 +618,8 @@ router.get('/costs/:id/receipt', (req, res, next) => {
   try {
     const cost = getCost(req.params.id);
     if (!cost || !cost.receipt_file) throw new HttpError(404, 'Für diese Kostenposition ist kein Beleg hinterlegt.');
+    const vehicle = getVehicle(cost.vehicle_id);
+    assertCan(req, 'costs_view', { cost, vehicle });
     const fullPath = uploadPath(cost.receipt_file);
     if (!fullPath) throw new HttpError(404, 'Der Beleg wurde nicht gefunden.');
     res.setHeader('Cache-Control', 'private, max-age=3600');
@@ -589,7 +634,7 @@ router.get('/costs/:id/receipt', (req, res, next) => {
 /* =========================================================
    Einstellungen
    ========================================================= */
-router.patch('/settings', (req, res, next) => {
+router.patch('/settings', requirePermission('settings_manage'), (req, res, next) => {
   try {
     const body = req.body || {};
     const orgName = requiredString(body.orgName, 'Name der Einrichtung', { max: 160 });
@@ -609,7 +654,7 @@ router.patch('/settings', (req, res, next) => {
   }
 });
 
-router.patch('/branding', requireAdmin, async (req, res, next) => {
+router.patch('/branding', requirePermission('branding_manage'), async (req, res, next) => {
   let newLogoFile = null;
   try {
     const theme = oneOf(req.body?.theme, ['awo', 'neutral'], 'Erscheinungsbild');
@@ -655,6 +700,78 @@ router.patch('/branding', requireAdmin, async (req, res, next) => {
 });
 
 /* =========================================================
+   Rollen und Rechte (nur Admin)
+   ========================================================= */
+router.post('/roles', requireAdmin, (req, res, next) => {
+  try {
+    const name = requiredString(req.body?.name, 'Rollenname', { max: 120 });
+    const permissions = normalizePermissions(req.body?.permissions);
+    const duplicate = db.prepare('SELECT id FROM roles WHERE name = ? COLLATE NOCASE').get(name);
+    if (duplicate) throw new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.');
+    const id = `role-${crypto.randomUUID()}`;
+    const now = isoNow();
+    db.prepare(`
+      INSERT INTO roles (id, name, permissions, object_permissions, is_system, created_at, updated_at)
+      VALUES (?, ?, ?, '{}', 0, ?, ?)
+    `).run(id, name, JSON.stringify(permissions), now, now);
+    audit(req, 'create', 'role', id, { name, permissions });
+    sendState(req, res, 201);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.'));
+    next(error);
+  }
+});
+
+router.patch('/roles/:id', requireAdmin, (req, res, next) => {
+  try {
+    const existing = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
+    if (!existing) throw new HttpError(404, 'Rolle wurde nicht gefunden.');
+    if (existing.id === 'admin') throw new HttpError(409, 'Die Administrator-Rolle ist geschützt und kann nicht bearbeitet werden.');
+    const name = requiredString(req.body?.name, 'Rollenname', { max: 120 });
+    const permissions = normalizePermissions(req.body?.permissions);
+    const duplicate = db.prepare('SELECT id FROM roles WHERE name = ? COLLATE NOCASE AND id <> ?').get(name, existing.id);
+    if (duplicate) throw new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.');
+    db.prepare('UPDATE roles SET name = ?, permissions = ?, updated_at = ? WHERE id = ?')
+      .run(name, JSON.stringify(permissions), isoNow(), existing.id);
+    audit(req, 'update', 'role', existing.id, { name, permissions });
+    sendState(req, res);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.'));
+    next(error);
+  }
+});
+
+router.patch('/roles/:id/object-permissions', requireAdmin, (req, res, next) => {
+  try {
+    const existing = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
+    if (!existing) throw new HttpError(404, 'Rolle wurde nicht gefunden.');
+    if (existing.id === 'admin') throw new HttpError(409, 'Die Administrator-Rolle ist geschützt und kann nicht bearbeitet werden.');
+    const objectPermissions = normalizeObjectPermissions(db, req.body?.objectPermissions);
+    db.prepare('UPDATE roles SET object_permissions = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(objectPermissions), isoNow(), existing.id);
+    audit(req, 'update', 'role_object_permissions', existing.id, { objectPermissions });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/roles/:id', requireAdmin, (req, res, next) => {
+  try {
+    const existing = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
+    if (!existing) throw new HttpError(404, 'Rolle wurde nicht gefunden.');
+    if (existing.is_system) throw new HttpError(409, 'Systemrollen können nicht gelöscht werden.');
+    const assigned = db.prepare('SELECT COUNT(*) AS count FROM users WHERE role = ?').get(existing.id).count;
+    if (assigned > 0) throw new HttpError(409, 'Diese Rolle ist noch Benutzern zugewiesen und kann nicht gelöscht werden.');
+    db.prepare('DELETE FROM roles WHERE id = ?').run(existing.id);
+    audit(req, 'delete', 'role', existing.id, { name: existing.name });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* =========================================================
    Benutzer (nur Admin)
    ========================================================= */
 function passwordValue(value) {
@@ -670,7 +787,7 @@ router.post('/users', requireAdmin, (req, res, next) => {
     const body = req.body || {};
     const email = emailValue(body.email, 'E-Mail');
     const name = requiredString(body.name, 'Name', { max: 120 });
-    const role = oneOf(body.role, ROLE_VALUES, 'Rolle');
+    const role = assertRoleExists(requiredString(body.role, 'Rolle', { max: 120 }));
     const password = passwordValue(body.password);
     const duplicate = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email);
     if (duplicate) throw new HttpError(409, 'Für diese E-Mail-Adresse existiert bereits ein Konto.');
@@ -696,9 +813,10 @@ router.patch('/users/:id', requireAdmin, (req, res, next) => {
     const body = req.body || {};
     const email = emailValue(body.email, 'E-Mail');
     const name = requiredString(body.name, 'Name', { max: 120 });
-    const role = oneOf(body.role, ROLE_VALUES, 'Rolle');
+    const role = assertRoleExists(requiredString(body.role, 'Rolle', { max: 120 }));
     const active = booleanValue(body.active, Boolean(existing.active));
     if (existing.id === req.user.id && !active) throw new HttpError(400, 'Das eigene Konto kann nicht deaktiviert werden.');
+    if (existing.id === req.user.id && role !== existing.role) throw new HttpError(400, 'Die eigene Rolle kann nicht geändert werden.');
     if (existing.role === 'admin' && existing.active && (role !== 'admin' || !active)) {
       const otherAdmins = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND active = 1 AND id <> ?").get(existing.id).count;
       if (otherAdmins === 0) throw new HttpError(400, 'Mindestens ein aktives Administratorkonto muss bestehen bleiben.');
@@ -719,6 +837,9 @@ router.patch('/users/:id', requireAdmin, (req, res, next) => {
         UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, updated_at = ? WHERE id = ?
       `).run(email, name, role, active ? 1 : 0, deactivatedAt, now, existing.id);
     }
+    if (role === 'admin') {
+      db.prepare("UPDATE users SET permission_overrides = '{}', object_permissions = '{}' WHERE id = ?").run(existing.id);
+    }
     if (password || !active) {
       db.prepare("DELETE FROM sessions WHERE sid <> ? AND json_extract(sess, '$.userId') = ?").run(req.sessionID, existing.id);
     }
@@ -726,6 +847,23 @@ router.patch('/users/:id', requireAdmin, (req, res, next) => {
     sendState(req, res);
   } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Diese E-Mail-Adresse ist bereits vergeben.'));
+    next(error);
+  }
+});
+
+router.patch('/users/:id/permissions', requireAdmin, (req, res, next) => {
+  try {
+    const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!existing) throw new HttpError(404, 'Benutzerkonto wurde nicht gefunden.');
+    if (existing.anonymized_at) throw new HttpError(409, 'Anonymisierte Konten können nicht mehr bearbeitet werden.');
+    if (existing.role === 'admin') throw new HttpError(409, 'Die Administrator-Rolle hat immer vollständigen Zugriff.');
+    const permissionOverrides = normalizePermissionOverrides(req.body?.permissionOverrides);
+    const objectPermissions = normalizeObjectPermissions(db, req.body?.objectPermissions);
+    db.prepare('UPDATE users SET permission_overrides = ?, object_permissions = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(permissionOverrides), JSON.stringify(objectPermissions), isoNow(), existing.id);
+    audit(req, 'update', 'user_permissions', existing.id, { permissionOverrides, objectPermissions });
+    sendState(req, res);
+  } catch (error) {
     next(error);
   }
 });

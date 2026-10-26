@@ -234,6 +234,18 @@ const PAGES = [
   { route: 'wartung', title: 'Wartung & TÜV', description: 'Wartungsplan und Hauptuntersuchungen', icon: 'wrench' },
   { route: 'kosten', title: 'Kosten', description: 'Betriebskosten und Auswertungen', icon: 'receipt' },
   { route: 'fahrer', title: 'Fahrer:innen', description: 'Mitarbeitende und Führerscheine', icon: 'users' },
-  { route: 'benutzer', title: 'Benutzer', description: 'Zugänge, Rollen und Berechtigungen', icon: 'id' },
+  { route: 'benutzer', title: 'Benutzer', description: 'Zugänge und Konten verwalten', icon: 'id' },
+  { route: 'rollen', title: 'Rollen & Rechte', description: 'Eigene Rollen und Berechtigungen verwalten', icon: 'shield' },
   { route: 'einstellungen', title: 'Einstellungen', description: 'Organisation und Datenexport', icon: 'settings' }
 ];
+
+const ROUTE_PERMISSIONS = {
+  fahrzeuge: 'vehicles_view',
+  buchungen: 'bookings_view',
+  fahrtenbuch: 'logbook_view',
+  wartung: 'maintenance_view',
+  kosten: 'costs_view',
+  fahrer: 'drivers_view',
+  benutzer: 'admin',
+  rollen: 'admin'
+};

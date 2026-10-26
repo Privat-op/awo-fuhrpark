@@ -20,6 +20,15 @@ const { writeAudit } = require('./lib/audit');
 const { getBranding } = require('./lib/branding');
 const { uploadPath } = require('./lib/files');
 const { startAutoAnonymizer } = require('./lib/anonymize');
+const {
+  ensureRoles,
+  getRolePermissions,
+  getRoleObjectPermissions,
+  getUserPermissionOverrides,
+  getUserObjectPermissions,
+  effectiveGlobalPermissions,
+  roleName
+} = require('./lib/permissions');
 const apiRouter = require('./routes/api');
 
 const app = express();
@@ -95,6 +104,7 @@ function wantsJson(req) {
 }
 
 initSchema();
+ensureRoles(db);
 bootstrap(db);
 try {
   startAutoAnonymizer();
@@ -232,6 +242,15 @@ function requireAuth(req, res, next) {
     return res.redirect('/login');
   }
   req.user = user;
+  req.auth = {
+    isAdmin: user.role === 'admin',
+    rolePermissions: new Set(getRolePermissions(db, user.role)),
+    roleObjectPermissions: getRoleObjectPermissions(db, user.role),
+    userPermissionOverrides: getUserPermissionOverrides(db, user.id),
+    userObjectPermissions: getUserObjectPermissions(db, user.id)
+  };
+  req.permissions = effectiveGlobalPermissions(req.auth);
+  req.roleName = roleName(db, user.role);
   if (!req.session.csrfToken) req.session.csrfToken = randomToken();
   return next();
 }

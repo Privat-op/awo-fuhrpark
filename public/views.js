@@ -174,7 +174,7 @@ function renderVehicleCard(vehicle) {
           </div>
           <div class="vehicle-card-actions">
             <button class="btn btn-ghost btn-sm" type="button" data-action="vehicle-details" data-id="${vehicle.id}">Details</button>
-            <button class="btn btn-soft btn-sm" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${disabled ? 'disabled title="Fahrzeug befindet sich in Wartung"' : ''}>${icon('calendar')} Buchen</button>
+            ${canOn('vehicle', vehicle.id, 'bookings_create') ? `<button class="btn btn-soft btn-sm" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${disabled ? 'disabled title="Fahrzeug befindet sich in Wartung"' : ''}>${icon('calendar')} Buchen</button>` : ''}
           </div>
         </div>
       </div>
@@ -198,7 +198,7 @@ function renderVehicles() {
 
   return `
     ${pageHead('Fuhrpark', 'Fahrzeuge', `${db.vehicles.length} Fahrzeuge · ${available} verfügbar · ${inUse} unterwegs · ${maintenance} in Wartung`,
-      `<button class="btn btn-ghost" type="button" data-action="new-vehicle">${icon('plus')} Fahrzeug anlegen</button>`)}
+      canBase('vehicles_manage') ? `<button class="btn btn-ghost" type="button" data-action="new-vehicle">${icon('plus')} Fahrzeug anlegen</button>` : '')}
     <div class="toolbar" style="margin-bottom:16px">
       <div class="filter-tabs">
         ${[['all', 'Alle', db.vehicles.length], ['Pkw', 'Pkw', typeCount('Pkw')], ['Transporter', 'Transporter', typeCount('Transporter')], ['Bus', 'Bus', typeCount('Bus')]]
@@ -254,14 +254,27 @@ function renderAlertItem(alert) {
 
 function renderOnboarding(greeting, displayName) {
   const today = todayISO();
+  const canCreateVehicle = canBase('vehicles_manage');
+  const canCreateDriver = canBase('drivers_manage');
+  const canPlanTrip = can('bookings_create');
+  const hasSetupRight = canCreateVehicle || canCreateDriver;
+  const headActions = [
+    canCreateVehicle ? `<button class="btn btn-primary" type="button" data-action="new-vehicle">${icon('plus')} Erstes Fahrzeug</button>` : '',
+    canPlanTrip ? `<button class="btn btn-ghost" type="button" data-action="new-booking">${icon('calendar')} Erste Buchung</button>` : ''
+  ].join('');
+  const asideActions = [
+    canCreateVehicle ? `<button class="btn btn-primary" type="button" data-action="new-vehicle">${icon('car')} Fahrzeug anlegen</button>` : '',
+    canCreateDriver ? `<button class="btn btn-ghost" type="button" data-action="new-driver">${icon('users')} Fahrer:in anlegen</button>` : ''
+  ].join('');
   return `
-    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Willkommen im Fuhrparkmanagement. Legen Sie jetzt die ersten Stammdaten an.',
-      `<button class="btn btn-primary" type="button" data-action="new-vehicle">${icon('plus')} Erstes Fahrzeug</button>`)}
+    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`,
+      hasSetupRight ? 'Willkommen im Fuhrparkmanagement. Legen Sie jetzt die ersten Stammdaten an.' : 'Willkommen im Fuhrparkmanagement. Die Stammdaten werden von der Administration gepflegt.',
+      headActions)}
     <section class="card onboarding-card">
       <div class="onboarding-inner">
         <div>
           <span class="eyebrow">Erste Schritte</span>
-          <h3 class="onboarding-title">Ihr Fuhrpark ist startklar – es fehlen nur noch die Stammdaten.</h3>
+          <h3 class="onboarding-title">${hasSetupRight ? 'Ihr Fuhrpark ist startklar – es fehlen nur noch die Stammdaten.' : 'Der Fuhrpark ist startklar – die Stammdaten werden zentral gepflegt.'}</h3>
           <p class="onboarding-text">Sobald Fahrzeuge und Fahrer:innen hinterlegt sind, können Sie Fahrten planen, Kilometerstände erfassen und Wartungen im Blick behalten.</p>
           <div class="onboarding-steps">
             <div class="onboarding-step"><span class="onboarding-step-number">1</span><div><strong>Fahrzeug anlegen</strong><span>Kennzeichen, Standort, Kilometerstand und HU/AU erfassen.</span></div></div>
@@ -270,9 +283,8 @@ function renderOnboarding(greeting, displayName) {
           </div>
         </div>
         <aside class="onboarding-aside">
-          <span class="onboarding-aside-label">Jetzt loslegen</span>
-          <button class="btn btn-primary" type="button" data-action="new-vehicle">${icon('car')} Fahrzeug anlegen</button>
-          <button class="btn btn-ghost" type="button" data-action="new-driver">${icon('users')} Fahrer:in anlegen</button>
+          <span class="onboarding-aside-label">${hasSetupRight ? 'Jetzt loslegen' : 'Hinweis'}</span>
+          ${asideActions || '<p class="onboarding-text">Für das Anlegen von Stammdaten fehlt Ihrer Rolle die Berechtigung. Wenden Sie sich an die Administration.</p>'}
           <div class="onboarding-hint">
             ${icon('shield')}
             <p>Alle Daten werden zentral auf dem Server gespeichert und sind für berechtigte Kolleg:innen sichtbar.</p>
@@ -287,6 +299,12 @@ function renderDashboard() {
   const displayName = firstName(currentUser?.name || '') || 'Team';
   const greetingHour = new Date().getHours();
   const greeting = greetingHour < 11 ? 'Guten Morgen' : greetingHour < 18 ? 'Guten Tag' : 'Guten Abend';
+  const hasFleetAccess = ['vehicles_view', 'bookings_view', 'logbook_view', 'maintenance_view', 'costs_view', 'drivers_view'].some(can);
+  if (!hasFleetAccess) {
+    return `
+      ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Ihre Rolle enthält derzeit keine Einsicht in Fuhrparkdaten.', '<a class="btn btn-ghost" href="#/einstellungen">Einstellungen</a>')}
+      <section class="card">${emptyState('shield', 'Keine Fuhrparkdaten freigegeben', 'Die Administration kann Ihrer Rolle unter „Rollen & Rechte“ die passenden Berechtigungen zuweisen.', '<a class="btn btn-primary btn-sm" href="#/einstellungen">Zum Konto</a>')}</section>`;
+  }
   if (!db.vehicles.length && !db.drivers.length) return renderOnboarding(greeting, displayName);
   const todayBookings = sortByDateAsc(db.bookings.filter((booking) => booking.start.slice(0, 10) === today && booking.status !== 'canceled'));
   const activeToday = todayBookings.filter((booking) => booking.status === 'active').length;
@@ -348,10 +366,12 @@ function renderDashboard() {
       </div>`;
   }).join('');
 
+  const dashboardActions = [
+    canBase('vehicles_manage') ? `<button class="btn btn-ghost" type="button" data-action="new-vehicle">${icon('plus')} Fahrzeug</button>` : '',
+    can('bookings_create') ? `<button class="btn btn-primary" type="button" data-action="new-booking">${icon('plus')} Neue Buchung</button>` : ''
+  ].join('');
   return `
-    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Hier ist der aktuelle Überblick über Ihren Fuhrpark.',
-      `<button class="btn btn-ghost" type="button" data-action="new-vehicle">${icon('plus')} Fahrzeug</button>
-       <button class="btn btn-primary" type="button" data-action="new-booking">${icon('plus')} Neue Buchung</button>`)}
+    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Hier ist der aktuelle Überblick über Ihren Fuhrpark.', dashboardActions)}
 
     <div class="kpi-grid">
       ${metricCard({
@@ -442,7 +462,7 @@ function renderDashboard() {
           <div class="card-head-side"><span class="badge badge-green no-dot">${todayBookings.length} Buchungen</span></div>
         </div>
         <div class="card-body tight">
-          ${todayRows ? `<div class="trip-list">${todayRows}</div>` : emptyState('calendar', 'Heute keine Fahrten', 'Für heute sind noch keine Buchungen eingetragen.', '<button class="btn btn-soft btn-sm" type="button" data-action="new-booking">Buchung anlegen</button>', true)}
+          ${todayRows ? `<div class="trip-list">${todayRows}</div>` : emptyState('calendar', 'Heute keine Fahrten', 'Für heute sind noch keine Buchungen eingetragen.', can('bookings_create') ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-booking">Buchung anlegen</button>' : '', true)}
         </div>
         <div class="card-footer">
           <span class="text-muted">${activeToday} aktiv · ${todayBookings.filter((booking) => booking.status === 'planned').length} geplant</span>
@@ -499,6 +519,7 @@ function renderWeekCalendar() {
   const bookings = getWeekBookings(weekStart);
   const totalMinutes = bookings.reduce((sum, booking) => sum + durationMinutes(booking.start, booking.end), 0);
   const today = todayISO();
+  const canCreate = can('bookings_create');
 
   const headerDays = days.map((dateISO) => {
     const date = parseISODate(dateISO);
@@ -511,12 +532,12 @@ function renderWeekCalendar() {
   }).join('');
 
   const rows = db.vehicles.map((vehicle) => {
+    const vehicleCanCreate = canCreate && canOn('vehicle', vehicle.id, 'bookings_create');
     const cells = days.map((dateISO) => {
       const dayBookings = sortByDateAsc(bookings.filter((booking) => booking.vehicleId === vehicle.id && booking.start.slice(0, 10) === dateISO));
-      return `<div class="cal-cell ${dateISO === today ? 'is-today' : ''}" role="button" tabindex="0"
-        data-action="calendar-cell" data-vehicle="${vehicle.id}" data-date="${dateISO}"
-        aria-label="Buchung für ${esc(vehicle.name)} am ${formatDate(dateISO)} anlegen">
-        ${dayBookings.length ? dayBookings.map(renderCalendarBookingChip).join('') : '<span class="cal-add">+</span>'}
+      return `<div class="cal-cell ${dateISO === today ? 'is-today' : ''} ${vehicleCanCreate ? '' : 'is-readonly'}"
+        ${vehicleCanCreate ? `role="button" tabindex="0" data-action="calendar-cell" data-vehicle="${vehicle.id}" data-date="${dateISO}" aria-label="Buchung für ${esc(vehicle.name)} am ${formatDate(dateISO)} anlegen"` : ''}>
+        ${dayBookings.length ? dayBookings.map(renderCalendarBookingChip).join('') : (vehicleCanCreate ? '<span class="cal-add">+</span>' : '')}
       </div>`;
     }).join('');
     return `
@@ -566,7 +587,7 @@ function renderWeekCalendar() {
           <span><strong>${formatDecimal(totalMinutes / 60, 1)} h</strong> gebucht</span>
           <span><strong>${activeTodayCount()}</strong> Fahrten aktiv</span>
         </div>
-        <span>Freie Zelle anklicken, um eine Buchung anzulegen.</span>
+        <span>${canCreate ? 'Freie Zelle anklicken, um eine Buchung anzulegen.' : 'Lesende Ansicht – keine Berechtigung zum Buchen.'}</span>
       </div>
     </div>`;
 }
@@ -583,7 +604,7 @@ function renderBookingTable() {
   const ordered = [...upcoming, ...past];
 
   if (!ordered.length) {
-    return emptyState('calendar', 'Noch keine Buchungen', 'Legen Sie die erste Fahrt für Ihren Fuhrpark an.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-booking">Buchung anlegen</button>');
+    return emptyState('calendar', 'Noch keine Buchungen', 'Legen Sie die erste Fahrt für Ihren Fuhrpark an.', can('bookings_create') ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-booking">Buchung anlegen</button>' : '');
   }
 
   const rows = ordered.map((booking) => {
@@ -613,9 +634,9 @@ function renderBookingTable() {
         <td>
           <div class="table-actions">
             <button class="table-action" type="button" title="Details ansehen" aria-label="Details ansehen" data-action="booking-details" data-id="${booking.id}">${icon('info')}</button>
-            ${booking.status === 'planned' ? `<button class="table-action" type="button" title="Fahrt starten" aria-label="Fahrt starten" data-action="start-booking" data-id="${booking.id}">${icon('play')}</button>` : ''}
-            ${booking.status === 'active' ? `<button class="table-action" type="button" title="Fahrt beenden" aria-label="Fahrt beenden" data-action="end-booking" data-id="${booking.id}">${icon('stop')}</button>` : ''}
-            ${booking.status === 'planned' ? `<button class="table-action danger" type="button" title="Buchung stornieren" aria-label="Buchung stornieren" data-action="cancel-booking" data-id="${booking.id}">${icon('x')}</button>` : ''}
+            ${canOn('booking', booking.id, 'bookings_manage') && booking.status === 'planned' ? `<button class="table-action" type="button" title="Fahrt starten" aria-label="Fahrt starten" data-action="start-booking" data-id="${booking.id}">${icon('play')}</button>` : ''}
+            ${canOn('booking', booking.id, 'bookings_manage') && booking.status === 'active' ? `<button class="table-action" type="button" title="Fahrt beenden" aria-label="Fahrt beenden" data-action="end-booking" data-id="${booking.id}">${icon('stop')}</button>` : ''}
+            ${canOn('booking', booking.id, 'bookings_manage') && booking.status === 'planned' ? `<button class="table-action danger" type="button" title="Buchung stornieren" aria-label="Buchung stornieren" data-action="cancel-booking" data-id="${booking.id}">${icon('x')}</button>` : ''}
           </div>
         </td>
       </tr>`;
@@ -634,13 +655,15 @@ function renderBookings() {
   const plannedCount = db.bookings.filter((booking) => booking.status === 'planned').length;
   const activeCount = db.bookings.filter((booking) => booking.status === 'active').length;
   if (!db.vehicles.length) {
+    const setupActions = [
+      canBase('drivers_manage') ? `<button class="btn btn-ghost" type="button" data-action="new-driver">${icon('plus')} Fahrer:in</button>` : '',
+      canBase('vehicles_manage') ? `<button class="btn btn-primary" type="button" data-action="new-vehicle">${icon('plus')} Fahrzeug anlegen</button>` : ''
+    ].join('');
     return `
-      ${pageHead('Planung', 'Buchungen', 'Fahrten planen, Konflikte vermeiden und den Überblick behalten.',
-        `<button class="btn btn-ghost" type="button" data-action="new-driver">${icon('plus')} Fahrer:in</button>
-         <button class="btn btn-primary" type="button" data-action="new-vehicle">${icon('plus')} Fahrzeug anlegen</button>`)}
-      <section class="card">${emptyState('calendar', 'Noch keine Buchungen möglich', 'Legen Sie zuerst ein Fahrzeug und eine Fahrer:in an, um Fahrten zu planen.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-vehicle">Erstes Fahrzeug anlegen</button>')}</section>`;
+      ${pageHead('Planung', 'Buchungen', 'Fahrten planen, Konflikte vermeiden und den Überblick behalten.', setupActions)}
+      <section class="card">${emptyState('calendar', 'Noch keine Buchungen möglich', 'Legen Sie zuerst ein Fahrzeug und eine Fahrer:in an, um Fahrten zu planen.', canBase('vehicles_manage') ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-vehicle">Erstes Fahrzeug anlegen</button>' : '')}</section>`;
   }
-  const headerActions = `<button class="btn btn-primary" type="button" data-action="new-booking">${icon('plus')} Neue Buchung</button>`;
+  const headerActions = can('bookings_create') ? `<button class="btn btn-primary" type="button" data-action="new-booking">${icon('plus')} Neue Buchung</button>` : '';
   return `
     ${pageHead('Planung', 'Buchungen', 'Fahrten planen, Konflikte vermeiden und den Überblick behalten.', headerActions)}
     ${!db.drivers.length ? `<div class="info-banner" style="margin-bottom:14px">${icon('info')}<div><strong>Noch keine Fahrer:innen</strong><p>Buchungen benötigen eine Fahrer:in. Legen Sie dafür zuerst einen Eintrag unter „Fahrer:innen“ an.</p></div></div>` : ''}
@@ -692,7 +715,7 @@ function renderTuvList() {
         <div><h3 class="card-title">HU/AU im Blick</h3><p class="card-sub">Nächste Hauptuntersuchungen der Flotte</p></div>
         <span class="badge badge-amber">${db.vehicles.filter((vehicle) => daysUntil(vehicle.tuv) <= 60).length} fällig</span>
       </div>
-      <div class="card-body tight">${rows || emptyState('shield', 'Keine Fahrzeuge vorhanden', 'Sobald Fahrzeuge angelegt sind, erscheinen hier die HU/AU-Termine.', '<button class="btn btn-soft btn-sm" type="button" data-action="new-vehicle">Fahrzeug anlegen</button>', true)}</div>
+      <div class="card-body tight">${rows || emptyState('shield', 'Keine Fahrzeuge vorhanden', 'Sobald Fahrzeuge angelegt sind, erscheinen hier die HU/AU-Termine.', canBase('vehicles_manage') ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-vehicle">Fahrzeug anlegen</button>' : '', true)}</div>
       <div class="card-footer">
         <span class="text-muted">Warnung ab 60 Tagen</span>
         <a class="link-arrow" href="#/fahrzeuge">Fahrzeuge ${icon('arrow-right')}</a>
@@ -735,7 +758,7 @@ function renderMaintenanceTable() {
           <div class="table-actions">
             ${isMaintenanceDone(item)
               ? `<span class="table-action" title="Erledigt" style="color:var(--green);pointer-events:none">${icon('check')}</span>`
-              : `<button class="table-action" type="button" title="Als erledigt markieren" aria-label="Als erledigt markieren" data-action="mark-maintenance-done" data-id="${item.id}">${icon('check')}</button>`}
+              : (canOn('maintenance', item.id, 'maintenance_manage') ? `<button class="table-action" type="button" title="Als erledigt markieren" aria-label="Als erledigt markieren" data-action="mark-maintenance-done" data-id="${item.id}">${icon('check')}</button>` : '')}
           </div>
         </td>
       </tr>`;
@@ -758,15 +781,16 @@ function renderMaintenance() {
   const alerts = getAlerts();
   const maintenanceCosts = getCostsLastMonths(6).filter((cost) => cost.category === 'Wartung').reduce((sum, cost) => sum + Number(cost.amount), 0);
   const doneCount = db.maintenance.filter(isMaintenanceDone).length;
+  const showCosts = can('costs_view');
 
   return `
     ${pageHead('Fuhrpark', 'Wartung & TÜV', 'Werkstatttermine, Hauptuntersuchungen und offene Arbeiten zentral verwalten.',
-      `<button class="btn btn-primary" type="button" data-action="new-maintenance">${icon('plus')} Wartung erfassen</button>`)}
+      can('maintenance_manage') ? `<button class="btn btn-primary" type="button" data-action="new-maintenance">${icon('plus')} Wartung erfassen</button>` : '')}
     <div class="kpi-grid">
       ${metricCard({ label: 'Offene Arbeiten', value: openItems.length, sub: `${doneCount} in den letzten Monaten erledigt`, iconName: 'wrench', tint: 'tint-amber', badge: '<span class="badge badge-amber no-dot">Wartungsplan</span>', glow: 'rgba(184,104,0,.06)' })}
       ${metricCard({ label: 'Überfällig', value: overdueMaintenance.length + tuvOverdue.length, sub: `${overdueMaintenance.length} Wartungen · ${tuvOverdue.length} HU/AU`, iconName: 'alert', tint: 'tint-red', badge: `<span class="badge badge-${(overdueMaintenance.length + tuvOverdue.length) ? 'red' : 'green'}">${(overdueMaintenance.length + tuvOverdue.length) ? 'Handeln' : 'Ok'}</span>` })}
       ${metricCard({ label: 'HU/AU in 60 Tagen', value: tuvDue.length, sub: `${db.vehicles.length} Fahrzeuge insgesamt`, iconName: 'shield', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">TÜV</span>', glow: 'rgba(37,99,235,.055)' })}
-      ${metricCard({ label: 'Wartungskosten', value: formatMoney(maintenanceCosts), sub: 'Letzte 6 Monate', iconName: 'receipt', tint: 'tint-violet', badge: '<span class="badge badge-violet no-dot">Betrieb</span>', glow: 'rgba(109,71,217,.05)' })}
+      ${showCosts ? metricCard({ label: 'Wartungskosten', value: formatMoney(maintenanceCosts), sub: 'Letzte 6 Monate', iconName: 'receipt', tint: 'tint-violet', badge: '<span class="badge badge-violet no-dot">Betrieb</span>', glow: 'rgba(109,71,217,.05)' }) : ''}
     </div>
 
     <div class="grid grid-dash mt-18">
@@ -785,7 +809,7 @@ function renderMaintenance() {
         ${renderMaintenanceTable()}
         <div class="card-footer">
           <span class="text-muted">Erledigte Arbeiten werden automatisch als Kosten erfasst.</span>
-          <a class="link-arrow" href="#/kosten">Kosten ${icon('arrow-right')}</a>
+          ${showCosts ? `<a class="link-arrow" href="#/kosten">Kosten ${icon('arrow-right')}</a>` : ''}
         </div>
       </section>
       ${renderTuvList()}
@@ -830,6 +854,7 @@ function renderDonut(categories, total) {
 }
 
 function renderCosts() {
+  const canManageCosts = can('costs_manage');
   const entries = getCostsLastMonths(6);
   const total = entries.reduce((sum, cost) => sum + Number(cost.amount), 0);
   const months = lastMonths(6);
@@ -875,8 +900,8 @@ function renderCosts() {
         <td class="num"><span class="money">${formatMoney(cost.amount, 2)}</span></td>
         <td>
           <div class="table-actions">
-            ${cost.receipt ? `<button class="table-action" type="button" title="Beleg ansehen" aria-label="Beleg ansehen" data-action="view-receipt" data-id="${cost.id}">${icon('paperclip')}</button>` : ''}
-            <button class="table-action danger" type="button" title="Kosten löschen" aria-label="Kosten löschen" data-action="delete-cost" data-id="${cost.id}">${icon('trash')}</button>
+            ${cost.receipt && canOn('cost', cost.id, 'costs_view') ? `<button class="table-action" type="button" title="Beleg ansehen" aria-label="Beleg ansehen" data-action="view-receipt" data-id="${cost.id}">${icon('paperclip')}</button>` : ''}
+            ${canOn('cost', cost.id, 'costs_manage') ? `<button class="table-action danger" type="button" title="Kosten löschen" aria-label="Kosten löschen" data-action="delete-cost" data-id="${cost.id}">${icon('trash')}</button>` : ''}
           </div>
         </td>
       </tr>`;
@@ -902,7 +927,7 @@ function renderCosts() {
 
   return `
     ${pageHead('Controlling', 'Kosten', 'Betriebskosten der letzten sechs Monate transparent aufbereitet.',
-      `<button class="btn btn-primary" type="button" data-action="new-cost">${icon('plus')} Kosten erfassen</button>`)}
+      canManageCosts ? `<button class="btn btn-primary" type="button" data-action="new-cost">${icon('plus')} Kosten erfassen</button>` : '')}
     <div class="kpi-grid">
       ${metricCard({ label: 'Gesamtkosten', value: formatMoney(total), sub: 'Letzte 6 Monate', iconName: 'receipt', tint: 'tint-red', badge: '<span class="badge badge-red no-dot">Betrieb</span>' })}
       ${metricCard({ label: 'Durchschnitt pro Monat', value: formatMoney(total / 6), sub: 'Über alle Fahrzeuge', iconName: 'trend-up', tint: 'tint-blue', badge: `<span class="badge badge-blue no-dot">${db.vehicles.length} Fahrzeuge</span>`, glow: 'rgba(37,99,235,.055)' })}
@@ -955,7 +980,7 @@ function renderCosts() {
         </table></div>` : emptyState('receipt', 'Keine Kosten gefunden', 'Ändern Sie die Filter oder erfassen Sie eine neue Kostenposition.', '', true)}
         <div class="card-footer">
           <span class="text-muted">Belege werden serverseitig gespeichert und sind für berechtigte Nutzer:innen abrufbar.</span>
-          <button class="btn-link" type="button" data-action="new-cost">${icon('plus')} Kosten hinzufügen</button>
+          ${canManageCosts ? `<button class="btn-link" type="button" data-action="new-cost">${icon('plus')} Kosten hinzufügen</button>` : ''}
         </div>
       </section>
 
@@ -971,6 +996,8 @@ function renderCosts() {
    Fahrtenbuch
    ========================================================= */
 function renderLogbook() {
+  const canManageLog = can('logbook_manage');
+  const canExportLog = can('logbook_export');
   const trips = getCompletedBookings(ui.logPeriod);
   const distance = trips.reduce((sum, trip) => sum + Math.max(0, Number(trip.endKm || 0) - Number(trip.startKm || 0)), 0);
   const average = trips.length ? distance / trips.length : 0;
@@ -994,8 +1021,10 @@ function renderLogbook() {
 
   return `
     ${pageHead('Fahrtenbuch', 'Fahrtenbuch', 'Gefahrene Strecken, Kilometerstände und Fahrer:innen dokumentieren.',
-      `<button class="btn btn-ghost" type="button" data-action="export-log">${icon('download')} CSV exportieren</button>
-       <button class="btn btn-primary" type="button" data-action="new-log">${icon('plus')} Fahrt nachtragen</button>`)}
+      [
+        canExportLog ? `<button class="btn btn-ghost" type="button" data-action="export-log">${icon('download')} CSV exportieren</button>` : '',
+        canManageLog ? `<button class="btn btn-primary" type="button" data-action="new-log">${icon('plus')} Fahrt nachtragen</button>` : ''
+      ].join(''))}
     <div class="kpi-grid">
       ${metricCard({ label: 'Fahrten', value: trips.length, sub: ui.logPeriod === 'all' ? 'Alle dokumentierten Fahrten' : 'Im ausgewählten Zeitraum', iconName: 'route', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">Fahrtenbuch</span>', glow: 'rgba(37,99,235,.055)' })}
       ${metricCard({ label: 'Gefahrene Kilometer', value: formatNumber(distance), sub: `≈ ${formatDecimal(average, 0)} km pro Fahrt`, iconName: 'gauge', tint: 'tint-green', badge: '<span class="badge badge-green no-dot">Strecke</span>', glow: 'rgba(17,138,91,.055)' })}
@@ -1016,7 +1045,7 @@ function renderLogbook() {
       ${trips.length ? `<div class="table-wrap"><table class="data-table">
         <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Fahrer:in</th><th>Zweck / Zeit</th><th>Kilometerstand</th><th class="num">Distanz</th><th class="num"></th></tr></thead>
         <tbody>${rows}</tbody>
-      </table></div>` : emptyState('book', 'Keine Fahrten im Zeitraum', 'Wählen Sie einen anderen Zeitraum oder tragen Sie eine Fahrt nach.', '<button class="btn btn-soft btn-sm" type="button" data-action="new-log">Fahrt nachtragen</button>')}
+      </table></div>` : emptyState('book', 'Keine Fahrten im Zeitraum', 'Wählen Sie einen anderen Zeitraum oder tragen Sie eine Fahrt nach.', canManageLog ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-log">Fahrt nachtragen</button>' : '')}
       <div class="table-footer">
         <span>${trips.length} Fahrten · ${new Set(trips.map((trip) => trip.driverId)).size} Fahrer:innen</span>
         <span>Gesamtstrecke: <strong>${formatNumber(distance)} km</strong></span>
@@ -1047,7 +1076,7 @@ function renderDrivers() {
             <p>${esc(driver.role)} · ${esc(driver.department)}</p>
             <span class="badge badge-${status.badge}">${status.label}</span>
           </div>
-          <button class="table-action" type="button" title="Fahrer:in bearbeiten" aria-label="Fahrer:in bearbeiten" data-action="edit-driver" data-id="${driver.id}">${icon('edit')}</button>
+          ${canOn('driver', driver.id, 'drivers_manage') ? `<button class="table-action" type="button" title="Fahrer:in bearbeiten" aria-label="Fahrer:in bearbeiten" data-action="edit-driver" data-id="${driver.id}">${icon('edit')}</button>` : ''}
         </div>
         <div class="driver-contact">
           <a href="tel:${esc(driver.phone.replace(/\s/g, ''))}">${icon('phone')}<span>${esc(driver.phone)}</span></a>
@@ -1062,21 +1091,21 @@ function renderDrivers() {
 
   return `
     ${pageHead('Team', 'Fahrer:innen', 'Führerscheine, Kontaktdaten und Einsätze der Mitarbeitenden verwalten.',
-      `<button class="btn btn-primary" type="button" data-action="new-driver">${icon('plus')} Fahrer:in anlegen</button>`)}
+      canBase('drivers_manage') ? `<button class="btn btn-primary" type="button" data-action="new-driver">${icon('plus')} Fahrer:in anlegen</button>` : '')}
     <div class="summary-chips" style="margin-bottom:18px">
       <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${available}</strong> verfügbar</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--blue)"></span><strong>${active}</strong> im Einsatz</span>
       <span class="summary-chip"><span class="dot" style="--dot:#aeb5c0"></span><strong>${away}</strong> abwesend</span>
       <span class="summary-chip">${icon('id')} ${db.drivers.filter((driver) => driver.license.some((license) => ['BE', 'C1', 'D1'].includes(license))).length} mit erweitertem Führerschein</span>
     </div>
-    ${db.drivers.length ? `<div class="driver-grid">${cards}</div>` : emptyState('users', 'Noch keine Fahrer:innen', 'Legen Sie die ersten Mitarbeitenden an, damit Fahrten zugewiesen werden können.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-driver">Fahrer:in anlegen</button>')}`;
+    ${db.drivers.length ? `<div class="driver-grid">${cards}</div>` : emptyState('users', 'Noch keine Fahrer:innen', 'Legen Sie die ersten Mitarbeitenden an, damit Fahrten zugewiesen werden können.', canBase('drivers_manage') ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-driver">Fahrer:in anlegen</button>' : '')}`;
 }
 
 /* =========================================================
    Einstellungen
    ========================================================= */
 function renderBrandingCard() {
-  if (!capabilities.manageUsers) return '';
+  if (!can('branding_manage')) return '';
   const theme = db.settings.theme === 'neutral' ? 'neutral' : 'awo';
   const neutralName = db.settings.brandName || db.settings.orgName || 'Fuhrparkmanagement';
   const pickColor = (value, fallback) => /^#[0-9a-fA-F]{6}$/.test(value || '') ? value : fallback;
@@ -1226,8 +1255,10 @@ function renderBrandingCard() {
 }
 
 function renderSettings() {
-  const roleLabel = ROLE_LABELS[currentUser?.role] || currentUser?.role || '—';
-  const adminLink = capabilities.manageUsers
+  const roleDisplay = currentUser?.roleName || roleLabel(currentUser?.role);
+  const canEditSettings = can('settings_manage');
+  const disabled = canEditSettings ? '' : 'disabled';
+  const adminLink = capabilities.isAdmin
     ? `<a class="link-arrow" href="#/benutzer">Benutzer verwalten ${icon('arrow-right')}</a>`
     : '';
   return `
@@ -1241,23 +1272,24 @@ function renderSettings() {
             <span class="badge badge-green no-dot">Server gespeichert</span>
           </div>
           <div class="card-body">
+            ${!canEditSettings ? `<div class="info-banner" style="margin-bottom:16px">${icon('shield')}<div><strong>Nur lesend</strong><p>Für das Bearbeiten der Organisationsdaten fehlt Ihrer Rolle die Berechtigung.</p></div></div>` : ''}
             <div class="form-grid">
               <div class="field field-full">
                 <label for="orgName">Name der Einrichtung</label>
-                <input class="input" id="orgName" name="orgName" value="${esc(db.settings.orgName)}" required>
+                <input class="input" id="orgName" name="orgName" value="${esc(db.settings.orgName)}" required ${disabled}>
                 <p class="field-hint">Wird in den Stammdaten und in der Organisation verwendet.</p>
               </div>
               <div class="field">
                 <label for="orgLocation">Standort</label>
-                <input class="input" id="orgLocation" name="location" value="${esc(db.settings.location)}" required>
+                <input class="input" id="orgLocation" name="location" value="${esc(db.settings.location)}" required ${disabled}>
               </div>
               <div class="field">
                 <label for="orgPhone">Telefon</label>
-                <input class="input" id="orgPhone" name="phone" value="${esc(db.settings.phone)}">
+                <input class="input" id="orgPhone" name="phone" value="${esc(db.settings.phone)}" ${disabled}>
               </div>
               <div class="field field-full">
                 <label for="orgEmail">E-Mail Fuhrpark</label>
-                <input class="input" id="orgEmail" name="email" type="email" value="${esc(db.settings.email)}">
+                <input class="input" id="orgEmail" name="email" type="email" value="${esc(db.settings.email)}" ${disabled}>
               </div>
             </div>
             <div class="info-banner" style="margin-top:16px">
@@ -1267,7 +1299,7 @@ function renderSettings() {
           </div>
           <div class="card-footer">
             <span class="text-muted">Änderungen gelten sofort für alle angemeldeten Nutzer:innen.</span>
-            <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+            ${canEditSettings ? `<button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>` : ''}
           </div>
         </form>
 
@@ -1280,7 +1312,7 @@ function renderSettings() {
               <div class="detail-list-item">
                 <span class="mini-icon tint-blue">${icon('download')}</span>
                 <div class="main"><strong>Datenexport</strong><span>Fahrzeuge, Fahrer:innen, Buchungen, Wartungen und Kosten. Bild- und Belegdateien sind separat im Datenverzeichnis gesichert.</span></div>
-                <button class="btn btn-ghost btn-sm" type="button" data-action="export-data">Exportieren</button>
+                ${can('export_data') ? `<button class="btn btn-ghost btn-sm" type="button" data-action="export-data">Exportieren</button>` : '<span class="text-muted">Keine Berechtigung</span>'}
               </div>
               <div class="detail-list-item">
                 <span class="mini-icon tint-green">${icon('shield')}</span>
@@ -1289,7 +1321,7 @@ function renderSettings() {
             </div>
             <div class="version-box">
               <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-              <span class="version-badge">Server-MVP 0.4.0</span>
+              <span class="version-badge">Server-MVP 0.5.0</span>
             </div>
           </div>
         </section>
@@ -1303,7 +1335,7 @@ function renderSettings() {
               <div class="detail-list-item">
                 ${driverAvatar({ name: currentUser?.name || '?', color: '#e2001a' }, 'avatar-lg')}
                 <div class="main"><strong>${esc(currentUser?.name || '—')}</strong><span>${esc(currentUser?.email || '—')}</span></div>
-                <span class="badge badge-red no-dot">${esc(roleLabel)}</span>
+                <span class="badge badge-red no-dot">${esc(roleDisplay)}</span>
               </div>
             </div>
             <div class="setting-actions">
@@ -1359,7 +1391,7 @@ function renderSettings() {
    Benutzerverwaltung
    ========================================================= */
 function renderUsers() {
-  if (!capabilities.manageUsers) return emptyState('shield', 'Keine Berechtigung', 'Die Benutzerverwaltung ist Administratoren vorbehalten.');
+  if (!capabilities.isAdmin) return emptyState('shield', 'Keine Berechtigung', 'Die Benutzerverwaltung ist Administratoren vorbehalten.');
   const users = db.users || [];
   const admins = users.filter((user) => user.role === 'admin' && user.active).length;
   const active = users.filter((user) => user.active).length;
@@ -1369,6 +1401,9 @@ function renderUsers() {
   const rows = users.map((user) => {
     const isSelf = currentUser?.id === user.id;
     const isAnonymized = Boolean(user.anonymizedAt);
+    const overrideCount = (user.permissionOverrides?.allow?.length || 0) + (user.permissionOverrides?.deny?.length || 0)
+      + Object.values(user.objectPermissions || {}).reduce((sum, entries) => sum + Object.keys(entries || {}).length, 0);
+    const canEditOverrides = !isAnonymized && user.role !== 'admin';
     const meta = isAnonymized
       ? `Anonymisiert${user.anonymizedAt ? ` am ${formatDate(user.anonymizedAt)}` : ''}`
       : !user.active
@@ -1376,7 +1411,8 @@ function renderUsers() {
         : user.createdAt ? `Angelegt am ${formatDate(user.createdAt)}` : '';
     const actions = isAnonymized
       ? `<span class="table-action" title="Anonymisiert" aria-label="Anonymisiert" style="pointer-events:none;color:var(--muted)">${icon('user-x')}</span>`
-      : `<button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button>
+      : `${canEditOverrides ? `<button class="table-action" type="button" title="Benutzer-Ausnahmen bearbeiten" aria-label="Benutzer-Ausnahmen bearbeiten" data-action="edit-user-permissions" data-id="${user.id}">${icon('filter')}</button>` : ''}
+         <button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button>
          ${!user.active ? `<button class="table-action danger" type="button" title="Benutzerkonto anonymisieren" aria-label="Benutzerkonto anonymisieren" data-action="anonymize-user" data-id="${user.id}">${icon('user-x')}</button>` : ''}`;
     return `
       <tr>
@@ -1387,21 +1423,26 @@ function renderUsers() {
           </div>
         </td>
         <td><span class="table-main">${esc(user.email)}</span></td>
-        <td><span class="badge badge-${user.role === 'admin' ? 'red' : 'blue'}">${esc(ROLE_LABELS[user.role] || user.role)}</span></td>
+        <td>
+          <span class="badge badge-${user.role === 'admin' ? 'red' : 'blue'}">${esc(roleLabel(user.role))}</span>
+          ${overrideCount ? `<span class="badge badge-violet no-dot">${overrideCount} Ausnahmen</span>` : ''}
+        </td>
         <td>${isAnonymized ? '<span class="badge badge-gray">Anonymisiert</span>' : user.active ? '<span class="badge badge-green">Aktiv</span>' : '<span class="badge badge-gray">Deaktiviert</span>'}</td>
         <td>${isAnonymized ? '<span class="text-muted">—</span>' : user.lastLoginAt ? `<span class="table-main">${formatDateTime(user.lastLoginAt)}</span>` : '<span class="text-muted">Noch nicht angemeldet</span>'}</td>
         <td><div class="table-actions">${actions}</div></td>
       </tr>`;
   }).join('');
   return `
-    ${pageHead('Organisation', 'Benutzer', 'Zugänge, Rollen und Berechtigungen der Fuhrparkverwaltung verwalten.',
-      `<button class="btn btn-primary" type="button" data-action="new-user">${icon('plus')} Benutzer anlegen</button>`)}
+    ${pageHead('Organisation', 'Benutzer', 'Zugänge, Rollen und persönliche Ausnahmen der Fuhrparkverwaltung verwalten.',
+      `<a class="btn btn-ghost" href="#/rollen">${icon('shield')} Rollen &amp; Rechte</a>
+       <button class="btn btn-primary" type="button" data-action="new-user">${icon('plus')} Benutzer anlegen</button>`)}
     <div class="summary-chips" style="margin-bottom:18px">
       <span class="summary-chip"><strong>${users.length}</strong> Zugänge</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${active}</strong> aktiv</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--awo)"></span><strong>${admins}</strong> Administrator:in</span>
       <span class="summary-chip"><span class="dot" style="--dot:#aeb5c0"></span><strong>${deactivated}</strong> deaktiviert</span>
       <span class="summary-chip"><span class="dot" style="--dot:#94a3b8"></span><strong>${anonymized}</strong> anonymisiert</span>
+      <span class="summary-chip">${icon('shield')} ${db.roles?.length || 0} Rollen</span>
     </div>
     <section class="card">
       <div class="card-head bordered">
@@ -1446,6 +1487,84 @@ function renderUsers() {
 }
 
 /* =========================================================
+   Rollen & Rechte
+   ========================================================= */
+function renderRoles() {
+  if (!capabilities.isAdmin) return emptyState('shield', 'Keine Berechtigung', 'Die Rollenverwaltung ist Administratoren vorbehalten.');
+  const roles = db.roles || [];
+  const customCount = roles.filter((role) => !role.isSystem).length;
+  const assigned = roles.reduce((sum, role) => sum + Number(role.userCount || 0), 0);
+
+  const permissionSummary = (role) => permissionGroups.map((group) => {
+    const count = group.permissions.filter((permission) => role.permissions.includes(permission.key)).length;
+    return `<span class="badge badge-${count ? 'blue' : 'gray'} no-dot">${esc(group.label)} ${count}/${group.permissions.length}</span>`;
+  }).join('');
+
+  const rows = roles.map((role) => {
+    const protectedRole = role.id === 'admin';
+    const objectOverrideCount = Object.values(role.objectPermissions || {})
+      .reduce((sum, entries) => sum + Object.keys(entries || {}).length, 0);
+    const typeBadge = protectedRole
+      ? '<span class="badge badge-red no-dot">Geschützt</span>'
+      : role.isSystem
+        ? '<span class="badge badge-gray no-dot">Systemrolle</span>'
+        : '<span class="badge badge-blue no-dot">Eigene Rolle</span>';
+    const actions = protectedRole
+      ? `<span class="table-action" title="Die Administrator-Rolle ist geschützt" aria-label="Geschützt" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`
+      : [
+          `<button class="table-action" type="button" title="Rolle bearbeiten" aria-label="Rolle bearbeiten" data-action="edit-role" data-id="${role.id}">${icon('edit')}</button>`,
+          `<button class="table-action" type="button" title="Objekt-Ausnahmen bearbeiten" aria-label="Objekt-Ausnahmen bearbeiten" data-action="edit-role-objects" data-id="${role.id}">${icon('filter')}</button>`,
+          !role.isSystem && !role.userCount
+            ? `<button class="table-action danger" type="button" title="Rolle löschen" aria-label="Rolle löschen" data-action="delete-role" data-id="${role.id}">${icon('trash')}</button>`
+            : ''
+        ].join('');
+    return `
+      <tr>
+        <td>
+          <span class="table-main">${esc(role.name)}</span>
+          <span class="table-sub">${protectedRole ? 'Voller Zugriff auf alle Funktionen' : role.isSystem ? 'Standardrolle der Fuhrparkleitung' : 'Individuell konfigurierbare Rolle'}</span>
+        </td>
+        <td><span class="table-main">${role.userCount || 0}</span><span class="table-sub">${role.userCount === 1 ? 'Benutzer:in' : 'Benutzer:innen'}</span></td>
+        <td>
+          <div class="role-permissions">
+            ${permissionSummary(role)}
+            ${objectOverrideCount ? `<span class="badge badge-violet no-dot">${objectOverrideCount} Objekt-Ausnahmen</span>` : ''}
+          </div>
+        </td>
+        <td>${typeBadge}</td>
+        <td><div class="table-actions">${actions}</div></td>
+      </tr>`;
+  }).join('');
+
+  return `
+    ${pageHead('Organisation', 'Rollen & Rechte', 'Modulrechte und feine Objekt-Ausnahmen für Fahrzeuge, Fahrer:innen, Buchungen, Kosten und Wartung.',
+      `<button class="btn btn-primary" type="button" data-action="new-role">${icon('plus')} Rolle anlegen</button>`)}
+    <div class="summary-chips" style="margin-bottom:18px">
+      <span class="summary-chip"><strong>${roles.length}</strong> Rollen</span>
+      <span class="summary-chip"><span class="dot" style="--dot:var(--blue)"></span><strong>${customCount}</strong> eigene Rollen</span>
+      <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${assigned}</strong> Zuweisungen</span>
+    </div>
+    <section class="card">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Rollenübersicht</h3><p class="card-sub">Modulrechte steuern und pro Objekt übersteuern</p></div>
+        <span class="badge badge-gray no-dot">${roles.length} gesamt</span>
+      </div>
+      ${roles.length ? `<div class="table-wrap is-scroll"><table class="data-table">
+        <thead><tr><th>Rolle</th><th>Benutzer:innen</th><th>Berechtigungen</th><th>Typ</th><th class="num">Aktion</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : emptyState('shield', 'Noch keine Rollen', 'Legen Sie die erste eigene Rolle an.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-role">Rolle anlegen</button>')}
+      <div class="card-footer">
+        <span class="text-muted">Verwaltungsrechte schließen die zugehörigen Ansichtsrechte automatisch ein.</span>
+        <span class="text-muted">Objekt-Ausnahmen haben Vorrang vor den Modulrechten.</span>
+      </div>
+    </section>
+    <div class="info-banner" style="margin-top:18px">
+      ${icon('shield')}
+      <div><strong>Rollen wirken sofort</strong><p>Änderungen an einer Rolle gelten beim nächsten Seitenaufruf für alle zugewiesenen Benutzer:innen. Eine Rolle kann erst gelöscht werden, wenn ihr keine Konten mehr zugewiesen sind.</p></div>
+    </div>`;
+}
+
+/* =========================================================
    Routen
    ========================================================= */
 const ROUTES = {
@@ -1457,5 +1576,6 @@ const ROUTES = {
   kosten: renderCosts,
   fahrer: renderDrivers,
   benutzer: renderUsers,
+  rollen: renderRoles,
   einstellungen: renderSettings
 };

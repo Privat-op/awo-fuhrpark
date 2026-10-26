@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>{{PAGE_TITLE}}</title>
   <link rel="icon" href="{{FAVICON}}">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=0.5.0">
 </head>
 <body>
   <a class="skip-link" href="#view">Zum Inhalt springen</a>
@@ -119,6 +119,9 @@
           <a class="nav-item" href="#/benutzer" data-route="benutzer" id="navUsers" hidden>
             <svg class="icon"><use href="#i-id"></use></svg><span>Benutzer</span>
           </a>
+          <a class="nav-item" href="#/rollen" data-route="rollen" id="navRoles" hidden>
+            <svg class="icon"><use href="#i-shield"></use></svg><span>Rollen &amp; Rechte</span>
+          </a>
           <a class="nav-item" href="#/einstellungen" data-route="einstellungen">
             <svg class="icon"><use href="#i-settings"></use></svg><span>Einstellungen</span>
           </a>
@@ -209,9 +212,9 @@
   <div id="modalRoot"></div>
   <div class="toast-stack" id="toastRoot" role="status" aria-live="polite"></div>
 
-  <script src="data.js"></script>
-  <script src="views.js"></script>
-  <script src="modals.js"></script>
-  <script src="app.js"></script>
+  <script src="data.js?v=0.5.0"></script>
+  <script src="views.js?v=0.5.0"></script>
+  <script src="modals.js?v=0.5.0"></script>
+  <script src="app.js?v=0.5.0"></script>
 </body>
 </html>

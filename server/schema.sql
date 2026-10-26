@@ -5,11 +5,23 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL COLLATE NOCASE UNIQUE,
   name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'manager')),
+  role TEXT NOT NULL,
+  permission_overrides TEXT NOT NULL DEFAULT '{}',
+  object_permissions TEXT NOT NULL DEFAULT '{}',
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   last_login_at TEXT,
   deactivated_at TEXT,
   anonymized_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS roles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  permissions TEXT NOT NULL DEFAULT '[]',
+  object_permissions TEXT NOT NULL DEFAULT '{}',
+  is_system INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
