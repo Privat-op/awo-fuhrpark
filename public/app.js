@@ -114,7 +114,7 @@ function applyState(state) {
   if (!state || typeof state !== 'object') throw new Error('Der Server hat keine gültigen Daten geliefert.');
   db = {
     meta: state.meta || { version: 1, seededAt: null },
-    settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', accentColor: '#0f766e', sidebarStyle: 'dark', pageBackground: '#f4f5f7', surfaceColor: '#ffffff', textColor: '#191c23', mutedColor: '#737a88', borderColor: '#e7e9ee', logoUrl: null },
+    settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', accentColor: '#0f766e', sidebarStyle: 'dark', pageBackground: '#f4f5f7', surfaceColor: '#ffffff', textColor: '#191c23', mutedColor: '#737a88', borderColor: '#e7e9ee', autoAnonymizeDays: 0, logoUrl: null },
     vehicles: Array.isArray(state.vehicles) ? state.vehicles : [],
     drivers: Array.isArray(state.drivers) ? state.drivers : [],
     bookings: Array.isArray(state.bookings) ? state.bookings : [],
@@ -737,6 +737,7 @@ function dispatchAction(element) {
     case 'remove-branding-logo': removeBrandingLogoPreview(); break;
     case 'set-brand-accent': setBrandAccent(element.dataset.color); break;
     case 'reset-brand-colors': resetBrandColors(); break;
+    case 'anonymize-user': openAnonymizeUserConfirm(id); break;
     default: break;
   }
 }
@@ -1046,33 +1047,61 @@ function bindEvents() {
       return;
     }
 
-    if (form.id !== 'settingsForm') return;
-    event.preventDefault();
-    const data = new FormData(form);
-    const orgName = String(data.get('orgName') || '').trim();
-    if (!orgName) {
-      toast('Name fehlt', 'Bitte geben Sie den Namen der Einrichtung an.', 'error');
+    if (form.id === 'settingsForm') {
+      event.preventDefault();
+      const data = new FormData(form);
+      const orgName = String(data.get('orgName') || '').trim();
+      if (!orgName) {
+        toast('Name fehlt', 'Bitte geben Sie den Namen der Einrichtung an.', 'error');
+        return;
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      try {
+        const state = await apiFetch('/api/settings', {
+          method: 'PATCH',
+          body: {
+            orgName,
+            location: String(data.get('location') || '').trim(),
+            phone: String(data.get('phone') || '').trim(),
+            email: String(data.get('email') || '').trim()
+          }
+        });
+        applyServerState(state);
+        if (ui.route === 'einstellungen') renderCurrentView();
+        toast('Einstellungen gespeichert', 'Die Organisationsdaten wurden auf dem Server aktualisiert.');
+      } catch (error) {
+        toast('Speichern fehlgeschlagen', error.message, 'error');
+      } finally {
+        if (submitButton) submitButton.disabled = false;
+      }
       return;
     }
-    const submitButton = form.querySelector('button[type="submit"]');
-    if (submitButton) submitButton.disabled = true;
-    try {
-      const state = await apiFetch('/api/settings', {
-        method: 'PATCH',
-        body: {
-          orgName,
-          location: String(data.get('location') || '').trim(),
-          phone: String(data.get('phone') || '').trim(),
-          email: String(data.get('email') || '').trim()
-        }
-      });
-      applyServerState(state);
-      if (ui.route === 'einstellungen') renderCurrentView();
-      toast('Einstellungen gespeichert', 'Die Organisationsdaten wurden auf dem Server aktualisiert.');
-    } catch (error) {
-      toast('Speichern fehlgeschlagen', error.message, 'error');
-    } finally {
-      if (submitButton) submitButton.disabled = false;
+
+    if (form.id === 'userPolicyForm') {
+      event.preventDefault();
+      const data = new FormData(form);
+      const days = Number(String(data.get('autoAnonymizeDays') || '0'));
+      if (!Number.isInteger(days) || days < 0 || days > 3650) {
+        toast('Ungültige Frist', 'Bitte geben Sie eine ganze Zahl zwischen 0 und 3650 Tagen an.', 'error');
+        return;
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      try {
+        const state = await apiFetch('/api/user-policy', {
+          method: 'PATCH',
+          body: { autoAnonymizeDays: days }
+        });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Frist gespeichert', days > 0 ? `Deaktivierte Konten werden nach ${days} Tagen automatisch anonymisiert.` : 'Die automatische Anonymisierung ist deaktiviert.');
+      } catch (error) {
+        toast('Frist konnte nicht gespeichert werden', error.message, 'error');
+      } finally {
+        if (submitButton) submitButton.disabled = false;
+      }
+      return;
     }
   });
 

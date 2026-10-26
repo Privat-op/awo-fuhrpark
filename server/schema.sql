@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK (role IN ('admin', 'manager')),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   last_login_at TEXT,
+  deactivated_at TEXT,
+  anonymized_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -114,6 +116,7 @@ CREATE TABLE IF NOT EXISTS settings (
   text_color TEXT NOT NULL DEFAULT '#191c23',
   muted_color TEXT NOT NULL DEFAULT '#737a88',
   border_color TEXT NOT NULL DEFAULT '#e7e9ee',
+  auto_anonymize_days INTEGER NOT NULL DEFAULT 0,
   seeded_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

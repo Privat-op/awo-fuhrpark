@@ -19,6 +19,7 @@ const { HttpError } = require('./lib/validation');
 const { writeAudit } = require('./lib/audit');
 const { getBranding } = require('./lib/branding');
 const { uploadPath } = require('./lib/files');
+const { startAutoAnonymizer } = require('./lib/anonymize');
 const apiRouter = require('./routes/api');
 
 const app = express();
@@ -95,6 +96,11 @@ function wantsJson(req) {
 
 initSchema();
 bootstrap(db);
+try {
+  startAutoAnonymizer();
+} catch (error) {
+  console.warn('Automatische Anonymisierung konnte nicht gestartet werden:', error.message);
+}
 
 app.disable('x-powered-by');
 if (trustProxy) app.set('trust proxy', 1);

@@ -99,6 +99,8 @@ function mapUser(row) {
     role: row.role,
     active: Boolean(row.active),
     lastLoginAt: row.last_login_at,
+    deactivatedAt: row.deactivated_at || null,
+    anonymizedAt: row.anonymized_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -132,6 +134,7 @@ function getState(db, user) {
       textColor: settingsRow?.text_color || '#191c23',
       mutedColor: settingsRow?.muted_color || '#737a88',
       borderColor: settingsRow?.border_color || '#e7e9ee',
+      autoAnonymizeDays: Number(settingsRow?.auto_anonymize_days) || 0,
       logoUrl: settingsRow?.logo_file
         ? `/branding/logo?v=${encodeURIComponent(settingsRow.updated_at || '')}`
         : null
@@ -146,7 +149,7 @@ function getState(db, user) {
 
   if (user.role === 'admin') {
     state.users = db.prepare(`
-      SELECT id, email, name, role, active, last_login_at, created_at, updated_at
+      SELECT id, email, name, role, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
       FROM users ORDER BY created_at, name
     `).all().map(mapUser);
   }

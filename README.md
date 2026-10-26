@@ -6,7 +6,8 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 
 - Zentrale Anmeldung mit Sessions, CSRF-Schutz und Rate-Limits
 - Rollen: **Administrator** und **Fuhrparkleitung**
-- Benutzerverwaltung inklusive Passwort-Reset und eigener Passwortänderung
+- Benutzerverwaltung inklusive Rollen, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
+- Automatische Anonymisierung deaktivierter Konten nach einer global einstellbaren Frist
 - Fahrzeuge mit Bild-Upload, Standort, Kilometerstand, HU/AU und Service
 - Buchungen mit serverseitiger Konfliktprüfung für Fahrzeug und Fahrer:in
 - Fahrtenbuch mit Fahrtstart, Fahrtende und manueller Nachtragung
@@ -100,6 +101,18 @@ Danach den Container neu starten. Der Server sollte nicht ungeschützt direkt au
 | Fuhrparkleitung | Alle Fuhrparkfunktionen und Einstellungen, keine Benutzerverwaltung |
 
 Nur Administratoren können weitere Konten anlegen, Rollen ändern, Konten deaktivieren und Passwörter zurücksetzen. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
+
+## Benutzerkonten und Anonymisierung
+
+Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Deaktivierte Konten können anschließend anonymisiert werden:
+
+- Name, E-Mail-Adresse und Passwort werden dauerhaft entfernt.
+- Alle Sitzungen des Kontos werden beendet.
+- Verknüpfte Buchungen, Kosten und Audit-Einträge bleiben erhalten.
+- E-Mail-Adressen in zugehörigen Audit-Einträgen werden bereinigt.
+- Das Konto bleibt deaktiviert und kann nicht reaktiviert werden.
+
+Unter **Benutzer → Automatische Anonymisierung** lässt sich eine globale Frist in Tagen einstellen. `0` deaktiviert die Automatik. Die Prüfung läuft beim Serverstart, nach dem Speichern der Frist und anschließend regelmäßig. Nur Konten, die bereits deaktiviert und älter als die Frist sind, werden erfasst.
 
 ## Erscheinungsbild
 

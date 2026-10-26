@@ -25,6 +25,7 @@ const {
 } = require('../lib/validation');
 const { storeVehicleImage, storeReceipt, storeBrandingLogo, deleteUpload, uploadPath } = require('../lib/files');
 const { writeAudit } = require('../lib/audit');
+const { anonymizeUser, runAutoAnonymization } = require('../lib/anonymize');
 
 const router = express.Router();
 
@@ -691,6 +692,7 @@ router.patch('/users/:id', requireAdmin, (req, res, next) => {
   try {
     const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
     if (!existing) throw new HttpError(404, 'Benutzerkonto wurde nicht gefunden.');
+    if (existing.anonymized_at) throw new HttpError(409, 'Anonymisierte Konten können nicht mehr bearbeitet werden.');
     const body = req.body || {};
     const email = emailValue(body.email, 'E-Mail');
     const name = requiredString(body.name, 'Name', { max: 120 });
@@ -705,14 +707,17 @@ router.patch('/users/:id', requireAdmin, (req, res, next) => {
     if (duplicate) throw new HttpError(409, 'Für diese E-Mail-Adresse existiert bereits ein Konto.');
     const password = body.password ? passwordValue(body.password) : null;
     const now = isoNow();
+    let deactivatedAt = existing.deactivated_at;
+    if (active) deactivatedAt = null;
+    else if (existing.active || !deactivatedAt) deactivatedAt = now;
     if (password) {
       db.prepare(`
-        UPDATE users SET email = ?, name = ?, role = ?, active = ?, password_hash = ?, updated_at = ? WHERE id = ?
-      `).run(email, name, role, active ? 1 : 0, bcrypt.hashSync(password, 12), now, existing.id);
+        UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, password_hash = ?, updated_at = ? WHERE id = ?
+      `).run(email, name, role, active ? 1 : 0, deactivatedAt, bcrypt.hashSync(password, 12), now, existing.id);
     } else {
       db.prepare(`
-        UPDATE users SET email = ?, name = ?, role = ?, active = ?, updated_at = ? WHERE id = ?
-      `).run(email, name, role, active ? 1 : 0, now, existing.id);
+        UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, updated_at = ? WHERE id = ?
+      `).run(email, name, role, active ? 1 : 0, deactivatedAt, now, existing.id);
     }
     if (password || !active) {
       db.prepare("DELETE FROM sessions WHERE sid <> ? AND json_extract(sess, '$.userId') = ?").run(req.sessionID, existing.id);
@@ -721,6 +726,31 @@ router.patch('/users/:id', requireAdmin, (req, res, next) => {
     sendState(req, res);
   } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Diese E-Mail-Adresse ist bereits vergeben.'));
+    next(error);
+  }
+});
+
+router.post('/users/:id/anonymize', requireAdmin, (req, res, next) => {
+  try {
+    anonymizeUser(req.params.id, { actorId: req.user.id, reason: 'manual' });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/user-policy', requireAdmin, (req, res, next) => {
+  try {
+    const days = intValue(req.body?.autoAnonymizeDays, 'Frist für automatische Anonymisierung', {
+      min: 0,
+      max: 3650,
+      required: true
+    });
+    db.prepare('UPDATE settings SET auto_anonymize_days = ?, updated_at = ? WHERE id = 1').run(days, isoNow());
+    audit(req, 'update', 'user_policy', '1', { autoAnonymizeDays: days });
+    runAutoAnonymization();
+    sendState(req, res);
+  } catch (error) {
     next(error);
   }
 });

@@ -1188,12 +1188,45 @@ function openPasswordModal() {
 /* =========================================================
    Benutzerverwaltung
    ========================================================= */
+function openAnonymizeUserConfirm(userId) {
+  const user = db.users?.find((entry) => entry.id === userId);
+  if (!user) return;
+  if (user.active) {
+    toast('Konto ist aktiv', 'Ein Konto muss zuerst deaktiviert werden.', 'info');
+    return;
+  }
+  if (user.anonymizedAt) {
+    toast('Bereits anonymisiert', 'Dieses Konto ist bereits anonymisiert.', 'info');
+    return;
+  }
+  openConfirm({
+    title: 'Benutzerkonto anonymisieren?',
+    text: `<strong>${esc(user.name)}</strong> (${esc(user.email)}) wird dauerhaft anonymisiert. Name, E-Mail-Adresse und Passwort werden entfernt; alle aktiven Sitzungen werden beendet. Verknüpfte Buchungen, Kosten und Audit-Einträge bleiben erhalten. Das Konto bleibt deaktiviert und kann nicht reaktiviert werden.`,
+    confirmLabel: 'Endgültig anonymisieren',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/users/${encodeURIComponent(user.id)}/anonymize`, { method: 'POST' });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Konto anonymisiert', 'Die persönlichen Kontodaten wurden entfernt.');
+      } catch (error) {
+        toast('Anonymisierung fehlgeschlagen', error.message, 'error');
+      }
+    }
+  });
+}
+
 function openUserModal(userId = null) {
   if (!capabilities.manageUsers) {
     toast('Keine Berechtigung', 'Nur Administratoren dürfen Benutzer verwalten.', 'error');
     return;
   }
   const existing = userId ? db.users.find((user) => user.id === userId) : null;
+  if (existing?.anonymizedAt) {
+    toast('Konto anonymisiert', 'Anonymisierte Konten können nicht mehr bearbeitet werden.', 'info');
+    return;
+  }
   const user = existing || { name: '', email: '', role: 'manager', active: true };
   showModal({
     title: existing ? 'Benutzer bearbeiten' : 'Benutzer anlegen',

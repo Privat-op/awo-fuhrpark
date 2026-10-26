@@ -56,6 +56,18 @@ function initSchema() {
   if (!settingsColumns.some((column) => column.name === 'border_color')) {
     db.exec("ALTER TABLE settings ADD COLUMN border_color TEXT NOT NULL DEFAULT '#e7e9ee'");
   }
+  if (!settingsColumns.some((column) => column.name === 'auto_anonymize_days')) {
+    db.exec('ALTER TABLE settings ADD COLUMN auto_anonymize_days INTEGER NOT NULL DEFAULT 0');
+  }
+
+  const userColumns = db.prepare('PRAGMA table_info(users)').all();
+  if (!userColumns.some((column) => column.name === 'anonymized_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN anonymized_at TEXT');
+  }
+  if (!userColumns.some((column) => column.name === 'deactivated_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN deactivated_at TEXT');
+    db.exec("UPDATE users SET deactivated_at = updated_at WHERE active = 0 AND anonymized_at IS NULL");
+  }
 }
 
 module.exports = {

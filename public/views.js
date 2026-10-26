@@ -1289,7 +1289,7 @@ function renderSettings() {
             </div>
             <div class="version-box">
               <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-              <span class="version-badge">Server-MVP 0.1</span>
+              <span class="version-badge">Server-MVP 0.4.0</span>
             </div>
           </div>
         </section>
@@ -1363,21 +1363,34 @@ function renderUsers() {
   const users = db.users || [];
   const admins = users.filter((user) => user.role === 'admin' && user.active).length;
   const active = users.filter((user) => user.active).length;
+  const anonymized = users.filter((user) => user.anonymizedAt).length;
+  const deactivated = users.filter((user) => !user.active && !user.anonymizedAt).length;
+  const autoAnonymizeDays = Number(db.settings.autoAnonymizeDays) || 0;
   const rows = users.map((user) => {
     const isSelf = currentUser?.id === user.id;
+    const isAnonymized = Boolean(user.anonymizedAt);
+    const meta = isAnonymized
+      ? `Anonymisiert${user.anonymizedAt ? ` am ${formatDate(user.anonymizedAt)}` : ''}`
+      : !user.active
+        ? `Deaktiviert${user.deactivatedAt ? ` am ${formatDate(user.deactivatedAt)}` : ''}`
+        : user.createdAt ? `Angelegt am ${formatDate(user.createdAt)}` : '';
+    const actions = isAnonymized
+      ? `<span class="table-action" title="Anonymisiert" aria-label="Anonymisiert" style="pointer-events:none;color:var(--muted)">${icon('user-x')}</span>`
+      : `<button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button>
+         ${!user.active ? `<button class="table-action danger" type="button" title="Benutzerkonto anonymisieren" aria-label="Benutzerkonto anonymisieren" data-action="anonymize-user" data-id="${user.id}">${icon('user-x')}</button>` : ''}`;
     return `
       <tr>
         <td>
           <div class="table-person">
-            ${driverAvatar({ name: user.name, color: user.role === 'admin' ? '#e2001a' : '#2563eb' }, 'avatar-sm')}
-            <div><span class="table-main">${esc(user.name)} ${isSelf ? '<span class="badge badge-gray no-dot">Sie</span>' : ''}</span><span class="table-sub">${user.createdAt ? `Angelegt am ${formatDate(user.createdAt)}` : ''}</span></div>
+            ${driverAvatar({ name: user.name, color: isAnonymized ? '#94a3b8' : user.role === 'admin' ? '#e2001a' : '#2563eb' }, 'avatar-sm')}
+            <div><span class="table-main">${esc(user.name)} ${isSelf ? '<span class="badge badge-gray no-dot">Sie</span>' : ''}</span><span class="table-sub">${meta}</span></div>
           </div>
         </td>
         <td><span class="table-main">${esc(user.email)}</span></td>
         <td><span class="badge badge-${user.role === 'admin' ? 'red' : 'blue'}">${esc(ROLE_LABELS[user.role] || user.role)}</span></td>
-        <td>${user.active ? '<span class="badge badge-green">Aktiv</span>' : '<span class="badge badge-gray">Deaktiviert</span>'}</td>
-        <td>${user.lastLoginAt ? `<span class="table-main">${formatDateTime(user.lastLoginAt)}</span>` : '<span class="text-muted">Noch nicht angemeldet</span>'}</td>
-        <td><div class="table-actions"><button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button></div></td>
+        <td>${isAnonymized ? '<span class="badge badge-gray">Anonymisiert</span>' : user.active ? '<span class="badge badge-green">Aktiv</span>' : '<span class="badge badge-gray">Deaktiviert</span>'}</td>
+        <td>${isAnonymized ? '<span class="text-muted">—</span>' : user.lastLoginAt ? `<span class="table-main">${formatDateTime(user.lastLoginAt)}</span>` : '<span class="text-muted">Noch nicht angemeldet</span>'}</td>
+        <td><div class="table-actions">${actions}</div></td>
       </tr>`;
   }).join('');
   return `
@@ -1387,6 +1400,8 @@ function renderUsers() {
       <span class="summary-chip"><strong>${users.length}</strong> Zugänge</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${active}</strong> aktiv</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--awo)"></span><strong>${admins}</strong> Administrator:in</span>
+      <span class="summary-chip"><span class="dot" style="--dot:#aeb5c0"></span><strong>${deactivated}</strong> deaktiviert</span>
+      <span class="summary-chip"><span class="dot" style="--dot:#94a3b8"></span><strong>${anonymized}</strong> anonymisiert</span>
     </div>
     <section class="card">
       <div class="card-head bordered">
@@ -1398,9 +1413,36 @@ function renderUsers() {
         <tbody>${rows}</tbody>
       </table></div>` : emptyState('users', 'Keine Benutzer', 'Legen Sie den ersten Zugang für die Fuhrparkverwaltung an.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-user">Benutzer anlegen</button>')}
       <div class="card-footer">
-        <span class="text-muted">Passwörter werden verschlüsselt gespeichert und nie im Klartext angezeigt.</span>
+        <span class="text-muted">Nur deaktivierte Konten können anonymisiert werden. Aktive Konten müssen zuerst deaktiviert werden.</span>
       </div>
-    </section>`;
+    </section>
+
+    <form class="card settings-card mt-18" id="userPolicyForm">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Automatische Anonymisierung</h3><p class="card-sub">Gilt global für deaktivierte Benutzerkonten.</p></div>
+        <span class="badge badge-${autoAnonymizeDays ? 'green' : 'gray'} no-dot">${autoAnonymizeDays ? `Aktiv · ${autoAnonymizeDays} Tage` : 'Deaktiviert'}</span>
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="field">
+            <label for="autoAnonymizeDays">Frist nach Deaktivierung</label>
+            <div class="inline-number">
+              <input class="input" id="autoAnonymizeDays" name="autoAnonymizeDays" type="number" min="0" max="3650" step="1" value="${autoAnonymizeDays}">
+              <span>Tage</span>
+            </div>
+            <p class="field-hint">0 bedeutet: keine automatische Anonymisierung. Die Prüfung erfolgt regelmäßig auf dem Server.</p>
+          </div>
+          <div class="info-banner">
+            ${icon('shield')}
+            <div><strong>Was wird anonymisiert?</strong><p>Name, E-Mail-Adresse, Passwort und Sitzungen werden entfernt. Verknüpfte Buchungen, Kosten und Audit-Einträge bleiben erhalten. Die Aktion ist endgültig.</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">${deactivated ? `${deactivated} deaktivierte ${deactivated === 1 ? 'Konto ist' : 'Konten sind'} aktuell nicht anonymisiert.` : 'Keine deaktivierten Konten vorhanden.'}</span>
+        <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Frist speichern</button>
+      </div>
+    </form>`;
 }
 
 /* =========================================================
