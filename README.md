@@ -29,6 +29,15 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+Falls das Docker-Compose-Plugin auf dem Server fehlt, kann die Anwendung auch direkt gebaut und gestartet werden:
+
+```bash
+chmod +x deploy-docker.sh
+sudo ./deploy-docker.sh
+```
+
+Das Skript baut das Image, legt das persistente Daten-Volume an und startet den Container `awo-fuhrpark`. Bei einem erneuten Aufruf wird der bestehende Container ersetzt; das Daten-Volume bleibt erhalten.
+
 Danach `http://SERVER-IP:3000` öffnen und mit dem in `.env` hinterlegten Administratorkonto anmelden. Das Passwort sollte anschließend unter **Einstellungen → Passwort ändern** geändert werden.
 
 ### Wichtig beim ersten Start
@@ -121,6 +130,7 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 ├─ server/views/       HTML für Anwendung und Login
 ├─ Dockerfile
 ├─ docker-compose.yml
+├─ deploy-docker.sh     Deployment ohne Compose-Plugin
 ├─ .env.example
 └─ README.md
 ```
