@@ -712,8 +712,7 @@ function deleteCost(costId) {
   });
 }
 
-function downloadFile(filename, content, mimeType = 'text/plain;charset=utf-8') {
-  const blob = new Blob([content], { type: mimeType });
+function triggerBlobDownload(filename, blob) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -724,56 +723,58 @@ function downloadFile(filename, content, mimeType = 'text/plain;charset=utf-8') 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function exportData() {
+async function downloadServerExport(url, fallbackFilename) {
+  const response = await fetch(url, { credentials: 'same-origin' });
+  if (response.status === 401) {
+    window.location.href = '/login';
+    throw new Error('Sitzung abgelaufen.');
+  }
+  if (!response.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    let message = `Export fehlgeschlagen (${response.status}).`;
+    if (contentType.includes('application/json')) {
+      const data = await response.json().catch(() => null);
+      if (data?.error) message = data.error;
+    }
+    throw new Error(message);
+  }
+  const disposition = response.headers.get('content-disposition') || '';
+  const filenameMatch = /filename="?([^";]+)"?/i.exec(disposition);
+  const filename = filenameMatch?.[1] || fallbackFilename;
+  triggerBlobDownload(filename, await response.blob());
+}
+
+async function exportData() {
   if (!canBase('export_data')) {
     toast('Keine Berechtigung', 'Für den Datenexport fehlt die erforderliche Berechtigung.', 'error');
     return;
   }
-  downloadFile(
-    `fuhrpark-daten-${todayISO()}.json`,
-    JSON.stringify(db, null, 2),
-    'application/json;charset=utf-8'
-  );
-  toast('Daten exportiert', 'Die JSON-Datei wurde heruntergeladen.');
+  try {
+    await downloadServerExport('/api/export/data.json', `fuhrpark-daten-${todayISO()}.json`);
+    toast('Daten exportiert', 'Die JSON-Datei wurde serverseitig erstellt und heruntergeladen.');
+  } catch (error) {
+    toast('Datenexport fehlgeschlagen', error.message, 'error');
+  }
 }
 
-function csvEscape(value) {
-  const text = String(value ?? '');
-  if (/[;"\r\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-  return text;
-}
-
-function exportLogbook() {
-  if (!can('logbook_export')) {
+async function exportLogbook() {
+  if (!canBase('logbook_export')) {
     toast('Keine Berechtigung', 'Für den Fahrtenbuch-Export fehlt die erforderliche Berechtigung.', 'error');
     return;
   }
-  const trips = getCompletedBookings(ui.logPeriod);
-  if (!trips.length) {
+  if (!getCompletedBookings(ui.logPeriod).length) {
     toast('Keine Fahrten', 'Im ausgewählten Zeitraum gibt es keine Einträge.', 'info');
     return;
   }
-  const header = ['Datum', 'Fahrzeug', 'Kennzeichen', 'Fahrer:in', 'Zweck', 'Von', 'Bis', 'Start-km', 'End-km', 'Distanz-km'];
-  const rows = trips.map((trip) => {
-    const vehicle = getVehicle(trip.vehicleId);
-    const driver = getDriver(trip.driverId);
-    const distance = Math.max(0, Number(trip.endKm || 0) - Number(trip.startKm || 0));
-    return [
-      formatDate(trip.start),
-      vehicle ? vehicle.name : '',
-      vehicle ? vehicle.plate : '',
-      driver ? driver.name : '',
-      trip.purpose,
-      formatTime(trip.start),
-      formatTime(trip.end),
-      trip.startKm ?? '',
-      trip.endKm ?? '',
-      distance
-    ];
-  });
-  const csv = [header, ...rows].map((row) => row.map(csvEscape).join(';')).join('\r\n');
-  downloadFile(`fahrtenbuch-${todayISO()}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
-  toast('Fahrtenbuch exportiert', `${trips.length} Fahrten wurden als CSV heruntergeladen.`);
+  try {
+    await downloadServerExport(
+      `/api/export/logbook.csv?period=${encodeURIComponent(ui.logPeriod)}`,
+      `fahrtenbuch-${todayISO()}.csv`
+    );
+    toast('Fahrtenbuch exportiert', 'Die CSV-Datei wurde serverseitig erstellt und heruntergeladen.');
+  } catch (error) {
+    toast('Fahrtenbuch-Export fehlgeschlagen', error.message, 'error');
+  }
 }
 
 function dispatchAction(element) {

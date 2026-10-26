@@ -154,6 +154,74 @@ router.get('/state', (req, res) => {
   sendState(req, res);
 });
 
+function csvEscape(value) {
+  const text = String(value ?? '');
+  return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function localISODate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+router.get('/export/logbook.csv', requirePermission('logbook_export'), (req, res, next) => {
+  try {
+    const period = ['30', '90', 'all'].includes(String(req.query.period)) ? String(req.query.period) : '30';
+    const state = getState(db, req.user, req.auth);
+    const today = todayISO();
+    let cutoff = null;
+    if (period !== 'all') {
+      const date = new Date(`${today}T00:00:00`);
+      date.setDate(date.getDate() - Number(period));
+      cutoff = localISODate(date);
+    }
+    const trips = state.bookings
+      .filter((booking) => booking.status === 'completed')
+      .filter((booking) => !cutoff || booking.start.slice(0, 10) >= cutoff)
+      .sort((a, b) => String(b.start).localeCompare(String(a.start)));
+    const vehicles = new Map(state.vehicles.map((vehicle) => [vehicle.id, vehicle]));
+    const drivers = new Map(state.drivers.map((driver) => [driver.id, driver]));
+    const rows = [
+      ['Datum', 'Fahrzeug', 'Kennzeichen', 'Fahrer:in', 'Zweck', 'Von', 'Bis', 'Start-km', 'End-km', 'Distanz-km'],
+      ...trips.map((trip) => {
+        const vehicle = vehicles.get(trip.vehicleId);
+        const driver = drivers.get(trip.driverId);
+        const distance = Math.max(0, Number(trip.endKm || 0) - Number(trip.startKm || 0));
+        return [
+          trip.start.slice(0, 10).split('-').reverse().join('.'),
+          vehicle?.name || '',
+          vehicle?.plate || '',
+          driver?.name || '',
+          trip.purpose,
+          trip.start.slice(11, 16),
+          trip.end.slice(11, 16),
+          trip.startKm ?? '',
+          trip.endKm ?? '',
+          distance
+        ];
+      })
+    ];
+    const csv = rows.map((row) => row.map(csvEscape).join(';')).join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="fahrtenbuch-${today}.csv"`);
+    res.send(`\uFEFF${csv}`);
+    audit(req, 'export', 'logbook', 'csv', { period, count: trips.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/export/data.json', requirePermission('export_data'), (req, res, next) => {
+  try {
+    const state = getState(db, req.user, req.auth);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="fuhrpark-daten-${todayISO()}.json"`);
+    res.send(JSON.stringify(state, null, 2));
+    audit(req, 'export', 'data', 'json');
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/auth/logout', (req, res) => {
   audit(req, 'logout', 'user', req.user.id);
   req.session.destroy((error) => {

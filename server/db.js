@@ -81,6 +81,9 @@ function initSchema() {
   if (!updatedUserColumns.some((column) => column.name === 'object_permissions')) {
     db.exec("ALTER TABLE users ADD COLUMN object_permissions TEXT NOT NULL DEFAULT '{}'");
   }
+  if (!updatedUserColumns.some((column) => column.name === 'last_login_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN last_login_at TEXT');
+  }
 
   const usersSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()?.sql || '';
   if (/CHECK\s*\(\s*role\s+IN/i.test(usersSql)) {
