@@ -38,6 +38,17 @@ sudo ./deploy-docker.sh
 
 Das Skript baut das Image, legt das persistente Daten-Volume an und startet den Container `awo-fuhrpark`. Bei einem erneuten Aufruf wird der bestehende Container ersetzt; das Daten-Volume bleibt erhalten.
 
+## Updates einspielen
+
+Wenn Änderungen im GitHub-Repository auf `main` liegen:
+
+```bash
+cd ~/awo-fuhrpark
+./update.sh
+```
+
+Das Skript prüft auf lokale Änderungen, zieht den neuesten Stand, baut das Image neu und ersetzt den Container. Datenbank, Uploads und Sicherungen bleiben im Volume `awo_fuhrpark_data` erhalten.
+
 Danach `http://SERVER-IP:3000` öffnen und mit dem in `.env` hinterlegten Administratorkonto anmelden. Das Passwort sollte anschließend unter **Einstellungen → Passwort ändern** geändert werden.
 
 ### Wichtig beim ersten Start
@@ -131,6 +142,7 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 ├─ Dockerfile
 ├─ docker-compose.yml
 ├─ deploy-docker.sh     Deployment ohne Compose-Plugin
+├─ update.sh            GitHub-Update + Neustart
 ├─ .env.example
 └─ README.md
 ```
