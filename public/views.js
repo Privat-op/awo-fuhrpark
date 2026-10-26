@@ -1079,10 +1079,36 @@ function renderBrandingCard() {
   if (!capabilities.manageUsers) return '';
   const theme = db.settings.theme === 'neutral' ? 'neutral' : 'awo';
   const neutralName = db.settings.brandName || db.settings.orgName || 'Fuhrparkmanagement';
+  const pickColor = (value, fallback) => /^#[0-9a-fA-F]{6}$/.test(value || '') ? value : fallback;
+  const customAccent = pickColor(db.settings.accentColor, '#0f766e');
+  const customSidebar = db.settings.sidebarStyle === 'light' ? 'light' : 'dark';
+  const customPageBackground = pickColor(db.settings.pageBackground, '#f4f5f7');
+  const customSurface = pickColor(db.settings.surfaceColor, '#ffffff');
+  const customText = pickColor(db.settings.textColor, '#191c23');
+  const customMuted = pickColor(db.settings.mutedColor, '#737a88');
+  const customBorder = pickColor(db.settings.borderColor, '#e7e9ee');
   const initialsValue = initials(neutralName);
   const neutralLogoPreview = db.settings.logoUrl
     ? `<img src="${esc(db.settings.logoUrl)}" alt="Aktuelles Logo">`
-    : `<span class="theme-initials">${esc(initialsValue)}</span>`;
+    : `<span class="theme-initials" style="background:${esc(customAccent)}">${esc(initialsValue)}</span>`;
+  const accentPresets = [
+    ['#0f766e', 'Petrol'],
+    ['#2563eb', 'Blau'],
+    ['#7c3aed', 'Violett'],
+    ['#047857', 'Grün'],
+    ['#b45309', 'Bernstein'],
+    ['#be123c', 'Rot'],
+    ['#475569', 'Grau']
+  ];
+  const accentSwatches = accentPresets.map(([color, label]) => `<button class="accent-swatch ${customAccent.toLowerCase() === color ? 'is-selected' : ''}" type="button" title="${label}" aria-label="Akzentfarbe ${label}" data-action="set-brand-accent" data-color="${color}" style="--swatch:${color}"></button>`).join('');
+  const colorField = (id, label, value) => `
+    <label class="color-field" for="${id}">
+      <span>${label}</span>
+      <span class="color-field-control">
+        <input type="color" id="${id}" name="${id}" value="${esc(value)}">
+        <em>${esc(value.toUpperCase())}</em>
+      </span>
+    </label>`;
   return `
     <form class="card settings-card" id="brandingForm">
       <div class="card-head bordered">
@@ -1109,6 +1135,68 @@ function renderBrandingCard() {
             <input class="input" id="brandingName" name="brandingName" type="text" value="${esc(neutralName)}" maxlength="120">
             <p class="field-hint">Erscheint im Menü, auf der Anmeldeseite und im Footer des neutralen Themes.</p>
           </div>
+
+          <div class="branding-options">
+            <div class="field">
+              <label for="brandingAccent">Akzentfarbe</label>
+              <div class="accent-picker">
+                <input class="accent-color-input" id="brandingAccent" name="brandingAccent" type="color" value="${esc(customAccent)}" aria-label="Eigene Akzentfarbe">
+                <span class="accent-value">${esc(customAccent.toUpperCase())}</span>
+              </div>
+              <div class="accent-swatches">${accentSwatches}</div>
+              <p class="field-hint">Bestimmt Buttons, aktive Navigation und Hervorhebungen.</p>
+            </div>
+
+            <div class="field">
+              <label>Sidebar-Stil</label>
+              <div class="sidebar-style-grid">
+                <label class="sidebar-style-choice ${customSidebar === 'dark' ? 'is-selected' : ''}">
+                  <input type="radio" name="brandingSidebar" value="dark" ${customSidebar === 'dark' ? 'checked' : ''}>
+                  <span class="sidebar-style-preview is-dark"><i></i><i></i><i></i></span>
+                  <strong>Dunkel</strong>
+                </label>
+                <label class="sidebar-style-choice ${customSidebar === 'light' ? 'is-selected' : ''}">
+                  <input type="radio" name="brandingSidebar" value="light" ${customSidebar === 'light' ? 'checked' : ''}>
+                  <span class="sidebar-style-preview is-light"><i></i><i></i><i></i></span>
+                  <strong>Hell</strong>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <details class="branding-advanced">
+            <summary>Weitere Farben <span>Seite, Karten, Text und Rahmen</span></summary>
+            <div class="branding-color-grid">
+              ${colorField('brandingPageBackground', 'Seitenhintergrund', customPageBackground)}
+              ${colorField('brandingSurface', 'Karten / Flächen', customSurface)}
+              ${colorField('brandingText', 'Textfarbe', customText)}
+              ${colorField('brandingMuted', 'Sekundärtext', customMuted)}
+              ${colorField('brandingBorder', 'Rahmen', customBorder)}
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" data-action="reset-brand-colors">Standardfarben</button>
+          </details>
+
+          <div class="branding-preview">
+            <div class="branding-preview-head"><span>Live-Vorschau</span><span class="badge badge-gray no-dot">Neutral</span></div>
+            <div class="theme-preview-app ${customSidebar === 'light' ? 'is-light-sidebar' : ''}" id="themePreviewApp" style="--preview-accent:${esc(customAccent)};--preview-bg:${esc(customPageBackground)};--preview-surface:${esc(customSurface)};--preview-text:${esc(customText)};--preview-muted:${esc(customMuted)};--preview-border:${esc(customBorder)};">
+              <div class="preview-sidebar">
+                <div class="preview-brand"><span class="preview-logo" id="previewLogo">${esc(initialsValue)}</span><span class="preview-brand-name" id="previewBrandName">${esc(neutralName)}</span></div>
+                <span class="preview-nav is-active">Dashboard</span>
+                <span class="preview-nav">Fahrzeuge</span>
+                <span class="preview-nav">Buchungen</span>
+              </div>
+              <div class="preview-content">
+                <div class="preview-top"><strong>Dashboard</strong><span class="preview-button">Neue Buchung</span></div>
+                <div class="preview-kpis">
+                  <div class="preview-kpi"><span>Fahrzeuge</span><strong>8</strong></div>
+                  <div class="preview-kpi"><span>Buchungen</span><strong>4</strong></div>
+                  <div class="preview-kpi"><span>Verfügbar</span><strong>5</strong></div>
+                </div>
+                <div class="preview-content-box"><strong>Heute im Einsatz</strong><span>Hausbesuche Ambulante Pflege</span><span>Seniorenausflug Weserpromenade</span></div>
+              </div>
+            </div>
+          </div>
+
           <label>Eigenes Logo <span class="optional">optional</span></label>
           <div class="image-upload">
             <div class="image-upload-preview" id="brandingLogoPreview">${neutralLogoPreview}</div>

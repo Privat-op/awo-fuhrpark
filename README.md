@@ -13,7 +13,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Wartungsplan mit automatischer Kostenübernahme bei Erledigung
 - Kostenverwaltung inklusive Beleg-Upload (JPG, PNG, PDF)
 - Dashboard, Suche und Benachrichtigungen mit Gelesen-Status
-- **Globales Erscheinungsbild:** Allgemeines AWO-Theme mit offiziellem Logo oder neutrales Theme mit eigenem Anzeigenamen und optionalem Logo
+- **Globales Erscheinungsbild:** Allgemeines AWO-Theme mit offiziellem Logo oder neutrales Theme mit eigenem Anzeigenamen, optionalem Logo, Akzentfarbe, weiteren Farben und Sidebar-Stil inklusive Live-Vorschau
 - DATEV-unabhängiger JSON-Export; CSV-Export des Fahrtenbuchs
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
@@ -106,7 +106,7 @@ Nur Administratoren können weitere Konten anlegen, Rollen ändern, Konten deakt
 Unter **Einstellungen → Erscheinungsbild** kann ausschließlich ein Administrator das Theme global für alle Nutzer:innen und die Anmeldeseite wählen:
 
 - **AWO:** allgemeines AWO-Theme mit offiziellem AWO-Logo, ohne Ortsverband-Zusatz
-- **Neutral:** eigenes Branding mit frei wählbarem Anzeigenamen und optionalem Logo (PNG, JPG oder WebP)
+- **Neutral:** eigenes Branding mit frei wählbarem Anzeigenamen, optionalem Logo, Akzentfarbe, weiteren Farben für Seite/Karten/Text/Rahmen, wahlweise dunkler oder heller Sidebar und Live-Vorschau
 
 Die Einstellung wird in der Datenbank gespeichert und ist nicht pro Benutzerkonto wählbar. Andere angemeldete Nutzer sehen sie nach dem nächsten Laden der Seite.
 

@@ -62,8 +62,25 @@ button, input { font: inherit; }
   background:
     radial-gradient(circle at 82% 16%, rgba(255, 255, 255, .12), transparent 25%),
     radial-gradient(circle at 0% 100%, rgba(0, 0, 0, .3), transparent 44%),
-    linear-gradient(148deg, #0b5f59 0%, #0f766e 48%, #083e3a 100%);
+    linear-gradient(148deg, var(--awo-dark) 0%, var(--awo) 48%, var(--brand-deep) 100%);
 }
+:root[data-theme="neutral"] .login-form-panel {
+  background:
+    radial-gradient(circle at 100% 0%, var(--awo-soft), transparent 26%),
+    var(--bg);
+}
+:root[data-theme="neutral"] .login-card {
+  border-color: var(--line);
+  background: var(--surface);
+}
+:root[data-theme="neutral"] .login-mobile-brand { border-bottom-color: var(--line); }
+:root[data-theme="neutral"] .login-field input {
+  border-color: var(--line);
+  color: var(--ink);
+  background: var(--surface);
+}
+:root[data-theme="neutral"] .login-help { border-top-color: var(--line); }
+
 
 .login-brand-panel::before,
 .login-brand-panel::after {

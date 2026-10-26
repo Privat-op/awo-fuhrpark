@@ -620,14 +620,32 @@ router.patch('/branding', requireAdmin, async (req, res, next) => {
     } else if (req.body?.brandName !== undefined) {
       brandName = optionalString(req.body.brandName, { max: 120 });
     }
+    const accentColor = hexColorValue(req.body?.accentColor ?? current.accent_color, '#0f766e');
+    const sidebarStyle = oneOf(req.body?.sidebarStyle ?? current.sidebar_style ?? 'dark', ['dark', 'light'], 'Sidebar-Stil');
+    const pageBackground = hexColorValue(req.body?.pageBackground ?? current.page_background, '#f4f5f7');
+    const surfaceColor = hexColorValue(req.body?.surfaceColor ?? current.surface_color, '#ffffff');
+    const textColor = hexColorValue(req.body?.textColor ?? current.text_color, '#191c23');
+    const mutedColor = hexColorValue(req.body?.mutedColor ?? current.muted_color, '#737a88');
+    const borderColor = hexColorValue(req.body?.borderColor ?? current.border_color, '#e7e9ee');
     if (req.body?.logoData) newLogoFile = await storeBrandingLogo(req.body.logoData);
     const removeLogo = booleanValue(req.body?.removeLogo, false);
     const logoFile = newLogoFile || (removeLogo ? null : current.logo_file);
     const now = isoNow();
-    db.prepare('UPDATE settings SET theme = ?, brand_name = ?, logo_file = ?, updated_at = ? WHERE id = 1')
-      .run(theme, brandName, logoFile, now);
+    db.prepare(`
+      UPDATE settings SET theme = ?, brand_name = ?, logo_file = ?, accent_color = ?, sidebar_style = ?,
+        page_background = ?, surface_color = ?, text_color = ?, muted_color = ?, border_color = ?, updated_at = ?
+      WHERE id = 1
+    `).run(
+      theme, brandName, logoFile, accentColor, sidebarStyle,
+      pageBackground, surfaceColor, textColor, mutedColor, borderColor, now
+    );
     if (current.logo_file && current.logo_file !== logoFile) deleteUpload(current.logo_file);
-    audit(req, 'update', 'branding', '1', { theme, brandName, logoChanged: Boolean(newLogoFile), logoRemoved: removeLogo });
+    audit(req, 'update', 'branding', '1', {
+      theme, brandName, accentColor, sidebarStyle,
+      colors: { pageBackground, surfaceColor, textColor, mutedColor, borderColor },
+      logoChanged: Boolean(newLogoFile),
+      logoRemoved: removeLogo
+    });
     sendState(req, res);
   } catch (error) {
     if (newLogoFile) deleteUpload(newLogoFile);

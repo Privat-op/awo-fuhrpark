@@ -125,6 +125,13 @@ function getState(db, user) {
       email: settingsRow?.email || '',
       phone: settingsRow?.phone || '',
       theme: settingsRow?.theme === 'neutral' ? 'neutral' : 'awo',
+      accentColor: settingsRow?.accent_color || '#0f766e',
+      sidebarStyle: settingsRow?.sidebar_style === 'light' ? 'light' : 'dark',
+      pageBackground: settingsRow?.page_background || '#f4f5f7',
+      surfaceColor: settingsRow?.surface_color || '#ffffff',
+      textColor: settingsRow?.text_color || '#191c23',
+      mutedColor: settingsRow?.muted_color || '#737a88',
+      borderColor: settingsRow?.border_color || '#e7e9ee',
       logoUrl: settingsRow?.logo_file
         ? `/branding/logo?v=${encodeURIComponent(settingsRow.updated_at || '')}`
         : null

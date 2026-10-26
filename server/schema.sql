@@ -107,6 +107,13 @@ CREATE TABLE IF NOT EXISTS settings (
   theme TEXT NOT NULL DEFAULT 'awo' CHECK (theme IN ('awo', 'neutral')),
   brand_name TEXT,
   logo_file TEXT,
+  accent_color TEXT NOT NULL DEFAULT '#0f766e',
+  sidebar_style TEXT NOT NULL DEFAULT 'dark' CHECK (sidebar_style IN ('dark', 'light')),
+  page_background TEXT NOT NULL DEFAULT '#f4f5f7',
+  surface_color TEXT NOT NULL DEFAULT '#ffffff',
+  text_color TEXT NOT NULL DEFAULT '#191c23',
+  muted_color TEXT NOT NULL DEFAULT '#737a88',
+  border_color TEXT NOT NULL DEFAULT '#e7e9ee',
   seeded_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

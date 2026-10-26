@@ -35,6 +35,27 @@ function initSchema() {
   if (!settingsColumns.some((column) => column.name === 'brand_name')) {
     db.exec('ALTER TABLE settings ADD COLUMN brand_name TEXT');
   }
+  if (!settingsColumns.some((column) => column.name === 'accent_color')) {
+    db.exec("ALTER TABLE settings ADD COLUMN accent_color TEXT NOT NULL DEFAULT '#0f766e'");
+  }
+  if (!settingsColumns.some((column) => column.name === 'sidebar_style')) {
+    db.exec("ALTER TABLE settings ADD COLUMN sidebar_style TEXT NOT NULL DEFAULT 'dark'");
+  }
+  if (!settingsColumns.some((column) => column.name === 'page_background')) {
+    db.exec("ALTER TABLE settings ADD COLUMN page_background TEXT NOT NULL DEFAULT '#f4f5f7'");
+  }
+  if (!settingsColumns.some((column) => column.name === 'surface_color')) {
+    db.exec("ALTER TABLE settings ADD COLUMN surface_color TEXT NOT NULL DEFAULT '#ffffff'");
+  }
+  if (!settingsColumns.some((column) => column.name === 'text_color')) {
+    db.exec("ALTER TABLE settings ADD COLUMN text_color TEXT NOT NULL DEFAULT '#191c23'");
+  }
+  if (!settingsColumns.some((column) => column.name === 'muted_color')) {
+    db.exec("ALTER TABLE settings ADD COLUMN muted_color TEXT NOT NULL DEFAULT '#737a88'");
+  }
+  if (!settingsColumns.some((column) => column.name === 'border_color')) {
+    db.exec("ALTER TABLE settings ADD COLUMN border_color TEXT NOT NULL DEFAULT '#e7e9ee'");
+  }
 }
 
 module.exports = {

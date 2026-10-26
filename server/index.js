@@ -54,6 +54,8 @@ function currentBranding() {
 function applyBrandingTemplate(template, branding) {
   return template
     .replaceAll('{{THEME}}', escapeHtml(branding.theme))
+    .replaceAll('{{SIDEBAR_STYLE}}', escapeHtml(branding.sidebarStyle))
+    .replaceAll('{{BRAND_STYLES}}', branding.brandStyles)
     .replaceAll('{{THEME_COLOR}}', escapeHtml(branding.themeColor))
     .replaceAll('{{BRAND_MARK_CLASS}}', escapeHtml(branding.markClass))
     .replaceAll('{{BRAND_MARK}}', branding.logoMarkup)

@@ -114,7 +114,7 @@ function applyState(state) {
   if (!state || typeof state !== 'object') throw new Error('Der Server hat keine gültigen Daten geliefert.');
   db = {
     meta: state.meta || { version: 1, seededAt: null },
-    settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', logoUrl: null },
+    settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', accentColor: '#0f766e', sidebarStyle: 'dark', pageBackground: '#f4f5f7', surfaceColor: '#ffffff', textColor: '#191c23', mutedColor: '#737a88', borderColor: '#e7e9ee', logoUrl: null },
     vehicles: Array.isArray(state.vehicles) ? state.vehicles : [],
     drivers: Array.isArray(state.drivers) ? state.drivers : [],
     bookings: Array.isArray(state.bookings) ? state.bookings : [],
@@ -228,9 +228,42 @@ function brandDisplayName() {
   return 'AWO';
 }
 
+function normalizeHex(value, fallback) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(value || '')) ? String(value) : fallback;
+}
+
+function mixHex(hex, target, weight) {
+  const parse = (value) => {
+    const clean = value.replace('#', '');
+    return [parseInt(clean.slice(0, 2), 16), parseInt(clean.slice(2, 4), 16), parseInt(clean.slice(4, 6), 16)];
+  };
+  const from = parse(hex);
+  const to = parse(target);
+  const mixed = from.map((channel, index) => Math.round(channel + (to[index] - channel) * weight));
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function rgbTriplet(hex) {
+  const clean = hex.replace('#', '');
+  return `${parseInt(clean.slice(0, 2), 16)}, ${parseInt(clean.slice(2, 4), 16)}, ${parseInt(clean.slice(4, 6), 16)}`;
+}
+
 function getClientBranding() {
   const theme = db.settings.theme === 'neutral' ? 'neutral' : 'awo';
   const name = theme === 'awo' ? 'AWO' : (db.settings.brandName || db.settings.orgName || 'Fuhrparkmanagement');
+  const accentColor = theme === 'awo' ? '#e2001a' : normalizeHex(db.settings.accentColor, '#0f766e');
+  const accentDark = mixHex(accentColor, '#000000', theme === 'awo' ? 0.2 : 0.28);
+  const accentSoft = mixHex(accentColor, '#ffffff', 0.9);
+  const accentDeep = mixHex(accentColor, '#000000', 0.65);
+  const pageBackground = theme === 'awo' ? '#f4f5f7' : normalizeHex(db.settings.pageBackground, '#f4f5f7');
+  const surfaceColor = theme === 'awo' ? '#ffffff' : normalizeHex(db.settings.surfaceColor, '#ffffff');
+  const textColor = theme === 'awo' ? '#191c23' : normalizeHex(db.settings.textColor, '#191c23');
+  const mutedColor = theme === 'awo' ? '#737a88' : normalizeHex(db.settings.mutedColor, '#737a88');
+  const borderColor = theme === 'awo' ? '#e7e9ee' : normalizeHex(db.settings.borderColor, '#e7e9ee');
+  const surface2Color = mixHex(surfaceColor, pageBackground, 0.45);
+  const ink2Color = mixHex(textColor, surfaceColor, 0.16);
+  const lineSoftColor = mixHex(borderColor, surfaceColor, 0.45);
+  const sidebarStyle = theme === 'awo' ? 'dark' : (db.settings.sidebarStyle === 'light' ? 'light' : 'dark');
   const logoUrl = theme === 'awo' ? '/branding/awo-logo.svg' : db.settings.logoUrl;
   const markClass = logoUrl ? 'has-image' : 'is-initials';
   const markHtml = logoUrl
@@ -247,14 +280,43 @@ function getClientBranding() {
     markClass,
     markHtml,
     favicon,
-    themeColor: theme === 'awo' ? '#e2001a' : '#0f766e'
+    accentColor,
+    accentDark,
+    accentSoft,
+    accentDeep,
+    brandRgb: rgbTriplet(accentColor),
+    pageBackground,
+    surfaceColor,
+    surface2Color,
+    textColor,
+    ink2Color,
+    mutedColor,
+    borderColor,
+    lineSoftColor,
+    sidebarStyle,
+    themeColor: accentColor
   };
 }
 
 function applyBranding() {
   if (!db?.settings) return;
   const branding = getClientBranding();
-  document.documentElement.dataset.theme = branding.theme;
+  const root = document.documentElement;
+  root.dataset.theme = branding.theme;
+  root.dataset.sidebar = branding.sidebarStyle;
+  root.style.setProperty('--awo', branding.accentColor);
+  root.style.setProperty('--awo-dark', branding.accentDark);
+  root.style.setProperty('--awo-soft', branding.accentSoft);
+  root.style.setProperty('--brand-deep', branding.accentDeep);
+  root.style.setProperty('--brand-rgb', branding.brandRgb);
+  root.style.setProperty('--bg', branding.pageBackground);
+  root.style.setProperty('--surface', branding.surfaceColor);
+  root.style.setProperty('--surface-2', branding.surface2Color);
+  root.style.setProperty('--ink', branding.textColor);
+  root.style.setProperty('--ink-2', branding.ink2Color);
+  root.style.setProperty('--muted', branding.mutedColor);
+  root.style.setProperty('--line', branding.borderColor);
+  root.style.setProperty('--line-soft', branding.lineSoftColor);
   const mark = $('#brandMark');
   if (mark) {
     mark.className = `brand-mark ${branding.markClass}`;
@@ -673,6 +735,8 @@ function dispatchAction(element) {
     case 'logout': logout(); break;
     case 'change-password': openPasswordModal(); break;
     case 'remove-branding-logo': removeBrandingLogoPreview(); break;
+    case 'set-brand-accent': setBrandAccent(element.dataset.color); break;
+    case 'reset-brand-colors': resetBrandColors(); break;
     default: break;
   }
 }
@@ -726,7 +790,76 @@ function removeBrandingLogoPreview() {
   const removeButton = $('#brandingLogoRemove');
   if (removeButton) removeButton.hidden = true;
   const name = $('#brandingName')?.value?.trim() || db.settings.brandName || db.settings.orgName || 'Fuhrparkmanagement';
-  setBrandingLogoPreview(`<span class="theme-initials">${esc(initials(name))}</span>`);
+  const accent = $('#brandingAccent')?.value || db.settings.accentColor || '#0f766e';
+  setBrandingLogoPreview(`<span class="theme-initials" style="background:${esc(accent)}">${esc(initials(name))}</span>`);
+}
+
+function setBrandAccent(color) {
+  const input = $('#brandingAccent');
+  if (!input || !/^#[0-9a-fA-F]{6}$/.test(String(color || ''))) return;
+  input.value = color;
+  updateAccentSelection();
+}
+
+function updateAccentSelection() {
+  const value = String($('#brandingAccent')?.value || '').toLowerCase();
+  $$('.accent-swatch').forEach((swatch) => {
+    swatch.classList.toggle('is-selected', String(swatch.dataset.color || '').toLowerCase() === value);
+  });
+  const label = $('.accent-value');
+  if (label) label.textContent = value.toUpperCase();
+  $$('#brandingNeutralPreview .theme-initials, #brandingLogoPreview .theme-initials').forEach((element) => {
+    element.style.background = value;
+  });
+  updateBrandingPreview();
+}
+
+function updateSidebarStyleUI() {
+  $$('.sidebar-style-choice').forEach((choice) => {
+    choice.classList.toggle('is-selected', Boolean(choice.querySelector('input')?.checked));
+  });
+  updateBrandingPreview();
+}
+
+function resetBrandColors() {
+  const defaults = {
+    brandingAccent: '#0f766e',
+    brandingPageBackground: '#f4f5f7',
+    brandingSurface: '#ffffff',
+    brandingText: '#191c23',
+    brandingMuted: '#737a88',
+    brandingBorder: '#e7e9ee'
+  };
+  Object.entries(defaults).forEach(([id, value]) => {
+    const input = document.getElementById(id);
+    if (input) input.value = value;
+  });
+  updateAccentSelection();
+  updateBrandingPreview();
+}
+
+function updateBrandingPreview() {
+  const preview = $('#themePreviewApp');
+  if (!preview) return;
+  const accent = $('#brandingAccent')?.value || '#0f766e';
+  const background = $('#brandingPageBackground')?.value || '#f4f5f7';
+  const surface = $('#brandingSurface')?.value || '#ffffff';
+  const text = $('#brandingText')?.value || '#191c23';
+  const muted = $('#brandingMuted')?.value || '#737a88';
+  const border = $('#brandingBorder')?.value || '#e7e9ee';
+  const sidebar = document.querySelector('input[name="brandingSidebar"]:checked')?.value === 'light' ? 'light' : 'dark';
+  const name = $('#brandingName')?.value?.trim() || 'Fuhrparkmanagement';
+  preview.style.setProperty('--preview-accent', accent);
+  preview.style.setProperty('--preview-bg', background);
+  preview.style.setProperty('--preview-surface', surface);
+  preview.style.setProperty('--preview-text', text);
+  preview.style.setProperty('--preview-muted', muted);
+  preview.style.setProperty('--preview-border', border);
+  preview.classList.toggle('is-light-sidebar', sidebar === 'light');
+  const previewName = $('#previewBrandName');
+  const previewLogo = $('#previewLogo');
+  if (previewName) previewName.textContent = name;
+  if (previewLogo) previewLogo.textContent = initials(name);
 }
 
 /* =========================================================
@@ -820,6 +953,21 @@ function bindEvents() {
     if (event.target.id === 'vehicleSearch') {
       ui.vehicleQuery = event.target.value;
       refreshVehicleGrid();
+    } else if (event.target.id === 'brandingAccent') {
+      updateAccentSelection();
+    } else if (['brandingPageBackground', 'brandingSurface', 'brandingText', 'brandingMuted', 'brandingBorder'].includes(event.target.id)) {
+      updateBrandingPreview();
+    } else if (event.target.id === 'brandingName') {
+      const previews = $$('#brandingNeutralPreview .theme-initials, #brandingLogoPreview .theme-initials');
+      if (previews.length) {
+        const value = event.target.value.trim() || 'Fuhrparkmanagement';
+        const accent = $('#brandingAccent')?.value || db.settings.accentColor || '#0f766e';
+        previews.forEach((element) => {
+          element.textContent = initials(value);
+          element.style.background = accent;
+        });
+      }
+      updateBrandingPreview();
     }
   });
 
@@ -838,6 +986,8 @@ function bindEvents() {
       renderCurrentView();
     } else if (event.target.name === 'brandingTheme') {
       updateBrandingThemeUI();
+    } else if (event.target.name === 'brandingSidebar') {
+      updateSidebarStyleUI();
     } else if (event.target.id === 'brandingLogoInput') {
       const file = event.target.files?.[0];
       if (file) previewBrandingLogo(file);
@@ -871,7 +1021,19 @@ function bindEvents() {
         }
         const state = await apiFetch('/api/branding', {
           method: 'PATCH',
-          body: { theme, brandName, logoData, removeLogo }
+          body: {
+            theme,
+            brandName,
+            logoData,
+            removeLogo,
+            accentColor: String(data.get('brandingAccent') || db.settings.accentColor || '#0f766e'),
+            sidebarStyle: String(data.get('brandingSidebar') || db.settings.sidebarStyle || 'dark'),
+            pageBackground: String(data.get('brandingPageBackground') || db.settings.pageBackground || '#f4f5f7'),
+            surfaceColor: String(data.get('brandingSurface') || db.settings.surfaceColor || '#ffffff'),
+            textColor: String(data.get('brandingText') || db.settings.textColor || '#191c23'),
+            mutedColor: String(data.get('brandingMuted') || db.settings.mutedColor || '#737a88'),
+            borderColor: String(data.get('brandingBorder') || db.settings.borderColor || '#e7e9ee')
+          }
         });
         applyServerState(state);
         renderRoute(false);
