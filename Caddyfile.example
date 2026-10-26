@@ -1,0 +1,17 @@
+# Beispiel für Caddy als HTTPS-Reverse-Proxy.
+# Domain ersetzen und Caddy vor den Container stellen.
+#
+#   Caddyfile:
+#     fuhrpark.example.org {
+#       encode zstd gzip
+#       reverse_proxy 127.0.0.1:3000
+#     }
+#
+# Danach in .env setzen:
+#   COOKIE_SECURE=true
+#   TRUST_PROXY=1
+
+fuhrpark.example.org {
+    encode zstd gzip
+    reverse_proxy app:3000
+}

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#e2001a">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Anmelden · AWO Fuhrparkmanagement</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23e2001a'/%3E%3Ctext x='32' y='42' font-family='Arial,sans-serif' font-size='25' font-weight='800' fill='white' text-anchor='middle'%3EAWO%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/login.css">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-brand-panel" aria-label="AWO Fuhrparkmanagement">
+      <div class="brand-lockup">
+        <span class="brand-mark">AWO</span>
+        <span class="brand-copy">
+          <strong>AWO Bremerhaven</strong>
+          <span>Fuhrparkmanagement</span>
+        </span>
+      </div>
+
+      <div class="brand-message">
+        <span class="brand-eyebrow">Interner Bereich</span>
+        <h1>Fuhrpark.<br>Übersicht.<br><em>Einfach.</em></h1>
+        <p>Fahrzeuge, Buchungen, Wartung und Kosten zentral an einem Ort – sicher und nachvollziehbar für Ihr Team.</p>
+      </div>
+
+      <ul class="feature-list">
+        <li><span class="feature-check">✓</span><span>Zentrale Daten für alle Standorte</span></li>
+        <li><span class="feature-check">✓</span><span>Buchungen ohne Doppelbelegung</span></li>
+        <li><span class="feature-check">✓</span><span>Wartung, TÜV und Kosten im Blick</span></li>
+      </ul>
+
+      <p class="brand-footnote">Zugriff nur für autorisierte Mitarbeitende.</p>
+    </section>
+
+    <section class="login-form-panel">
+      <div class="login-card">
+        <div class="login-mobile-brand">
+          <span class="brand-mark">AWO</span>
+          <div><strong>AWO Bremerhaven</strong><span>Fuhrparkmanagement</span></div>
+        </div>
+
+        <div class="login-heading">
+          <span class="login-eyebrow">Willkommen zurück</span>
+          <h2>Anmelden</h2>
+          <p>Bitte melden Sie sich mit Ihrem persönlichen Zugang an.</p>
+        </div>
+
+        {{ERROR}}
+
+        <form action="/login" method="post" autocomplete="on">
+          <input type="hidden" name="_csrf" value="{{CSRF_TOKEN}}">
+          <div class="login-field">
+            <label for="email">E-Mail-Adresse</label>
+            <input id="email" name="email" type="email" value="{{EMAIL}}" placeholder="name@awo-bremerhaven.de" autocomplete="username" required autofocus>
+          </div>
+          <div class="login-field">
+            <label for="password">Passwort</label>
+            <input id="password" name="password" type="password" placeholder="Ihr Passwort" autocomplete="current-password" required>
+          </div>
+          <button class="login-button" type="submit">Anmelden</button>
+        </form>
+
+        <div class="login-security">
+          <span class="security-dot"></span>
+          <p>Verschlüsselte Sitzung. Bitte verwenden Sie kein öffentliches Gerät.</p>
+        </div>
+
+        <div class="login-help">
+          <strong>Zugang vergessen?</strong>
+          <span>Wenden Sie sich an die Fuhrparkleitung oder die IT.</span>
+        </div>
+      </div>
+
+      <footer class="login-footer">
+        <span>© <span id="year">2026</span> AWO Bremerhaven</span>
+        <span>Internes System · AWO Bremerhaven</span>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>
