@@ -277,31 +277,6 @@ button, input { font: inherit; }
 .login-button:hover { background: var(--awo-dark); box-shadow: 0 10px 24px rgba(226, 0, 26, .25); }
 .login-button:active { transform: translateY(1px); }
 
-.login-security {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin-top: 18px;
-  padding: 10px 11px;
-  border-radius: 8px;
-  background: #f7f8fa;
-}
-.security-dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 6px;
-  margin-top: 5px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 0 3px rgba(21, 132, 90, .11);
-}
-.login-security p {
-  margin: 0;
-  color: #7d8490;
-  font-size: 9px;
-  line-height: 1.5;
-}
-
 .login-help {
   display: flex;
   flex-direction: column;
