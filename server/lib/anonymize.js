@@ -16,7 +16,7 @@ function scrubAuditDetails(details) {
       if (!value || typeof value !== 'object') return value;
       const result = {};
       Object.entries(value).forEach(([key, entry]) => {
-        if (/email/i.test(key)) return;
+        if (/(email|phone|telefon)/i.test(key)) return;
         result[key] = scrub(entry);
       });
       return result;

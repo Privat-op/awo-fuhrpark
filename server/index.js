@@ -17,6 +17,7 @@ const SQLiteSessionStore = require('./lib/session-store');
 const { randomToken, safeEqual, ensureCsrfToken, csrfProtection } = require('./lib/security');
 const { HttpError } = require('./lib/validation');
 const { writeAudit } = require('./lib/audit');
+const { migrateAuditSchema } = require('./lib/audit-migration');
 const { getBranding } = require('./lib/branding');
 const { uploadPath } = require('./lib/files');
 const { startAutoAnonymizer } = require('./lib/anonymize');
@@ -106,6 +107,7 @@ function wantsJson(req) {
 
 initSchema();
 ensureRoles(db);
+migrateAuditSchema(db);
 bootstrap(db);
 try {
   startAutoAnonymizer();

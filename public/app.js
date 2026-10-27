@@ -20,8 +20,19 @@ let ui = {
   maintenanceFilter: 'all',
   costCategory: 'all',
   costVehicle: 'all',
-  logPeriod: '30'
+  logPeriod: '30',
+  auditQuery: '',
+  auditActor: '',
+  auditAction: '',
+  auditEntityType: '',
+  auditTarget: '',
+  auditFrom: '',
+  auditTo: '',
+  auditPage: 1,
+  auditPageSize: 25,
+  auditData: null
 };
+let auditRequestSeq = 0;
 
 const ROLE_LABELS = { admin: 'Administrator', manager: 'Fuhrparkleitung' };
 
@@ -615,6 +626,8 @@ function renderRoute(scrollToTop = true) {
   updateNavActive(ui.route);
   const view = $('#view');
   if (view) view.innerHTML = ROUTES[ui.route]();
+  if (ui.route === 'audit') loadAuditLog();
+  else auditRequestSeq += 1;
   closeNotifications();
   closeSidebar();
   closeSearch(true);
@@ -625,6 +638,7 @@ function renderCurrentView() {
   const view = $('#view');
   if (!view) return;
   view.innerHTML = ROUTES[ui.route]();
+  if (ui.route === 'audit') loadAuditLog();
 }
 
 /* =========================================================
@@ -687,6 +701,128 @@ function renderSearchResults() {
   results.innerHTML = html;
   results.hidden = false;
   input.setAttribute('aria-expanded', 'true');
+}
+
+/* =========================================================
+   Audit-Log
+   ========================================================= */
+function ensureAuditFilters() {
+  if (!ui.auditFrom) ui.auditFrom = addDays(todayISO(), -30);
+  if (!ui.auditTo) ui.auditTo = todayISO();
+  if (![25, 50, 100].includes(Number(ui.auditPageSize))) ui.auditPageSize = 25;
+  if (!Number.isInteger(Number(ui.auditPage)) || Number(ui.auditPage) < 1) ui.auditPage = 1;
+}
+
+function hasActiveAuditFilters() {
+  ensureAuditFilters();
+  return Boolean(
+    ui.auditQuery
+    || ui.auditActor
+    || ui.auditAction
+    || ui.auditEntityType
+    || ui.auditTarget
+    || ui.auditFrom !== addDays(todayISO(), -30)
+    || ui.auditTo !== todayISO()
+  );
+}
+
+function auditRequestUrl() {
+  ensureAuditFilters();
+  const params = new URLSearchParams();
+  params.set('from', ui.auditFrom);
+  params.set('to', ui.auditTo);
+  params.set('page', String(ui.auditPage));
+  params.set('pageSize', String(ui.auditPageSize));
+  if (ui.auditQuery) params.set('q', ui.auditQuery);
+  if (ui.auditActor) params.set('actor', ui.auditActor);
+  if (ui.auditAction) params.set('action', ui.auditAction);
+  if (ui.auditEntityType) params.set('entityType', ui.auditEntityType);
+  if (ui.auditTarget) params.set('target', ui.auditTarget);
+  return `/api/audit?${params.toString()}`;
+}
+
+function readAuditFilters(form) {
+  const data = new FormData(form);
+  ui.auditQuery = String(data.get('q') || '').trim();
+  ui.auditActor = String(data.get('actor') || '').trim();
+  ui.auditAction = String(data.get('action') || '').trim();
+  ui.auditEntityType = String(data.get('entityType') || '').trim();
+  ui.auditTarget = String(data.get('target') || '').trim();
+  ui.auditFrom = String(data.get('from') || '').trim() || addDays(todayISO(), -30);
+  ui.auditTo = String(data.get('to') || '').trim() || todayISO();
+  const pageSize = Number(data.get('pageSize'));
+  ui.auditPageSize = [25, 50, 100].includes(pageSize) ? pageSize : 25;
+  ui.auditPage = 1;
+}
+
+function updateAuditView() {
+  const data = ui.auditData;
+  if (!data) return;
+  const scope = auditScopeMeta(data.scope);
+  const scopeLabel = $('#auditScopeLabel');
+  const scopeText = $('#auditScopeText');
+  if (scopeLabel) scopeLabel.textContent = scope.label;
+  if (scopeText) scopeText.textContent = scope.description;
+  const results = $('#auditResults');
+  if (results) results.innerHTML = renderAuditResults(data);
+  const pagination = $('#auditPagination');
+  if (pagination) pagination.innerHTML = renderAuditPagination(data);
+  const total = $('#auditTotal');
+  if (total) {
+    total.textContent = `${formatNumber(data.total)} Treffer`;
+    total.className = `badge badge-${data.total ? 'blue' : 'gray'} no-dot`;
+  }
+}
+
+async function loadAuditLog() {
+  if (ui.route !== 'audit') return;
+  ensureAuditFilters();
+  const results = $('#auditResults');
+  if (results) {
+    results.innerHTML = `<div class="audit-loading" role="status"><span class="app-spinner"></span><span>Audit-Einträge werden geladen …</span></div>`;
+  }
+  const total = $('#auditTotal');
+  if (total) {
+    total.textContent = 'Wird geladen …';
+    total.className = 'badge badge-gray no-dot';
+  }
+  const pagination = $('#auditPagination');
+  if (pagination) pagination.innerHTML = '';
+  const requestId = ++auditRequestSeq;
+  try {
+    const data = await apiFetch(auditRequestUrl());
+    if (requestId !== auditRequestSeq || ui.route !== 'audit') return;
+    ui.auditData = data;
+    updateAuditView();
+  } catch (error) {
+    if (requestId !== auditRequestSeq || ui.route !== 'audit') return;
+    if (results) {
+      results.innerHTML = emptyState(
+        'alert',
+        'Audit-Log konnte nicht geladen werden',
+        error.message || 'Der Server ist momentan nicht erreichbar.',
+        '<button class="btn btn-primary btn-sm" type="button" data-action="audit-reload">Erneut versuchen</button>'
+      );
+    }
+    if (total) {
+      total.textContent = 'Nicht verfügbar';
+      total.className = 'badge badge-red no-dot';
+    }
+  }
+}
+
+function resetAuditFilters() {
+  ui.auditQuery = '';
+  ui.auditActor = '';
+  ui.auditAction = '';
+  ui.auditEntityType = '';
+  ui.auditTarget = '';
+  ui.auditFrom = addDays(todayISO(), -30);
+  ui.auditTo = todayISO();
+  ui.auditPage = 1;
+  ui.auditPageSize = 25;
+  ui.auditData = null;
+  renderCurrentView();
 }
 
 /* =========================================================
@@ -989,6 +1125,12 @@ function dispatchAction(element) {
     case 'set-brand-accent': setBrandAccent(element.dataset.color); break;
     case 'reset-brand-colors': resetBrandColors(); break;
     case 'anonymize-user': openAnonymizeUserConfirm(id); break;
+    case 'audit-reset': resetAuditFilters(); break;
+    case 'audit-reload': loadAuditLog(); break;
+    case 'audit-page':
+      ui.auditPage = Math.max(1, Number(element.dataset.page) || 1);
+      loadAuditLog();
+      break;
     default: break;
   }
 }
@@ -1236,6 +1378,11 @@ function bindEvents() {
     } else if (event.target.id === 'logPeriod') {
       ui.logPeriod = event.target.value;
       renderCurrentView();
+    } else if (event.target.id === 'auditPageSize') {
+      const pageSize = Number(event.target.value);
+      ui.auditPageSize = [25, 50, 100].includes(pageSize) ? pageSize : 25;
+      ui.auditPage = 1;
+      loadAuditLog();
     } else if (event.target.name === 'brandingTheme') {
       updateBrandingThemeUI();
     } else if (event.target.name === 'brandingSidebar') {
@@ -1248,6 +1395,12 @@ function bindEvents() {
 
   view?.addEventListener('submit', async (event) => {
     const form = event.target;
+    if (form.id === 'auditFilterForm') {
+      event.preventDefault();
+      readAuditFilters(form);
+      loadAuditLog();
+      return;
+    }
     if (form.id === 'brandingForm') {
       event.preventDefault();
       const data = new FormData(form);

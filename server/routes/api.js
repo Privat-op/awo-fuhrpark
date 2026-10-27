@@ -25,6 +25,7 @@ const {
 } = require('../lib/validation');
 const { storeVehicleImage, storeReceipt, storeBrandingLogo, deleteUpload, uploadPath } = require('../lib/files');
 const { writeAudit } = require('../lib/audit');
+const { queryAudit, recordAuditRead } = require('../lib/audit-query');
 const { anonymizeUser, runAutoAnonymization } = require('../lib/anonymize');
 const {
   normalizeBookingRequestPolicy,
@@ -1396,6 +1397,20 @@ router.patch('/user-policy', requireAdmin, (req, res, next) => {
     })();
     runAutoAnonymization();
     sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* =========================================================
+   Audit-Log
+   ========================================================= */
+router.get('/audit', (req, res, next) => {
+  try {
+    const result = queryAudit(db, req, req.query);
+    recordAuditRead(db, req, result);
+    const { filters, ...response } = result;
+    res.json(response);
   } catch (error) {
     next(error);
   }
