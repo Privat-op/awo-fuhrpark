@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 /* =========================================================
    Darstellung der Seiten
@@ -162,23 +162,23 @@ function renderVehicleCard(vehicle) {
             <h3 class="vehicle-name">${esc(vehicle.name)}</h3>
             <div class="vehicle-sub">
               <span class="plate">${esc(vehicle.plate)}</span>
-              <span>Â·</span>
+              <span>·</span>
               <span>${esc(vehicle.department)}</span>
             </div>
           </div>
           ${blocked ? '<span class="badge badge-red no-dot">Dauerhaft gesperrt</span>' : bookedToday ? `<span class="badge badge-blue no-dot">Heute gebucht</span>` : ''}
         </div>
-        ${blocked ? `<div class="info-banner" style="margin:12px 0 0;padding:10px 12px">${icon('alert')}<div><strong>Sperre aktiv</strong><p>${esc(vehicle.blockedReason || 'Keine BegrÃ¼ndung hinterlegt.')}</p></div></div>` : ''}
+        ${blocked ? `<div class="info-banner" style="margin:12px 0 0;padding:10px 12px">${icon('alert')}<div><strong>Sperre aktiv</strong><p>${esc(vehicle.blockedReason || 'Keine Begründung hinterlegt.')}</p></div></div>` : ''}
         <div class="vehicle-specs">
           <div class="spec">${icon('fuel')}<div><span class="spec-label">Kraftstoff</span><span class="spec-value">${esc(vehicle.fuel)}</span></div></div>
-          <div class="spec">${icon('seat')}<div><span class="spec-label">SitzplÃ¤tze</span><span class="spec-value">${vehicle.seats} PlÃ¤tze</span></div></div>
+          <div class="spec">${icon('seat')}<div><span class="spec-label">Sitzplätze</span><span class="spec-value">${vehicle.seats} Plätze</span></div></div>
           <div class="spec">${icon('map-pin')}<div><span class="spec-label">Standort</span><span class="spec-value">${esc(vehicle.location)}</span></div></div>
           <div class="spec">${icon('gauge')}<div><span class="spec-label">Kilometerstand</span><span class="spec-value">${formatKm(vehicle.mileage)}</span></div></div>
         </div>
         <div class="vehicle-footer">
           <div class="vehicle-due ${tuvAlert ? 'is-alert' : ''}">
             ${icon('shield')}
-            <span>${tuvDays === null ? 'HU/AU nicht hinterlegt' : tuvDays < 0 ? `HU/AU ${Math.abs(tuvDays)} Tage Ã¼berfÃ¤llig` : `HU/AU ${formatDate(vehicle.tuv)}`}</span>
+            <span>${tuvDays === null ? 'HU/AU nicht hinterlegt' : tuvDays < 0 ? `HU/AU ${Math.abs(tuvDays)} Tage überfällig` : `HU/AU ${formatDate(vehicle.tuv)}`}</span>
           </div>
           <div class="vehicle-card-actions">
             ${canManage ? `<button class="btn btn-ghost btn-sm" type="button" data-action="toggle-vehicle-block" data-id="${vehicle.id}">${blocked ? icon('check-circle') : icon('alert')} ${blocked ? 'Entsperren' : 'Sperren'}</button>` : ''}
@@ -193,7 +193,7 @@ function renderVehicleCard(vehicle) {
 function renderVehicleGrid() {
   const vehicles = filteredVehicles();
   if (!vehicles.length) {
-    return emptyState('car', 'Keine Fahrzeuge gefunden', 'Passen Sie die Suche oder die ausgewÃ¤hlten Filter an.', '<button class="btn btn-ghost btn-sm" type="button" data-action="reset-vehicle-filters">Filter zurÃ¼cksetzen</button>');
+    return emptyState('car', 'Keine Fahrzeuge gefunden', 'Passen Sie die Suche oder die ausgewählten Filter an.', '<button class="btn btn-ghost btn-sm" type="button" data-action="reset-vehicle-filters">Filter zurücksetzen</button>');
   }
   return vehicles.map(renderVehicleCard).join('');
 }
@@ -206,7 +206,7 @@ function renderVehicles() {
   const count = filteredVehicles().length;
 
   return `
-    ${pageHead('Fuhrpark', 'Fahrzeuge', `${db.vehicles.length} Fahrzeuge Â· ${available} verfÃ¼gbar Â· ${inUse} unterwegs Â· ${maintenance} in Wartung`,
+    ${pageHead('Fuhrpark', 'Fahrzeuge', `${db.vehicles.length} Fahrzeuge · ${available} verfügbar · ${inUse} unterwegs · ${maintenance} in Wartung`,
       canBase('vehicles_manage') ? `<button class="btn btn-ghost" type="button" data-action="new-vehicle">${icon('plus')} Fahrzeug anlegen</button>` : '')}
     <div class="toolbar" style="margin-bottom:16px">
       <div class="filter-tabs">
@@ -216,11 +216,11 @@ function renderVehicles() {
       <div class="toolbar-spacer"></div>
       <div class="input-icon-wrap">
         ${icon('search')}
-        <input class="input" id="vehicleSearch" type="search" value="${esc(ui.vehicleQuery)}" placeholder="Fahrzeug, Kennzeichen, Standort â€¦" aria-label="Fahrzeuge durchsuchen">
+        <input class="input" id="vehicleSearch" type="search" value="${esc(ui.vehicleQuery)}" placeholder="Fahrzeug, Kennzeichen, Standort …" aria-label="Fahrzeuge durchsuchen">
       </div>
       <select class="select filter-select" id="vehicleStatusFilter" aria-label="Nach Status filtern">
         <option value="all" ${ui.vehicleStatus === 'all' ? 'selected' : ''}>Alle Status</option>
-        <option value="available" ${ui.vehicleStatus === 'available' ? 'selected' : ''}>VerfÃ¼gbar</option>
+        <option value="available" ${ui.vehicleStatus === 'available' ? 'selected' : ''}>Verfügbar</option>
         <option value="in_use" ${ui.vehicleStatus === 'in_use' ? 'selected' : ''}>Unterwegs</option>
         <option value="maintenance" ${ui.vehicleStatus === 'maintenance' ? 'selected' : ''}>In Wartung</option>
       </select>
@@ -276,27 +276,27 @@ function renderOnboarding(greeting, displayName) {
     canCreateDriver ? `<button class="btn btn-ghost" type="button" data-action="new-driver">${icon('users')} Fahrer:in anlegen</button>` : ''
   ].join('');
   return `
-    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">ðŸ‘‹</span>`,
+    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`,
       hasSetupRight ? 'Willkommen im Fuhrparkmanagement. Legen Sie jetzt die ersten Stammdaten an.' : 'Willkommen im Fuhrparkmanagement. Die Stammdaten werden von der Administration gepflegt.',
       headActions)}
     <section class="card onboarding-card">
       <div class="onboarding-inner">
         <div>
           <span class="eyebrow">Erste Schritte</span>
-          <h3 class="onboarding-title">${hasSetupRight ? 'Ihr Fuhrpark ist startklar â€“ es fehlen nur noch die Stammdaten.' : 'Der Fuhrpark ist startklar â€“ die Stammdaten werden zentral gepflegt.'}</h3>
-          <p class="onboarding-text">Sobald Fahrzeuge und Fahrer:innen hinterlegt sind, kÃ¶nnen Sie Fahrten planen, KilometerstÃ¤nde erfassen und Wartungen im Blick behalten.</p>
+          <h3 class="onboarding-title">${hasSetupRight ? 'Ihr Fuhrpark ist startklar – es fehlen nur noch die Stammdaten.' : 'Der Fuhrpark ist startklar – die Stammdaten werden zentral gepflegt.'}</h3>
+          <p class="onboarding-text">Sobald Fahrzeuge und Fahrer:innen hinterlegt sind, können Sie Fahrten planen, Kilometerstände erfassen und Wartungen im Blick behalten.</p>
           <div class="onboarding-steps">
             <div class="onboarding-step"><span class="onboarding-step-number">1</span><div><strong>Fahrzeug anlegen</strong><span>Kennzeichen, Standort, Kilometerstand und HU/AU erfassen.</span></div></div>
-            <div class="onboarding-step"><span class="onboarding-step-number">2</span><div><strong>Fahrer:in anlegen</strong><span>Kontaktdaten und FÃ¼hrerscheinklassen hinterlegen.</span></div></div>
+            <div class="onboarding-step"><span class="onboarding-step-number">2</span><div><strong>Fahrer:in anlegen</strong><span>Kontaktdaten und Führerscheinklassen hinterlegen.</span></div></div>
             <div class="onboarding-step"><span class="onboarding-step-number">3</span><div><strong>Erste Fahrt planen</strong><span>Fahrzeug und Fahrer:in im Kalender zusammenbringen.</span></div></div>
           </div>
         </div>
         <aside class="onboarding-aside">
           <span class="onboarding-aside-label">${hasSetupRight ? 'Jetzt loslegen' : 'Hinweis'}</span>
-          ${asideActions || '<p class="onboarding-text">FÃ¼r das Anlegen von Stammdaten fehlt Ihrer Rolle die Berechtigung. Wenden Sie sich an die Administration.</p>'}
+          ${asideActions || '<p class="onboarding-text">Für das Anlegen von Stammdaten fehlt Ihrer Rolle die Berechtigung. Wenden Sie sich an die Administration.</p>'}
           <div class="onboarding-hint">
             ${icon('shield')}
-            <p>Alle Daten werden zentral auf dem Server gespeichert und sind fÃ¼r berechtigte Kolleg:innen sichtbar.</p>
+            <p>Alle Daten werden zentral auf dem Server gespeichert und sind für berechtigte Kolleg:innen sichtbar.</p>
           </div>
         </aside>
       </div>
@@ -311,14 +311,14 @@ function renderDashboard() {
   const hasFleetAccess = ['vehicles_view', 'bookings_view', 'logbook_view', 'maintenance_view', 'costs_view', 'drivers_view'].some(can);
   if (!hasFleetAccess) {
     return `
-      ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">ðŸ‘‹</span>`, 'Ihre Rolle enthÃ¤lt derzeit keine Einsicht in Fuhrparkdaten.', '<a class="btn btn-ghost" href="#/einstellungen">Einstellungen</a>')}
-      <section class="card">${emptyState('shield', 'Keine Fuhrparkdaten freigegeben', 'Die Administration kann Ihrer Rolle unter â€žRollen & Rechteâ€œ die passenden Berechtigungen zuweisen.', '<a class="btn btn-primary btn-sm" href="#/einstellungen">Zum Konto</a>')}</section>`;
+      ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Ihre Rolle enthält derzeit keine Einsicht in Fuhrparkdaten.', '<a class="btn btn-ghost" href="#/einstellungen">Einstellungen</a>')}
+      <section class="card">${emptyState('shield', 'Keine Fuhrparkdaten freigegeben', 'Die Administration kann Ihrer Rolle unter „Rollen & Rechte“ die passenden Berechtigungen zuweisen.', '<a class="btn btn-primary btn-sm" href="#/einstellungen">Zum Konto</a>')}</section>`;
   }
   if (!db.vehicles.length && !db.drivers.length) {
     if (db.bookings.length) {
       return `
-        ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">ðŸ‘‹</span>`, 'Ihre Rolle sieht abgeschlossene Fahrten im Fahrtenbuch.', '<a class="btn btn-primary" href="#/fahrtenbuch">Fahrtenbuch Ã¶ffnen</a>')}
-        <section class="card">${emptyState('book', 'Fahrtenbuch verfÃ¼gbar', `${db.bookings.length} abgeschlossene ${db.bookings.length === 1 ? 'Fahrt ist' : 'Fahrten sind'} fÃ¼r Ihre Rolle sichtbar. Die allgemeine Fahrzeug- und Buchungsverwaltung bleibt gesperrt.`, '<a class="btn btn-primary btn-sm" href="#/fahrtenbuch">Zum Fahrtenbuch</a>')}</section>`;
+        ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Ihre Rolle sieht abgeschlossene Fahrten im Fahrtenbuch.', '<a class="btn btn-primary" href="#/fahrtenbuch">Fahrtenbuch öffnen</a>')}
+        <section class="card">${emptyState('book', 'Fahrtenbuch verfügbar', `${db.bookings.length} abgeschlossene ${db.bookings.length === 1 ? 'Fahrt ist' : 'Fahrten sind'} für Ihre Rolle sichtbar. Die allgemeine Fahrzeug- und Buchungsverwaltung bleibt gesperrt.`, '<a class="btn btn-primary btn-sm" href="#/fahrtenbuch">Zum Fahrtenbuch</a>')}</section>`;
     }
     return renderOnboarding(greeting, displayName);
   }
@@ -361,9 +361,9 @@ function renderDashboard() {
         <div class="trip-side" style="--trip-color:${vehicle ? vehicle.color : '#cbd2dc'}"></div>
         <div class="trip-main">
           <strong>${esc(booking.purpose)}</strong>
-          <span>${vehicleDot(vehicle)} ${esc(vehicle ? vehicle.name : 'Fahrzeug')} Â· ${esc(vehicle ? vehicle.plate : '')}</span>
+          <span>${vehicleDot(vehicle)} ${esc(vehicle ? vehicle.name : 'Fahrzeug')} · ${esc(vehicle ? vehicle.plate : '')}</span>
         </div>
-        <div class="trip-person">${driverAvatar(driver, 'avatar-sm')}<span>${esc(driver ? driver.name : 'â€”')}</span></div>
+        <div class="trip-person">${driverAvatar(driver, 'avatar-sm')}<span>${esc(driver ? driver.name : '—')}</span></div>
         <div class="trip-status">${booking.status === 'active' ? `<span class="badge badge-green"><span class="live-dot"></span>Aktiv</span>` : booking.status === 'planned' ? `<span class="badge badge-blue">Geplant</span>` : statusBadge(booking.status)}</div>
       </div>`;
   }).join('');
@@ -376,7 +376,7 @@ function renderDashboard() {
         <span class="mini-icon">${icon('wrench')}</span>
         <div class="mini-main">
           <strong>${esc(item.title)}</strong>
-          <span>${esc(vehicle ? vehicle.name : 'Fahrzeug')} Â· ${state.label}</span>
+          <span>${esc(vehicle ? vehicle.name : 'Fahrzeug')} · ${state.label}</span>
         </div>
         <span class="mini-date ${state.key === 'overdue' ? 'is-alert' : ''}">${formatDate(item.dueDate)}</span>
       </div>`;
@@ -387,18 +387,18 @@ function renderDashboard() {
     can('bookings_create') ? `<button class="btn btn-primary" type="button" data-action="new-booking">${icon('plus')} Neue Buchung</button>` : ''
   ].join('');
   return `
-    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">ðŸ‘‹</span>`, 'Hier ist der aktuelle Ãœberblick Ã¼ber Ihren Fuhrpark.', dashboardActions)}
+    ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Hier ist der aktuelle Überblick über Ihren Fuhrpark.', dashboardActions)}
 
     <div class="kpi-grid">
       ${metricCard({
         label: 'Fahrzeuge gesamt', value: db.vehicles.length,
-        sub: `${pkw} Pkw Â· ${transporter} Transporter Â· ${bus} Bus`,
+        sub: `${pkw} Pkw · ${transporter} Transporter · ${bus} Bus`,
         iconName: 'car', tint: 'tint-red',
         badge: `<span class="badge badge-gray no-dot">Flotte</span>`
       })}
       ${metricCard({
-        label: 'VerfÃ¼gbare Fahrzeuge', value: available,
-        sub: `<strong>${inUse}</strong> unterwegs Â· <strong>${maintenance}</strong> in Wartung`,
+        label: 'Verfügbare Fahrzeuge', value: available,
+        sub: `<strong>${inUse}</strong> unterwegs · <strong>${maintenance}</strong> in Wartung`,
         iconName: 'check-circle', tint: 'tint-green',
         badge: `<span class="badge badge-green">${Math.round((available / Math.max(db.vehicles.length, 1)) * 100)} %</span>`,
         glow: 'rgba(17,138,91,.06)'
@@ -411,10 +411,10 @@ function renderDashboard() {
         glow: 'rgba(37,99,235,.055)'
       })}
       ${metricCard({
-        label: 'Wartung & TÃœV', value: alerts.length,
-        sub: `<span class="danger">${overdueAlerts} Ã¼berfÃ¤llig</span> Â· ${soonAlerts} bald fÃ¤llig`,
+        label: 'Wartung & TÜV', value: alerts.length,
+        sub: `<span class="danger">${overdueAlerts} überfällig</span> · ${soonAlerts} bald fällig`,
         iconName: 'wrench', tint: 'tint-amber',
-        badge: `<span class="badge badge-${overdueAlerts ? 'red' : 'green'}">${overdueAlerts ? 'Aktion nÃ¶tig' : 'Im Plan'}</span>`,
+        badge: `<span class="badge badge-${overdueAlerts ? 'red' : 'green'}">${overdueAlerts ? 'Aktion nötig' : 'Im Plan'}</span>`,
         glow: 'rgba(184,104,0,.06)'
       })}
     </div>
@@ -423,8 +423,8 @@ function renderDashboard() {
       <section class="card">
         <div class="card-head">
           <div>
-            <h3 class="card-title">Auslastung der nÃ¤chsten Tage</h3>
-            <p class="card-sub">Gebuchte Zeit im VerhÃ¤ltnis zur verfÃ¼gbaren TageskapazitÃ¤t</p>
+            <h3 class="card-title">Auslastung der nächsten Tage</h3>
+            <p class="card-sub">Gebuchte Zeit im Verhältnis zur verfügbaren Tageskapazität</p>
           </div>
           <div class="card-head-side"><span class="badge badge-gray no-dot">7 Tage</span></div>
         </div>
@@ -454,16 +454,16 @@ function renderDashboard() {
         <div class="card-head">
           <div>
             <h3 class="card-title">Handlungsbedarf</h3>
-            <p class="card-sub">FÃ¤llige Wartungen und Hauptuntersuchungen</p>
+            <p class="card-sub">Fällige Wartungen und Hauptuntersuchungen</p>
           </div>
           <div class="card-head-side"><span class="alert-count">${alerts.length}</span></div>
         </div>
         <div class="card-body tight">
-          ${alerts.length ? `<div class="alert-list">${alerts.slice(0, 4).map(renderAlertItem).join('')}</div>` : emptyState('check-circle', 'Alles im grÃ¼nen Bereich', 'Aktuell sind keine Wartungen oder HU/AU-Termine auffÃ¤llig.', '', true)}
+          ${alerts.length ? `<div class="alert-list">${alerts.slice(0, 4).map(renderAlertItem).join('')}</div>` : emptyState('check-circle', 'Alles im grünen Bereich', 'Aktuell sind keine Wartungen oder HU/AU-Termine auffällig.', '', true)}
         </div>
         <div class="card-footer">
-          <span class="text-muted">${overdueAlerts ? `${overdueAlerts} Ã¼berfÃ¤llige Punkte` : 'Keine Ã¼berfÃ¤lligen Punkte'}</span>
-          <a class="link-arrow" href="#/wartung">Wartung Ã¶ffnen ${icon('arrow-right')}</a>
+          <span class="text-muted">${overdueAlerts ? `${overdueAlerts} überfällige Punkte` : 'Keine überfälligen Punkte'}</span>
+          <a class="link-arrow" href="#/wartung">Wartung öffnen ${icon('arrow-right')}</a>
         </div>
       </section>
     </div>
@@ -478,10 +478,10 @@ function renderDashboard() {
           <div class="card-head-side"><span class="badge badge-green no-dot">${todayBookings.length} Buchungen</span></div>
         </div>
         <div class="card-body tight">
-          ${todayRows ? `<div class="trip-list">${todayRows}</div>` : emptyState('calendar', 'Heute keine Fahrten', 'FÃ¼r heute sind noch keine Buchungen eingetragen.', can('bookings_create') ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-booking">Buchung anlegen</button>' : '', true)}
+          ${todayRows ? `<div class="trip-list">${todayRows}</div>` : emptyState('calendar', 'Heute keine Fahrten', 'Für heute sind noch keine Buchungen eingetragen.', can('bookings_create') ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-booking">Buchung anlegen</button>' : '', true)}
         </div>
         <div class="card-footer">
-          <span class="text-muted">${activeToday} aktiv Â· ${todayBookings.filter((booking) => booking.status === 'planned').length} geplant</span>
+          <span class="text-muted">${activeToday} aktiv · ${todayBookings.filter((booking) => booking.status === 'planned').length} geplant</span>
           <a class="link-arrow" href="#/buchungen">Alle Buchungen ${icon('arrow-right')}</a>
         </div>
       </section>
@@ -490,7 +490,7 @@ function renderDashboard() {
         <div class="card-head">
           <div>
             <h3 class="card-title">Anstehende Wartungen</h3>
-            <p class="card-sub">NÃ¤chste geplante Werkstatttermine</p>
+            <p class="card-sub">Nächste geplante Werkstatttermine</p>
           </div>
           <a class="link-arrow" href="#/wartung">Alle ${icon('arrow-right')}</a>
         </div>
@@ -522,7 +522,7 @@ function renderCalendarBookingChip(booking) {
   return `<button class="booking-chip ${booking.status === 'canceled' ? 'is-canceled' : ''}" type="button"
     style="--chip-color:${vehicle ? vehicle.color : '#9aa1ad'};--chip-soft:${vehicle ? hexToRgba(vehicle.color, 0.11) : '#f3f4f6'};--chip-status:${booking.status === 'active' ? '#118a5b' : '#2563eb'}"
     data-action="booking-details" data-id="${booking.id}"
-    title="${esc(booking.purpose)} Â· ${esc(driver ? driver.name : '')}">
+    title="${esc(booking.purpose)} · ${esc(driver ? driver.name : '')}">
     <strong>${formatTime(booking.start)} ${esc(shortName(driver ? driver.name : ''))}</strong>
     <span><i class="chip-status"></i>${esc(booking.purpose)}</span>
   </button>`;
@@ -552,7 +552,7 @@ function renderWeekCalendar() {
     const cells = days.map((dateISO) => {
       const dayBookings = sortByDateAsc(bookings.filter((booking) => booking.vehicleId === vehicle.id && booking.start.slice(0, 10) === dateISO));
       return `<div class="cal-cell ${dateISO === today ? 'is-today' : ''} ${vehicleCanCreate ? '' : 'is-readonly'}"
-        ${vehicleCanCreate ? `role="button" tabindex="0" data-action="calendar-cell" data-vehicle="${vehicle.id}" data-date="${dateISO}" aria-label="Buchung fÃ¼r ${esc(vehicle.name)} am ${formatDate(dateISO)} anlegen"` : ''}>
+        ${vehicleCanCreate ? `role="button" tabindex="0" data-action="calendar-cell" data-vehicle="${vehicle.id}" data-date="${dateISO}" aria-label="Buchung für ${esc(vehicle.name)} am ${formatDate(dateISO)} anlegen"` : ''}>
         ${dayBookings.length ? dayBookings.map(renderCalendarBookingChip).join('') : (vehicleCanCreate ? '<span class="cal-add">+</span>' : '')}
       </div>`;
     }).join('');
@@ -578,7 +578,7 @@ function renderWeekCalendar() {
             <strong>${formatWeekRange(weekStart, weekEnd)}</strong>
             <span>${bookings.length} Buchungen in dieser Woche</span>
           </div>
-          <button class="icon-btn" type="button" data-action="week-next" aria-label="NÃ¤chste Woche">${icon('chevron-right')}</button>
+          <button class="icon-btn" type="button" data-action="week-next" aria-label="Nächste Woche">${icon('chevron-right')}</button>
           <button class="btn btn-ghost btn-sm" type="button" data-action="week-today">Heute</button>
         </div>
         <div class="toolbar">
@@ -603,7 +603,7 @@ function renderWeekCalendar() {
           <span><strong>${formatDecimal(totalMinutes / 60, 1)} h</strong> gebucht</span>
           <span><strong>${activeTodayCount()}</strong> Fahrten aktiv</span>
         </div>
-        <span>${canCreate ? 'Freie Zelle anklicken, um eine Buchung anzulegen.' : 'Lesende Ansicht â€“ keine Berechtigung zum Buchen.'}</span>
+        <span>${canCreate ? 'Freie Zelle anklicken, um eine Buchung anzulegen.' : 'Lesende Ansicht – keine Berechtigung zum Buchen.'}</span>
       </div>
     </div>`;
 }
@@ -620,7 +620,7 @@ function renderBookingTable() {
   const ordered = [...upcoming, ...past];
 
   if (!ordered.length) {
-    return emptyState('calendar', 'Noch keine Buchungen', 'Legen Sie die erste Fahrt fÃ¼r Ihren Fuhrpark an.', can('bookings_create') ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-booking">Buchung anlegen</button>' : '');
+    return emptyState('calendar', 'Noch keine Buchungen', 'Legen Sie die erste Fahrt für Ihren Fuhrpark an.', can('bookings_create') ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-booking">Buchung anlegen</button>' : '');
   }
 
   const rows = ordered.map((booking) => {
@@ -636,11 +636,11 @@ function renderBookingTable() {
         <td>
           <div class="table-vehicle">
             ${vehicleDot(vehicle)}
-            <div><span class="table-main">${esc(vehicle ? vehicle.name : 'â€”')}</span><span class="table-sub">${esc(vehicle ? vehicle.plate : '')}</span></div>
+            <div><span class="table-main">${esc(vehicle ? vehicle.name : '—')}</span><span class="table-sub">${esc(vehicle ? vehicle.plate : '')}</span></div>
           </div>
         </td>
         <td>
-          <div class="table-person">${driverAvatar(driver, 'avatar-sm')}<span>${esc(driver ? driver.name : 'â€”')}</span></div>
+          <div class="table-person">${driverAvatar(driver, 'avatar-sm')}<span>${esc(driver ? driver.name : '—')}</span></div>
         </td>
         <td>
           <span class="table-main">${esc(booking.purpose)}</span>
@@ -676,25 +676,25 @@ function renderBookings() {
       canBase('vehicles_manage') ? `<button class="btn btn-primary" type="button" data-action="new-vehicle">${icon('plus')} Fahrzeug anlegen</button>` : ''
     ].join('');
     return `
-      ${pageHead('Planung', 'Buchungen', 'Fahrten planen, Konflikte vermeiden und den Ãœberblick behalten.', setupActions)}
-      <section class="card">${emptyState('calendar', 'Noch keine Buchungen mÃ¶glich', 'Legen Sie zuerst ein Fahrzeug und eine Fahrer:in an, um Fahrten zu planen.', canBase('vehicles_manage') ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-vehicle">Erstes Fahrzeug anlegen</button>' : '')}</section>`;
+      ${pageHead('Planung', 'Buchungen', 'Fahrten planen, Konflikte vermeiden und den Überblick behalten.', setupActions)}
+      <section class="card">${emptyState('calendar', 'Noch keine Buchungen möglich', 'Legen Sie zuerst ein Fahrzeug und eine Fahrer:in an, um Fahrten zu planen.', canBase('vehicles_manage') ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-vehicle">Erstes Fahrzeug anlegen</button>' : '')}</section>`;
   }
   const headerActions = can('bookings_create') ? `<button class="btn btn-primary" type="button" data-action="new-booking">${icon('plus')} Neue Buchung</button>` : '';
   return `
-    ${pageHead('Planung', 'Buchungen', 'Fahrten planen, Konflikte vermeiden und den Ãœberblick behalten.', headerActions)}
-    ${!db.drivers.length ? `<div class="info-banner" style="margin-bottom:14px">${icon('info')}<div><strong>Noch keine Fahrer:innen</strong><p>Buchungen benÃ¶tigen eine Fahrer:in. Legen Sie dafÃ¼r zuerst einen Eintrag unter â€žFahrer:innenâ€œ an.</p></div></div>` : ''}
+    ${pageHead('Planung', 'Buchungen', 'Fahrten planen, Konflikte vermeiden und den Überblick behalten.', headerActions)}
+    ${!db.drivers.length ? `<div class="info-banner" style="margin-bottom:14px">${icon('info')}<div><strong>Noch keine Fahrer:innen</strong><p>Buchungen benötigen eine Fahrer:in. Legen Sie dafür zuerst einen Eintrag unter „Fahrer:innen“ an.</p></div></div>` : ''}
     <div class="toolbar" style="margin-bottom:14px">
       <div class="segmented">
         <button class="${ui.bookingTab === 'calendar' ? 'is-active' : ''}" type="button" data-action="booking-tab" data-tab="calendar">Wochenansicht</button>
         <button class="${ui.bookingTab === 'list' ? 'is-active' : ''}" type="button" data-action="booking-tab" data-tab="list">Liste</button>
       </div>
       <div class="toolbar-spacer"></div>
-      <span class="toolbar-label">${plannedCount} geplant Â· ${activeCount} aktiv</span>
+      <span class="toolbar-label">${plannedCount} geplant · ${activeCount} aktiv</span>
     </div>
     ${ui.bookingTab === 'list'
       ? `<section class="card">
           <div class="card-head bordered">
-            <div><h3 class="card-title">BuchungsÃ¼bersicht</h3><p class="card-sub">Anstehende und vergangene Fahrten</p></div>
+            <div><h3 class="card-title">Buchungsübersicht</h3><p class="card-sub">Anstehende und vergangene Fahrten</p></div>
             <div class="card-head-side"><span class="badge badge-gray no-dot">${db.bookings.length} gesamt</span></div>
           </div>
           ${renderBookingTable()}
@@ -703,7 +703,7 @@ function renderBookings() {
 }
 
 /* =========================================================
-   Wartung & TÃœV
+   Wartung & TÜV
    ========================================================= */
 function renderTuvList() {
   const vehicles = [...db.vehicles].sort((a, b) => String(a.tuv).localeCompare(String(b.tuv)));
@@ -717,19 +717,19 @@ function renderTuvList() {
       <div class="tuv-row">
         <div class="tuv-main">
           <strong>${esc(vehicle.name)}</strong>
-          <span>${esc(vehicle.plate)} Â· ${missingDate ? 'Kein Termin hinterlegt' : formatDate(vehicle.tuv)}</span>
+          <span>${esc(vehicle.plate)} · ${missingDate ? 'Kein Termin hinterlegt' : formatDate(vehicle.tuv)}</span>
         </div>
         <div class="tuv-progress">
           <div class="progress"><div class="progress-fill ${stateClass === 'danger' ? 'is-danger' : stateClass === 'warning' ? 'is-warning' : ''}" style="width:${pct}%"></div></div>
         </div>
-        <div class="tuv-date ${stateClass ? `is-${stateClass}` : ''}">${missingDate ? 'offen' : days < 0 ? `${Math.abs(days)} T. Ã¼berf.` : `${days} Tage`}</div>
+        <div class="tuv-date ${stateClass ? `is-${stateClass}` : ''}">${missingDate ? 'offen' : days < 0 ? `${Math.abs(days)} T. überf.` : `${days} Tage`}</div>
       </div>`;
   }).join('');
   return `
     <section class="card">
       <div class="card-head">
-        <div><h3 class="card-title">HU/AU im Blick</h3><p class="card-sub">NÃ¤chste Hauptuntersuchungen der Flotte</p></div>
-        <span class="badge badge-amber">${db.vehicles.filter((vehicle) => daysUntil(vehicle.tuv) <= 60).length} fÃ¤llig</span>
+        <div><h3 class="card-title">HU/AU im Blick</h3><p class="card-sub">Nächste Hauptuntersuchungen der Flotte</p></div>
+        <span class="badge badge-amber">${db.vehicles.filter((vehicle) => daysUntil(vehicle.tuv) <= 60).length} fällig</span>
       </div>
       <div class="card-body tight">${rows || emptyState('shield', 'Keine Fahrzeuge vorhanden', 'Sobald Fahrzeuge angelegt sind, erscheinen hier die HU/AU-Termine.', canBase('vehicles_manage') ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-vehicle">Fahrzeug anlegen</button>' : '', true)}</div>
       <div class="card-footer">
@@ -746,7 +746,7 @@ function renderMaintenanceTable() {
   items.sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)));
 
   if (!items.length) {
-    return emptyState('wrench', 'Keine EintrÃ¤ge', 'FÃ¼r diesen Filter sind keine Wartungsarbeiten hinterlegt.', '', true);
+    return emptyState('wrench', 'Keine Einträge', 'Für diesen Filter sind keine Wartungsarbeiten hinterlegt.', '', true);
   }
 
   const rows = items.map((item) => {
@@ -757,7 +757,7 @@ function renderMaintenanceTable() {
         <td>
           <div class="table-vehicle">
             ${vehicleDot(vehicle)}
-            <div><span class="table-main">${esc(vehicle ? vehicle.name : 'â€”')}</span><span class="table-sub">${esc(vehicle ? vehicle.plate : '')}</span></div>
+            <div><span class="table-main">${esc(vehicle ? vehicle.name : '—')}</span><span class="table-sub">${esc(vehicle ? vehicle.plate : '')}</span></div>
           </div>
         </td>
         <td>
@@ -769,7 +769,7 @@ function renderMaintenanceTable() {
           <span class="table-sub">${isMaintenanceDone(item) ? `Erledigt am ${formatDate(item.completedAt)}` : state.label}</span>
         </td>
         <td><span class="badge badge-${state.badge}">${state.label}</span></td>
-        <td class="num"><span class="money">${item.cost ? formatMoney(item.cost) : 'â€”'}</span></td>
+        <td class="num"><span class="money">${item.cost ? formatMoney(item.cost) : '—'}</span></td>
         <td>
           <div class="table-actions">
             ${isMaintenanceDone(item)
@@ -783,7 +783,7 @@ function renderMaintenanceTable() {
   return `
     <div class="table-wrap">
       <table class="data-table">
-        <thead><tr><th>Fahrzeug</th><th>MaÃŸnahme</th><th>FÃ¤llig</th><th>Status</th><th class="num">Kosten</th><th class="num">Aktion</th></tr></thead>
+        <thead><tr><th>Fahrzeug</th><th>Maßnahme</th><th>Fällig</th><th>Status</th><th class="num">Kosten</th><th class="num">Aktion</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
@@ -800,12 +800,12 @@ function renderMaintenance() {
   const showCosts = can('costs_view');
 
   return `
-    ${pageHead('Fuhrpark', 'Wartung & TÃœV', 'Werkstatttermine, Hauptuntersuchungen und offene Arbeiten zentral verwalten.',
+    ${pageHead('Fuhrpark', 'Wartung & TÜV', 'Werkstatttermine, Hauptuntersuchungen und offene Arbeiten zentral verwalten.',
       can('maintenance_manage') ? `<button class="btn btn-primary" type="button" data-action="new-maintenance">${icon('plus')} Wartung erfassen</button>` : '')}
     <div class="kpi-grid">
       ${metricCard({ label: 'Offene Arbeiten', value: openItems.length, sub: `${doneCount} in den letzten Monaten erledigt`, iconName: 'wrench', tint: 'tint-amber', badge: '<span class="badge badge-amber no-dot">Wartungsplan</span>', glow: 'rgba(184,104,0,.06)' })}
-      ${metricCard({ label: 'ÃœberfÃ¤llig', value: overdueMaintenance.length + tuvOverdue.length, sub: `${overdueMaintenance.length} Wartungen Â· ${tuvOverdue.length} HU/AU`, iconName: 'alert', tint: 'tint-red', badge: `<span class="badge badge-${(overdueMaintenance.length + tuvOverdue.length) ? 'red' : 'green'}">${(overdueMaintenance.length + tuvOverdue.length) ? 'Handeln' : 'Ok'}</span>` })}
-      ${metricCard({ label: 'HU/AU in 60 Tagen', value: tuvDue.length, sub: `${db.vehicles.length} Fahrzeuge insgesamt`, iconName: 'shield', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">TÃœV</span>', glow: 'rgba(37,99,235,.055)' })}
+      ${metricCard({ label: 'Überfällig', value: overdueMaintenance.length + tuvOverdue.length, sub: `${overdueMaintenance.length} Wartungen · ${tuvOverdue.length} HU/AU`, iconName: 'alert', tint: 'tint-red', badge: `<span class="badge badge-${(overdueMaintenance.length + tuvOverdue.length) ? 'red' : 'green'}">${(overdueMaintenance.length + tuvOverdue.length) ? 'Handeln' : 'Ok'}</span>` })}
+      ${metricCard({ label: 'HU/AU in 60 Tagen', value: tuvDue.length, sub: `${db.vehicles.length} Fahrzeuge insgesamt`, iconName: 'shield', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">TÜV</span>', glow: 'rgba(37,99,235,.055)' })}
       ${showCosts ? metricCard({ label: 'Wartungskosten', value: formatMoney(maintenanceCosts), sub: 'Letzte 6 Monate', iconName: 'receipt', tint: 'tint-violet', badge: '<span class="badge badge-violet no-dot">Betrieb</span>', glow: 'rgba(109,71,217,.05)' }) : ''}
     </div>
 
@@ -906,7 +906,7 @@ function renderCosts() {
         <td>
           <div class="table-vehicle">
             ${vehicleDot(vehicle)}
-            <div><span class="table-main">${esc(vehicle ? vehicle.name : 'â€”')}</span><span class="table-sub">${esc(vehicle ? vehicle.plate : '')}</span></div>
+            <div><span class="table-main">${esc(vehicle ? vehicle.name : '—')}</span><span class="table-sub">${esc(vehicle ? vehicle.plate : '')}</span></div>
           </div>
         </td>
         <td>
@@ -917,7 +917,7 @@ function renderCosts() {
         <td>
           <div class="table-actions">
             ${cost.receipt && canOn('cost', cost.id, 'costs_view') ? `<button class="table-action" type="button" title="Beleg ansehen" aria-label="Beleg ansehen" data-action="view-receipt" data-id="${cost.id}">${icon('paperclip')}</button>` : ''}
-            ${canOn('cost', cost.id, 'costs_manage') ? `<button class="table-action danger" type="button" title="Kosten lÃ¶schen" aria-label="Kosten lÃ¶schen" data-action="delete-cost" data-id="${cost.id}">${icon('trash')}</button>` : ''}
+            ${canOn('cost', cost.id, 'costs_manage') ? `<button class="table-action danger" type="button" title="Kosten löschen" aria-label="Kosten löschen" data-action="delete-cost" data-id="${cost.id}">${icon('trash')}</button>` : ''}
           </div>
         </td>
       </tr>`;
@@ -930,7 +930,7 @@ function renderCosts() {
     </div>`;
   }).join('');
   const monthLabels = monthly.map((month) => `<span>${month.label}<em>${String(month.year).slice(2)}</em></span>`).join('');
-  const axis = [1, 0.75, 0.5, 0.25, 0].map((part) => `<span>${part === 0 ? '0 â‚¬' : `${formatDecimal((maxMonth * part) / 1000, 1)}k â‚¬`}</span>`).join('');
+  const axis = [1, 0.75, 0.5, 0.25, 0].map((part) => `<span>${part === 0 ? '0 €' : `${formatDecimal((maxMonth * part) / 1000, 1)}k €`}</span>`).join('');
 
   const vehicleRanking = vehicleTotals.slice(0, 8).map((row) => `
     <div class="hbar-item">
@@ -946,20 +946,20 @@ function renderCosts() {
       canManageCosts ? `<button class="btn btn-primary" type="button" data-action="new-cost">${icon('plus')} Kosten erfassen</button>` : '')}
     <div class="kpi-grid">
       ${metricCard({ label: 'Gesamtkosten', value: formatMoney(total), sub: 'Letzte 6 Monate', iconName: 'receipt', tint: 'tint-red', badge: '<span class="badge badge-red no-dot">Betrieb</span>' })}
-      ${metricCard({ label: 'Durchschnitt pro Monat', value: formatMoney(total / 6), sub: 'Ãœber alle Fahrzeuge', iconName: 'trend-up', tint: 'tint-blue', badge: `<span class="badge badge-blue no-dot">${db.vehicles.length} Fahrzeuge</span>`, glow: 'rgba(37,99,235,.055)' })}
-      ${metricCard({ label: 'Kraftstoff & Laden', value: formatMoney(fuel), sub: `â‰ˆ ${formatMoney(fuel / Math.max(db.vehicles.length, 1) / 6)} pro Fahrzeug/Monat`, iconName: 'fuel', tint: 'tint-teal', badge: '<span class="badge badge-teal no-dot">Energie</span>', glow: 'rgba(15,143,138,.055)' })}
+      ${metricCard({ label: 'Durchschnitt pro Monat', value: formatMoney(total / 6), sub: 'Über alle Fahrzeuge', iconName: 'trend-up', tint: 'tint-blue', badge: `<span class="badge badge-blue no-dot">${db.vehicles.length} Fahrzeuge</span>`, glow: 'rgba(37,99,235,.055)' })}
+      ${metricCard({ label: 'Kraftstoff & Laden', value: formatMoney(fuel), sub: `≈ ${formatMoney(fuel / Math.max(db.vehicles.length, 1) / 6)} pro Fahrzeug/Monat`, iconName: 'fuel', tint: 'tint-teal', badge: '<span class="badge badge-teal no-dot">Energie</span>', glow: 'rgba(15,143,138,.055)' })}
       ${metricCard({ label: 'Wartung', value: formatMoney(workshop), sub: 'Werkstatt und Instandhaltung', iconName: 'wrench', tint: 'tint-amber', badge: '<span class="badge badge-amber no-dot">Service</span>', glow: 'rgba(184,104,0,.06)' })}
     </div>
 
     <div class="grid grid-focus mt-18">
       <section class="card">
-        <div class="card-head"><div><h3 class="card-title">Kostenverteilung</h3><p class="card-sub">Nach Kostenart Â· letzte 6 Monate</p></div></div>
+        <div class="card-head"><div><h3 class="card-title">Kostenverteilung</h3><p class="card-sub">Nach Kostenart · letzte 6 Monate</p></div></div>
         <div class="card-body">${renderDonut(categoryTotals, total)}</div>
       </section>
       <section class="card">
         <div class="card-head">
           <div><h3 class="card-title">Monatliche Entwicklung</h3><p class="card-sub">${months[0].longLabel} bis ${months[months.length - 1].longLabel}</p></div>
-          <span class="badge badge-gray no-dot">${formatMoney(total / 6)} Ã˜</span>
+          <span class="badge badge-gray no-dot">${formatMoney(total / 6)} Ø</span>
         </div>
         <div class="card-body">
           <div class="chart-bars">
@@ -969,7 +969,7 @@ function renderCosts() {
               <div class="chart-x" style="--cols:6">${monthLabels}</div>
             </div>
           </div>
-          <div class="chart-legend"><span><i class="legend-dot"></i> Monatssumme</span><span style="margin-left:auto">Ã˜ <strong>${formatMoney(total / 6)}</strong></span></div>
+          <div class="chart-legend"><span><i class="legend-dot"></i> Monatssumme</span><span style="margin-left:auto">Ø <strong>${formatMoney(total / 6)}</strong></span></div>
         </div>
       </section>
     </div>
@@ -977,7 +977,7 @@ function renderCosts() {
     <div class="grid grid-dash mt-18">
       <section class="card">
         <div class="card-head bordered">
-          <div><h3 class="card-title">Kostenbuchungen</h3><p class="card-sub">${filteredCosts.length} von ${db.costs.length} EintrÃ¤gen</p></div>
+          <div><h3 class="card-title">Kostenbuchungen</h3><p class="card-sub">${filteredCosts.length} von ${db.costs.length} Einträgen</p></div>
           <span class="badge badge-gray no-dot">${formatMoney(filteredCosts.reduce((sum, cost) => sum + Number(cost.amount), 0), 2)}</span>
         </div>
         <div class="table-toolbar">
@@ -987,23 +987,23 @@ function renderCosts() {
           </select>
           <select class="select select-sm" id="costVehicleFilter" aria-label="Fahrzeug filtern">
             <option value="all">Alle Fahrzeuge</option>
-            ${db.vehicles.map((vehicle) => `<option value="${vehicle.id}" ${ui.costVehicle === vehicle.id ? 'selected' : ''}>${esc(vehicle.name)} Â· ${esc(vehicle.plate)}</option>`).join('')}
+            ${db.vehicles.map((vehicle) => `<option value="${vehicle.id}" ${ui.costVehicle === vehicle.id ? 'selected' : ''}>${esc(vehicle.name)} · ${esc(vehicle.plate)}</option>`).join('')}
           </select>
         </div>
         ${filteredCosts.length ? `<div class="table-wrap is-scroll"><table class="data-table">
           <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Kostenart / Beschreibung</th><th class="num">Betrag</th><th class="num"></th></tr></thead>
           <tbody>${costRows}</tbody>
-        </table></div>` : emptyState('receipt', 'Keine Kosten gefunden', 'Ã„ndern Sie die Filter oder erfassen Sie eine neue Kostenposition.', '', true)}
+        </table></div>` : emptyState('receipt', 'Keine Kosten gefunden', 'Ändern Sie die Filter oder erfassen Sie eine neue Kostenposition.', '', true)}
         <div class="card-footer">
-          <span class="text-muted">Belege werden serverseitig gespeichert und sind fÃ¼r berechtigte Nutzer:innen abrufbar.</span>
-          ${canManageCosts ? `<button class="btn-link" type="button" data-action="new-cost">${icon('plus')} Kosten hinzufÃ¼gen</button>` : ''}
+          <span class="text-muted">Belege werden serverseitig gespeichert und sind für berechtigte Nutzer:innen abrufbar.</span>
+          ${canManageCosts ? `<button class="btn-link" type="button" data-action="new-cost">${icon('plus')} Kosten hinzufügen</button>` : ''}
         </div>
       </section>
 
       <section class="card">
         <div class="card-head"><div><h3 class="card-title">Kosten nach Fahrzeug</h3><p class="card-sub">Betriebskosten der letzten 6 Monate</p></div></div>
         <div class="card-body"><div class="hbar-list">${vehicleRanking}</div></div>
-        <div class="card-footer"><span class="text-muted">HÃ¶chster Wert: ${formatMoney(maxVehicle)}</span><a class="link-arrow" href="#/fahrzeuge">Flotte ${icon('arrow-right')}</a></div>
+        <div class="card-footer"><span class="text-muted">Höchster Wert: ${formatMoney(maxVehicle)}</span><a class="link-arrow" href="#/fahrzeuge">Flotte ${icon('arrow-right')}</a></div>
       </section>
     </div>`;
 }
@@ -1026,8 +1026,8 @@ function renderLogbook() {
     return `
       <tr>
         <td><span class="table-main">${formatDate(trip.start)}</span><span class="table-sub">${WEEKDAYS[(parseISODate(trip.start).getDay() + 6) % 7]}</span></td>
-        <td><div class="table-vehicle">${vehicleDot(vehicle)}<div><span class="table-main">${esc(vehicle ? vehicle.name : 'â€”')}</span><span class="table-sub">${esc(vehicle ? vehicle.plate : '')}</span></div></div></td>
-        <td><div class="table-person">${driverAvatar(driver, 'avatar-sm')}<span>${esc(driver ? driver.name : 'â€”')}</span></div></td>
+        <td><div class="table-vehicle">${vehicleDot(vehicle)}<div><span class="table-main">${esc(vehicle ? vehicle.name : '—')}</span><span class="table-sub">${esc(vehicle ? vehicle.plate : '')}</span></div></div></td>
+        <td><div class="table-person">${driverAvatar(driver, 'avatar-sm')}<span>${esc(driver ? driver.name : '—')}</span></div></td>
         <td><span class="table-main">${esc(trip.purpose)}</span><span class="table-sub">${formatTimeRange(trip.start, trip.end)}</span></td>
         <td><span class="table-main">${formatNumber(trip.startKm)}</span><span class="table-sub">bis ${formatNumber(trip.endKm)} km</span></td>
         <td class="num"><span class="money">${formatNumber(km)} km</span></td>
@@ -1036,22 +1036,22 @@ function renderLogbook() {
   }).join('');
 
   return `
-    ${pageHead('Fahrtenbuch', 'Fahrtenbuch', 'Gefahrene Strecken, KilometerstÃ¤nde und Fahrer:innen dokumentieren.',
+    ${pageHead('Fahrtenbuch', 'Fahrtenbuch', 'Gefahrene Strecken, Kilometerstände und Fahrer:innen dokumentieren.',
       [
         canExportLog ? `<button class="btn btn-ghost" type="button" data-action="export-log">${icon('download')} CSV exportieren</button>` : '',
         canManageLog ? `<button class="btn btn-primary" type="button" data-action="new-log">${icon('plus')} Fahrt nachtragen</button>` : ''
       ].join(''))}
     <div class="kpi-grid">
-      ${metricCard({ label: 'Fahrten', value: trips.length, sub: ui.logPeriod === 'all' ? 'Alle dokumentierten Fahrten' : 'Im ausgewÃ¤hlten Zeitraum', iconName: 'route', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">Fahrtenbuch</span>', glow: 'rgba(37,99,235,.055)' })}
-      ${metricCard({ label: 'Gefahrene Kilometer', value: formatNumber(distance), sub: `â‰ˆ ${formatDecimal(average, 0)} km pro Fahrt`, iconName: 'gauge', tint: 'tint-green', badge: '<span class="badge badge-green no-dot">Strecke</span>', glow: 'rgba(17,138,91,.055)' })}
+      ${metricCard({ label: 'Fahrten', value: trips.length, sub: ui.logPeriod === 'all' ? 'Alle dokumentierten Fahrten' : 'Im ausgewählten Zeitraum', iconName: 'route', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">Fahrtenbuch</span>', glow: 'rgba(37,99,235,.055)' })}
+      ${metricCard({ label: 'Gefahrene Kilometer', value: formatNumber(distance), sub: `≈ ${formatDecimal(average, 0)} km pro Fahrt`, iconName: 'gauge', tint: 'tint-green', badge: '<span class="badge badge-green no-dot">Strecke</span>', glow: 'rgba(17,138,91,.055)' })}
       ${metricCard({ label: 'Fahrzeuge im Einsatz', value: vehiclesUsed, sub: `${vehiclesUsed} ${vehiclesUsed === 1 ? 'Fahrzeug' : 'Fahrzeuge'} im Fahrtenbuch`, iconName: 'car', tint: 'tint-teal', badge: '<span class="badge badge-teal no-dot">Flotte</span>', glow: 'rgba(15,143,138,.055)' })}
-      ${metricCard({ label: 'Ã˜ Distanz', value: `${formatDecimal(average, 0)} km`, sub: 'Pro dokumentierter Fahrt', iconName: 'trend-up', tint: 'tint-violet', badge: '<span class="badge badge-violet no-dot">Kennzahl</span>', glow: 'rgba(109,71,217,.05)' })}
+      ${metricCard({ label: 'Ø Distanz', value: `${formatDecimal(average, 0)} km`, sub: 'Pro dokumentierter Fahrt', iconName: 'trend-up', tint: 'tint-violet', badge: '<span class="badge badge-violet no-dot">Kennzahl</span>', glow: 'rgba(109,71,217,.05)' })}
     </div>
     <section class="card mt-18">
       <div class="card-head bordered">
-        <div><h3 class="card-title">FahrtenÃ¼bersicht</h3><p class="card-sub">${trips.length} abgeschlossene Fahrten Â· ${formatNumber(distance)} km</p></div>
+        <div><h3 class="card-title">Fahrtenübersicht</h3><p class="card-sub">${trips.length} abgeschlossene Fahrten · ${formatNumber(distance)} km</p></div>
         <div class="card-head-side">
-          <select class="select select-sm" id="logPeriod" style="width:auto" aria-label="Zeitraum auswÃ¤hlen">
+          <select class="select select-sm" id="logPeriod" style="width:auto" aria-label="Zeitraum auswählen">
             <option value="30" ${ui.logPeriod === '30' ? 'selected' : ''}>Letzte 30 Tage</option>
             <option value="90" ${ui.logPeriod === '90' ? 'selected' : ''}>Letzte 90 Tage</option>
             <option value="all" ${ui.logPeriod === 'all' ? 'selected' : ''}>Alle Fahrten</option>
@@ -1061,9 +1061,9 @@ function renderLogbook() {
       ${trips.length ? `<div class="table-wrap"><table class="data-table">
         <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Fahrer:in</th><th>Zweck / Zeit</th><th>Kilometerstand</th><th class="num">Distanz</th><th class="num"></th></tr></thead>
         <tbody>${rows}</tbody>
-      </table></div>` : emptyState('book', 'Keine Fahrten im Zeitraum', 'WÃ¤hlen Sie einen anderen Zeitraum oder tragen Sie eine Fahrt nach.', canManageLog ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-log">Fahrt nachtragen</button>' : '')}
+      </table></div>` : emptyState('book', 'Keine Fahrten im Zeitraum', 'Wählen Sie einen anderen Zeitraum oder tragen Sie eine Fahrt nach.', canManageLog ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-log">Fahrt nachtragen</button>' : '')}
       <div class="table-footer">
-        <span>${trips.length} Fahrten Â· ${new Set(trips.map((trip) => trip.driverId)).size} Fahrer:innen</span>
+        <span>${trips.length} Fahrten · ${new Set(trips.map((trip) => trip.driverId)).size} Fahrer:innen</span>
         <span>Gesamtstrecke: <strong>${formatNumber(distance)} km</strong></span>
       </div>
     </section>`;
@@ -1089,7 +1089,7 @@ function renderDrivers() {
           </div>
           <div class="driver-copy">
             <h3>${esc(driver.name)}</h3>
-            <p>${esc(driver.role)} Â· ${esc(driver.department)}</p>
+            <p>${esc(driver.role)} · ${esc(driver.department)}</p>
             <span class="badge badge-${status.badge}">${status.label}</span>
           </div>
           ${canOn('driver', driver.id, 'drivers_manage') ? `<button class="table-action" type="button" title="Fahrer:in bearbeiten" aria-label="Fahrer:in bearbeiten" data-action="edit-driver" data-id="${driver.id}">${icon('edit')}</button>` : ''}
@@ -1106,15 +1106,15 @@ function renderDrivers() {
   }).join('');
 
   return `
-    ${pageHead('Team', 'Fahrer:innen', 'FÃ¼hrerscheine, Kontaktdaten und EinsÃ¤tze der Mitarbeitenden verwalten.',
+    ${pageHead('Team', 'Fahrer:innen', 'Führerscheine, Kontaktdaten und Einsätze der Mitarbeitenden verwalten.',
       canBase('drivers_manage') ? `<button class="btn btn-primary" type="button" data-action="new-driver">${icon('plus')} Fahrer:in anlegen</button>` : '')}
     <div class="summary-chips" style="margin-bottom:18px">
-      <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${available}</strong> verfÃ¼gbar</span>
+      <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${available}</strong> verfügbar</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--blue)"></span><strong>${active}</strong> im Einsatz</span>
       <span class="summary-chip"><span class="dot" style="--dot:#aeb5c0"></span><strong>${away}</strong> abwesend</span>
-      <span class="summary-chip">${icon('id')} ${db.drivers.filter((driver) => driver.license.some((license) => ['BE', 'C1', 'D1'].includes(license))).length} mit erweitertem FÃ¼hrerschein</span>
+      <span class="summary-chip">${icon('id')} ${db.drivers.filter((driver) => driver.license.some((license) => ['BE', 'C1', 'D1'].includes(license))).length} mit erweitertem Führerschein</span>
     </div>
-    ${db.drivers.length ? `<div class="driver-grid">${cards}</div>` : emptyState('users', 'Noch keine Fahrer:innen', 'Legen Sie die ersten Mitarbeitenden an, damit Fahrten zugewiesen werden kÃ¶nnen.', canBase('drivers_manage') ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-driver">Fahrer:in anlegen</button>' : '')}`;
+    ${db.drivers.length ? `<div class="driver-grid">${cards}</div>` : emptyState('users', 'Noch keine Fahrer:innen', 'Legen Sie die ersten Mitarbeitenden an, damit Fahrten zugewiesen werden können.', canBase('drivers_manage') ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-driver">Fahrer:in anlegen</button>' : '')}`;
 }
 
 /* =========================================================
@@ -1140,7 +1140,7 @@ function renderBrandingCard() {
     ['#0f766e', 'Petrol'],
     ['#2563eb', 'Blau'],
     ['#7c3aed', 'Violett'],
-    ['#047857', 'GrÃ¼n'],
+    ['#047857', 'Grün'],
     ['#b45309', 'Bernstein'],
     ['#be123c', 'Rot'],
     ['#475569', 'Grau']
@@ -1157,7 +1157,7 @@ function renderBrandingCard() {
   return `
     <form class="card settings-card" id="brandingForm">
       <div class="card-head bordered">
-        <div><h3 class="card-title">Erscheinungsbild</h3><p class="card-sub">Global fÃ¼r alle Nutzer:innen und die Anmeldeseite.</p></div>
+        <div><h3 class="card-title">Erscheinungsbild</h3><p class="card-sub">Global für alle Nutzer:innen und die Anmeldeseite.</p></div>
         <span class="badge badge-red no-dot">Administration</span>
       </div>
       <div class="card-body">
@@ -1178,7 +1178,7 @@ function renderBrandingCard() {
           <div class="field">
             <label for="brandingName">Anzeigename <span class="optional">*</span></label>
             <input class="input" id="brandingName" name="brandingName" type="text" value="${esc(neutralName)}" maxlength="120">
-            <p class="field-hint">Erscheint im MenÃ¼, auf der Anmeldeseite und im Footer des neutralen Themes.</p>
+            <p class="field-hint">Erscheint im Menü, auf der Anmeldeseite und im Footer des neutralen Themes.</p>
           </div>
 
           <div class="branding-options">
@@ -1213,9 +1213,9 @@ function renderBrandingCard() {
             <summary>Weitere Farben <span>Seite, Karten, Text und Rahmen</span></summary>
             <div class="branding-color-grid">
               ${colorField('brandingPageBackground', 'Seitenhintergrund', customPageBackground)}
-              ${colorField('brandingSurface', 'Karten / FlÃ¤chen', customSurface)}
+              ${colorField('brandingSurface', 'Karten / Flächen', customSurface)}
               ${colorField('brandingText', 'Textfarbe', customText)}
-              ${colorField('brandingMuted', 'SekundÃ¤rtext', customMuted)}
+              ${colorField('brandingMuted', 'Sekundärtext', customMuted)}
               ${colorField('brandingBorder', 'Rahmen', customBorder)}
             </div>
             <button class="btn btn-ghost btn-sm" type="button" data-action="reset-brand-colors">Standardfarben</button>
@@ -1235,7 +1235,7 @@ function renderBrandingCard() {
                 <div class="preview-kpis">
                   <div class="preview-kpi"><span>Fahrzeuge</span><strong>8</strong></div>
                   <div class="preview-kpi"><span>Buchungen</span><strong>4</strong></div>
-                  <div class="preview-kpi"><span>VerfÃ¼gbar</span><strong>5</strong></div>
+                  <div class="preview-kpi"><span>Verfügbar</span><strong>5</strong></div>
                 </div>
                 <div class="preview-content-box"><strong>Heute im Einsatz</strong><span>Hausbesuche Ambulante Pflege</span><span>Seniorenausflug Weserpromenade</span></div>
               </div>
@@ -1246,10 +1246,10 @@ function renderBrandingCard() {
           <div class="image-upload">
             <div class="image-upload-preview" id="brandingLogoPreview">${neutralLogoPreview}</div>
             <div class="image-upload-copy">
-              <strong>Logo fÃ¼r das neutrale Theme</strong>
-              <p>PNG, JPG oder WebP. Das Logo wird auf weiÃŸem Hintergrund angezeigt und automatisch verkleinert.</p>
+              <strong>Logo für das neutrale Theme</strong>
+              <p>PNG, JPG oder WebP. Das Logo wird auf weißem Hintergrund angezeigt und automatisch verkleinert.</p>
               <div class="image-upload-actions">
-                <label class="btn btn-ghost btn-sm" for="brandingLogoInput">${icon('download')} Logo auswÃ¤hlen</label>
+                <label class="btn btn-ghost btn-sm" for="brandingLogoInput">${icon('download')} Logo auswählen</label>
                 <button class="btn btn-ghost btn-sm" type="button" id="brandingLogoRemove" data-action="remove-branding-logo" ${db.settings.logoUrl ? '' : 'hidden'}>${icon('trash')} Entfernen</button>
               </div>
             </div>
@@ -1260,11 +1260,11 @@ function renderBrandingCard() {
 
         <div class="info-banner" style="margin-top:16px">
           ${icon('info')}
-          <div><strong>Zentrale Einstellung</strong><p>Diese Auswahl gilt fÃ¼r alle Benutzer:innen und die Anmeldeseite. Andere Nutzer sehen die Ã„nderung beim nÃ¤chsten Laden. Individuelle Themes pro Konto gibt es nicht.</p></div>
+          <div><strong>Zentrale Einstellung</strong><p>Diese Auswahl gilt für alle Benutzer:innen und die Anmeldeseite. Andere Nutzer sehen die Änderung beim nächsten Laden. Individuelle Themes pro Konto gibt es nicht.</p></div>
         </div>
       </div>
       <div class="card-footer">
-        <span class="text-muted">Das Theme wird beim Speichern sofort Ã¼bernommen.</span>
+        <span class="text-muted">Das Theme wird beim Speichern sofort übernommen.</span>
         <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Erscheinungsbild speichern</button>
       </div>
     </form>`;
@@ -1276,7 +1276,7 @@ function driverLinkStatus(driver) {
   const active = (db.bookings || []).some((booking) => booking.driverId === driver.id && booking.status === 'active');
   return active
     ? { label: 'Im Einsatz', badge: 'blue' }
-    : { label: 'VerfÃ¼gbar', badge: 'green' };
+    : { label: 'Verfügbar', badge: 'green' };
 }
 
 function renderAdminDriverProfileCard() {
@@ -1289,7 +1289,7 @@ function renderAdminDriverProfileCard() {
   const status = driverLinkStatus(linkedDriver);
   const ownTripsChecked = linkedDriver ? linkedDriver.ownTripsAccess !== false : true;
   const driverOptions = availableDrivers.map((driver) => `
-    <option value="${esc(driver.id)}" ${driver.id === linkedDriver?.id ? 'selected' : ''}>${esc(driver.name)} Â· ${esc(driver.role || 'Fahrer:in')}</option>
+    <option value="${esc(driver.id)}" ${driver.id === linkedDriver?.id ? 'selected' : ''}>${esc(driver.name)} · ${esc(driver.role || 'Fahrer:in')}</option>
   `).join('');
   const currentLink = linkedDriver
     ? `<div class="detail-list-item">
@@ -1299,18 +1299,18 @@ function renderAdminDriverProfileCard() {
       </div>`
     : `<div class="detail-list-item">
         <span class="mini-icon tint-blue">${icon('users')}</span>
-        <div class="main"><strong>Nicht verknÃ¼pft</strong><span>Ihr Administratorkonto ist derzeit keinem Fahrerprofil zugeordnet.</span></div>
+        <div class="main"><strong>Nicht verknüpft</strong><span>Ihr Administratorkonto ist derzeit keinem Fahrerprofil zugeordnet.</span></div>
       </div>`;
   const cardHead = `
     <div class="card-head bordered">
-      <div><h3 class="card-title">Fahrerprofil</h3><p class="card-sub">VerknÃ¼pfung mit Ihrem Administratorkonto</p></div>
+      <div><h3 class="card-title">Fahrerprofil</h3><p class="card-sub">Verknüpfung mit Ihrem Administratorkonto</p></div>
       <span class="badge badge-red no-dot">Administration</span>
     </div>`;
   if (!availableDrivers.length) {
     const emptyTitle = drivers.length ? 'Keine freien Fahrer:innen' : 'Noch keine Fahrer:innen';
     const emptyText = drivers.length
-      ? 'Alle Fahrerprofile sind bereits mit anderen Konten verknÃ¼pft. Entfernen Sie dort zuerst die VerknÃ¼pfung.'
-      : 'Legen Sie zuerst ein Fahrerprofil an, um es mit Ihrem Administratorkonto zu verknÃ¼pfen.';
+      ? 'Alle Fahrerprofile sind bereits mit anderen Konten verknüpft. Entfernen Sie dort zuerst die Verknüpfung.'
+      : 'Legen Sie zuerst ein Fahrerprofil an, um es mit Ihrem Administratorkonto zu verknüpfen.';
     return `
       <section class="card settings-card">
         ${cardHead}
@@ -1328,24 +1328,24 @@ function renderAdminDriverProfileCard() {
         <div class="detail-list" style="margin-bottom:16px">${currentLink}</div>
         <div class="form-grid">
           <div class="field field-full">
-            <label for="driverLinkSelect">${linkedDriver ? 'Fahrerprofil wechseln' : 'Fahrerprofil auswÃ¤hlen'}</label>
+            <label for="driverLinkSelect">${linkedDriver ? 'Fahrerprofil wechseln' : 'Fahrerprofil auswählen'}</label>
             <select class="select" id="driverLinkSelect" name="driverId" data-linked-driver="${esc(linkedDriver?.id || '')}" required>
-              ${linkedDriver ? '' : '<option value="" selected disabled>Bitte auswÃ¤hlen â€¦</option>'}
+              ${linkedDriver ? '' : '<option value="" selected disabled>Bitte auswählen …</option>'}
               ${driverOptions}
             </select>
-            <p class="field-hint">Nur freie Fahrerprofile oder Ihre eigene VerknÃ¼pfung sind auswÃ¤hlbar.</p>
+            <p class="field-hint">Nur freie Fahrerprofile oder Ihre eigene Verknüpfung sind auswählbar.</p>
           </div>
           <div class="field field-full" id="driverLinkAccessField" ${linkedDriver ? '' : 'hidden'}>
             <label class="check-row"><input type="checkbox" id="driverLinkOwnTripsAccess" name="ownTripsAccess" ${ownTripsChecked ? 'checked' : ''} ${linkedDriver ? '' : 'disabled'}> Standardzugriff auf Meine Fahrten aktiv</label>
-            <p class="field-hint">Gilt fÃ¼r die VerknÃ¼pfung mit Ihrem Administratorkonto. Explizite Rollen- und Benutzerregeln kÃ¶nnen den Standard Ã¼bersteuern.</p>
+            <p class="field-hint">Gilt für die Verknüpfung mit Ihrem Administratorkonto. Explizite Rollen- und Benutzerregeln können den Standard übersteuern.</p>
           </div>
         </div>
       </div>
       <div class="card-footer">
-        <span class="text-muted">${linkedDriver ? 'Ã„nderungen gelten sofort fÃ¼r Ihr Konto.' : 'Die VerknÃ¼pfung ist optional.'}</span>
+        <span class="text-muted">${linkedDriver ? 'Änderungen gelten sofort für Ihr Konto.' : 'Die Verknüpfung ist optional.'}</span>
         <div class="setting-actions" style="margin-top:0">
           ${linkedDriver ? `<button class="btn btn-danger-ghost btn-sm" type="button" data-action="unlink-admin-driver">${icon('x')} Entfernen</button>` : ''}
-          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} ${linkedDriver ? 'Speichern' : 'VerknÃ¼pfen'}</button>
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} ${linkedDriver ? 'Speichern' : 'Verknüpfen'}</button>
         </div>
       </div>
     </form>`;
@@ -1412,11 +1412,11 @@ function renderSettings() {
           </div>
           <div class="info-banner" style="margin-top:16px">
             ${icon('shield')}
-            <div><strong>Zentrale Datenhaltung</strong><p>Alle Stammdaten, Buchungen und Dateien werden auf dem Server gespeichert. RegelmÃ¤ÃŸige Sicherungen des Datenverzeichnisses sind Aufgabe des Betriebs.</p></div>
+            <div><strong>Zentrale Datenhaltung</strong><p>Alle Stammdaten, Buchungen und Dateien werden auf dem Server gespeichert. Regelmäßige Sicherungen des Datenverzeichnisses sind Aufgabe des Betriebs.</p></div>
           </div>
         </div>
         <div class="card-footer">
-          <span class="text-muted">Ã„nderungen gelten sofort fÃ¼r alle angemeldeten Nutzer:innen.</span>
+          <span class="text-muted">Änderungen gelten sofort für alle angemeldeten Nutzer:innen.</span>
           <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
         </div>
       </form>` : '',
@@ -1434,11 +1434,11 @@ function renderSettings() {
             </div>
             <div class="detail-list-item">
               <span class="mini-icon tint-green">${icon('shield')}</span>
-              <div class="main"><strong>Server-Sicherung</strong><span>FÃ¼r den Produktivbetrieb mÃ¼ssen Datenbank und Upload-Verzeichnis regelmÃ¤ÃŸig gesichert werden.</span></div>
+              <div class="main"><strong>Server-Sicherung</strong><span>Für den Produktivbetrieb müssen Datenbank und Upload-Verzeichnis regelmäßig gesichert werden.</span></div>
             </div>
           </div>
           <div class="version-box">
-            <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : 'â€”'}</span>
+            <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
             <span class="version-badge">Server-MVP 0.6.1</span>
           </div>
         </div>
@@ -1456,14 +1456,14 @@ function renderSettings() {
             <div class="detail-list">
               <div class="detail-list-item">
                 ${driverAvatar({ name: currentUser?.name || '?', color: '#e2001a' }, 'avatar-lg')}
-                <div class="main"><strong>${esc(currentUser?.name || 'â€”')}</strong><span>${esc(currentUser?.email || 'â€”')}</span></div>
+                <div class="main"><strong>${esc(currentUser?.name || '—')}</strong><span>${esc(currentUser?.email || '—')}</span></div>
                 <span class="badge badge-red no-dot">${esc(roleDisplay)}</span>
               </div>
             </div>
             <div class="setting-actions">
               ${capabilities.isSuperadmin
-                ? `<span class="text-muted">${icon('lock')} Passwort ausschlieÃŸlich Ã¼ber die Superadmin-Datei und Neustart Ã¤nderbar.</span>`
-                : `<button class="btn btn-ghost btn-sm" type="button" data-action="change-password">${icon('shield')} Passwort Ã¤ndern</button>`}
+                ? `<span class="text-muted">${icon('lock')} Passwort ausschließlich über die Superadmin-Datei und Neustart änderbar.</span>`
+                : `<button class="btn btn-ghost btn-sm" type="button" data-action="change-password">${icon('shield')} Passwort ändern</button>`}
               ${managementLinks}
             </div>
           </div>
@@ -1477,16 +1477,16 @@ function renderSettings() {
 
         ${showInstallationInfo ? `
         <section class="card">
-          <div class="card-head"><div><h3 class="card-title">Ãœber diese Installation</h3><p class="card-sub">Fuhrparkmanagement fÃ¼r ${esc(brandDisplayName())}</p></div></div>
+          <div class="card-head"><div><h3 class="card-title">Über diese Installation</h3><p class="card-sub">Fuhrparkmanagement für ${esc(brandDisplayName())}</p></div></div>
           <div class="card-body">
             <div class="detail-list">
               <div class="detail-list-item">
                 <span class="mini-icon tint-green">${icon('check-circle')}</span>
-                <div class="main"><strong>Buchungen mit KonfliktprÃ¼fung</strong><span>Doppelbelegungen werden serverseitig verhindert.</span></div>
+                <div class="main"><strong>Buchungen mit Konfliktprüfung</strong><span>Doppelbelegungen werden serverseitig verhindert.</span></div>
               </div>
               <div class="detail-list-item">
                 <span class="mini-icon tint-blue">${icon('calendar-check')}</span>
-                <div class="main"><strong>Wartung und HU/AU</strong><span>Automatische Hinweise zu fÃ¤lligen Terminen und offenen Arbeiten.</span></div>
+                <div class="main"><strong>Wartung und HU/AU</strong><span>Automatische Hinweise zu fälligen Terminen und offenen Arbeiten.</span></div>
               </div>
               <div class="detail-list-item">
                 <span class="mini-icon tint-violet">${icon('receipt')}</span>
@@ -1495,18 +1495,18 @@ function renderSettings() {
             </div>
             <div class="info-banner" style="margin-top:14px">
               ${icon('info')}
-              <div><strong>Interner Betrieb</strong><p>Diese Instanz ist fÃ¼r den internen Gebrauch bestimmt. Zugriff, Aufbewahrungsfristen und Datenschutz mÃ¼ssen organisatorisch geregelt sein.</p></div>
+              <div><strong>Interner Betrieb</strong><p>Diese Instanz ist für den internen Gebrauch bestimmt. Zugriff, Aufbewahrungsfristen und Datenschutz müssen organisatorisch geregelt sein.</p></div>
             </div>
           </div>
         </section>
 
         <section class="card">
-          <div class="card-head"><div><h3 class="card-title">TastenkÃ¼rzel</h3><p class="card-sub">Schneller durch die Anwendung navigieren</p></div></div>
+          <div class="card-head"><div><h3 class="card-title">Tastenkürzel</h3><p class="card-sub">Schneller durch die Anwendung navigieren</p></div></div>
           <div class="card-body">
             <div class="shortcut-list">
-              <div class="shortcut-row"><span>Globale Suche Ã¶ffnen</span><kbd>Strg K</kbd></div>
-              <div class="shortcut-row"><span>Dialog schlieÃŸen</span><kbd>Esc</kbd></div>
-              <div class="shortcut-row"><span>Erstes Suchergebnis Ã¶ffnen</span><kbd>Enter</kbd></div>
+              <div class="shortcut-row"><span>Globale Suche öffnen</span><kbd>Strg K</kbd></div>
+              <div class="shortcut-row"><span>Dialog schließen</span><kbd>Esc</kbd></div>
+              <div class="shortcut-row"><span>Erstes Suchergebnis öffnen</span><kbd>Enter</kbd></div>
             </div>
           </div>
         </section>` : ''}
@@ -1518,7 +1518,7 @@ function renderSettings() {
    Benutzerverwaltung
    ========================================================= */
 function renderUsers() {
-  if (!can('users_manage')) return emptyState('shield', 'Keine Berechtigung', 'FÃ¼r die Benutzerverwaltung fehlt die Berechtigung â€žBenutzer verwaltenâ€œ.');
+  if (!can('users_manage')) return emptyState('shield', 'Keine Berechtigung', 'Für die Benutzerverwaltung fehlt die Berechtigung „Benutzer verwalten“.');
   const users = db.users || [];
   const admins = users.filter((user) => user.role === 'admin' && user.active).length;
   const active = users.filter((user) => user.active).length;
@@ -1543,7 +1543,7 @@ function renderUsers() {
         ? `${canEditOverrides ? `<button class="table-action" type="button" title="Benutzer-Ausnahmen bearbeiten" aria-label="Benutzer-Ausnahmen bearbeiten" data-action="edit-user-permissions" data-id="${user.id}">${icon('filter')}</button>` : ''}
            <button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button>
            ${!user.active ? `<button class="table-action danger" type="button" title="Benutzerkonto anonymisieren" aria-label="Benutzerkonto anonymisieren" data-action="anonymize-user" data-id="${user.id}">${icon('user-x')}</button>` : ''}`
-        : `<span class="table-action" title="Nur eigene oder niedrigere RÃ¤nge bearbeitbar" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`;
+        : `<span class="table-action" title="Nur eigene oder niedrigere Ränge bearbeitbar" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`;
     return `
       <tr>
         <td>
@@ -1557,19 +1557,19 @@ function renderUsers() {
           <span class="badge badge-${user.role === 'admin' ? 'red' : 'blue'}">${esc(roleLabel(user.role))}</span>
           <span class="table-sub">Rang ${formatNumber(user.roleRank || roleRankOf(user.role))}</span>
           ${overrideCount ? `<span class="badge badge-violet no-dot">${overrideCount} Ausnahmen</span>` : ''}
-          ${user.driverId ? `<span class="badge badge-${user.ownTripsAccess ? 'green' : 'gray'} no-dot">Fahrer:in: ${esc(user.driverName)}${user.ownTripsAccess ? '' : ' Â· ohne Standardzugriff'}</span>` : ''}
+          ${user.driverId ? `<span class="badge badge-${user.ownTripsAccess ? 'green' : 'gray'} no-dot">Fahrer:in: ${esc(user.driverName)}${user.ownTripsAccess ? '' : ' · ohne Standardzugriff'}</span>` : ''}
         </td>
         <td>${isAnonymized ? '<span class="badge badge-gray">Anonymisiert</span>' : user.active ? '<span class="badge badge-green">Aktiv</span>' : '<span class="badge badge-gray">Deaktiviert</span>'}</td>
-        <td>${isAnonymized ? '<span class="text-muted">â€”</span>' : user.lastLoginAt ? `<span class="table-main">${formatDateTime(user.lastLoginAt)}</span>` : '<span class="text-muted">Noch nicht angemeldet</span>'}</td>
+        <td>${isAnonymized ? '<span class="text-muted">—</span>' : user.lastLoginAt ? `<span class="table-main">${formatDateTime(user.lastLoginAt)}</span>` : '<span class="text-muted">Noch nicht angemeldet</span>'}</td>
         <td><div class="table-actions">${actions}</div></td>
       </tr>`;
   }).join('');
   return `
-    ${pageHead('Organisation', 'Benutzer', 'ZugÃ¤nge, Rollen und persÃ¶nliche Ausnahmen innerhalb des eigenen Rangbereichs verwalten.',
+    ${pageHead('Organisation', 'Benutzer', 'Zugänge, Rollen und persönliche Ausnahmen innerhalb des eigenen Rangbereichs verwalten.',
       `${can('roles_manage') ? `<a class="btn btn-ghost" href="#/rollen">${icon('shield')} Rollen &amp; Rechte</a>` : ''}
        <button class="btn btn-primary" type="button" data-action="new-user">${icon('plus')} Benutzer anlegen</button>`)}
     <div class="summary-chips" style="margin-bottom:18px">
-      <span class="summary-chip"><strong>${users.length}</strong> ZugÃ¤nge</span>
+      <span class="summary-chip"><strong>${users.length}</strong> Zugänge</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${active}</strong> aktiv</span>
       ${privileged() ? `<span class="summary-chip"><span class="dot" style="--dot:var(--awo)"></span><strong>${admins}</strong> Administrator:in</span>` : ''}
       <span class="summary-chip"><span class="dot" style="--dot:#aeb5c0"></span><strong>${deactivated}</strong> deaktiviert</span>
@@ -1578,22 +1578,22 @@ function renderUsers() {
     </div>
     <section class="card">
       <div class="card-head bordered">
-        <div><h3 class="card-title">Benutzerkonten</h3><p class="card-sub">Alle ZugÃ¤nge zu dieser Installation</p></div>
+        <div><h3 class="card-title">Benutzerkonten</h3><p class="card-sub">Alle Zugänge zu dieser Installation</p></div>
         <span class="badge badge-gray no-dot">${users.length} gesamt</span>
       </div>
       ${users.length ? `<div class="table-wrap"><table class="data-table">
         <thead><tr><th>Benutzer:in</th><th>E-Mail</th><th>Rolle</th><th>Status</th><th>Letzte Anmeldung</th><th class="num">Aktion</th></tr></thead>
         <tbody>${rows}</tbody>
-      </table></div>` : emptyState('users', 'Keine Benutzer', 'Legen Sie den ersten Zugang fÃ¼r die Fuhrparkverwaltung an.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-user">Benutzer anlegen</button>')}
+      </table></div>` : emptyState('users', 'Keine Benutzer', 'Legen Sie den ersten Zugang für die Fuhrparkverwaltung an.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-user">Benutzer anlegen</button>')}
       <div class="card-footer">
-        <span class="text-muted">Nur deaktivierte Konten kÃ¶nnen anonymisiert werden. Aktive Konten mÃ¼ssen zuerst deaktiviert werden.</span>
+        <span class="text-muted">Nur deaktivierte Konten können anonymisiert werden. Aktive Konten müssen zuerst deaktiviert werden.</span>
       </div>
     </section>
 
     ${privileged() ? `<form class="card settings-card mt-18" id="userPolicyForm">
       <div class="card-head bordered">
-        <div><h3 class="card-title">Automatische Anonymisierung</h3><p class="card-sub">Gilt global fÃ¼r deaktivierte Benutzerkonten.</p></div>
-        <span class="badge badge-${autoAnonymizeDays ? 'green' : 'gray'} no-dot">${autoAnonymizeDays ? `Aktiv Â· ${autoAnonymizeDays} Tage` : 'Deaktiviert'}</span>
+        <div><h3 class="card-title">Automatische Anonymisierung</h3><p class="card-sub">Gilt global für deaktivierte Benutzerkonten.</p></div>
+        <span class="badge badge-${autoAnonymizeDays ? 'green' : 'gray'} no-dot">${autoAnonymizeDays ? `Aktiv · ${autoAnonymizeDays} Tage` : 'Deaktiviert'}</span>
       </div>
       <div class="card-body">
         <div class="form-grid">
@@ -1603,11 +1603,11 @@ function renderUsers() {
               <input class="input" id="autoAnonymizeDays" name="autoAnonymizeDays" type="number" min="0" max="3650" step="1" value="${autoAnonymizeDays}">
               <span>Tage</span>
             </div>
-            <p class="field-hint">0 bedeutet: keine automatische Anonymisierung. Die PrÃ¼fung erfolgt regelmÃ¤ÃŸig auf dem Server.</p>
+            <p class="field-hint">0 bedeutet: keine automatische Anonymisierung. Die Prüfung erfolgt regelmäßig auf dem Server.</p>
           </div>
           <div class="info-banner">
             ${icon('shield')}
-            <div><strong>Was wird anonymisiert?</strong><p>Name, E-Mail-Adresse, Passwort und Sitzungen werden entfernt. VerknÃ¼pfte Buchungen, Kosten und Audit-EintrÃ¤ge bleiben erhalten. Die Aktion ist endgÃ¼ltig.</p></div>
+            <div><strong>Was wird anonymisiert?</strong><p>Name, E-Mail-Adresse, Passwort und Sitzungen werden entfernt. Verknüpfte Buchungen, Kosten und Audit-Einträge bleiben erhalten. Die Aktion ist endgültig.</p></div>
           </div>
         </div>
       </div>
@@ -1617,13 +1617,13 @@ function renderUsers() {
       </div>
     </form>` : `<section class="card settings-card mt-18">
       <div class="card-head bordered">
-        <div><h3 class="card-title">Automatische Anonymisierung</h3><p class="card-sub">Gilt global fÃ¼r deaktivierte Benutzerkonten.</p></div>
+        <div><h3 class="card-title">Automatische Anonymisierung</h3><p class="card-sub">Gilt global für deaktivierte Benutzerkonten.</p></div>
         <span class="badge badge-gray no-dot">Nur Administrator:innen</span>
       </div>
       <div class="card-body">
         <div class="info-banner">
           ${icon('shield')}
-          <div><strong>Administrator:innen vorbehalten</strong><p>Die globale Frist fÃ¼r die automatische Anonymisierung wird zentral durch Administrator:innen verwaltet. Die Benutzerverwaltung bleibt davon unberÃ¼hrt.</p></div>
+          <div><strong>Administrator:innen vorbehalten</strong><p>Die globale Frist für die automatische Anonymisierung wird zentral durch Administrator:innen verwaltet. Die Benutzerverwaltung bleibt davon unberührt.</p></div>
         </div>
       </div>
     </section>`}`;
@@ -1633,7 +1633,7 @@ function renderUsers() {
    Rollen & Rechte
    ========================================================= */
 function renderRoles() {
-  if (!can('roles_manage')) return emptyState('shield', 'Keine Berechtigung', 'FÃ¼r die Rollenverwaltung fehlt die Berechtigung â€žRollen verwaltenâ€œ.');
+  if (!can('roles_manage')) return emptyState('shield', 'Keine Berechtigung', 'Für die Rollenverwaltung fehlt die Berechtigung „Rollen verwalten“.');
   const roles = db.roles || [];
   const customCount = roles.filter((role) => !role.isSystem).length;
   const assigned = roles.reduce((sum, role) => sum + Number(role.userCount || 0), 0);
@@ -1653,7 +1653,7 @@ function renderRoles() {
     const typeBadge = superadminRole
       ? `<span class="badge badge-red no-dot">${icon('lock', 'icon-xs')} Datei-verwaltet</span>`
       : protectedRole
-        ? '<span class="badge badge-red no-dot">GeschÃ¼tzt</span>'
+        ? '<span class="badge badge-red no-dot">Geschützt</span>'
         : role.isSystem
           ? '<span class="badge badge-gray no-dot">Systemrolle</span>'
           : '<span class="badge badge-blue no-dot">Eigene Rolle</span>';
@@ -1662,23 +1662,23 @@ function renderRoles() {
           `<button class="table-action" type="button" title="Rolle bearbeiten" aria-label="Rolle bearbeiten" data-action="edit-role" data-id="${role.id}">${icon('edit')}</button>`,
           `<button class="table-action" type="button" title="Objekt-Ausnahmen bearbeiten" aria-label="Objekt-Ausnahmen bearbeiten" data-action="edit-role-objects" data-id="${role.id}">${icon('filter')}</button>`,
           !role.isSystem && !role.userCount
-            ? `<button class="table-action danger" type="button" title="Rolle lÃ¶schen" aria-label="Rolle lÃ¶schen" data-action="delete-role" data-id="${role.id}">${icon('trash')}</button>`
+            ? `<button class="table-action danger" type="button" title="Rolle löschen" aria-label="Rolle löschen" data-action="delete-role" data-id="${role.id}">${icon('trash')}</button>`
             : ''
         ].join('')
-      : `<span class="table-action" title="${superadminRole ? 'Die Superadmin-Rolle ist systemgeschÃ¼tzt und ausschlieÃŸlich datei-verwaltet' : protectedRole ? 'Die Administrator-Rolle ist geschÃ¼tzt' : 'Nur Rollen unterhalb des eigenen Rangs und innerhalb des Grant Ceilings bearbeitbar'}" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${superadminRole ? icon('lock') : icon('shield')}</span>`;
+      : `<span class="table-action" title="${superadminRole ? 'Die Superadmin-Rolle ist systemgeschützt und ausschließlich datei-verwaltet' : protectedRole ? 'Die Administrator-Rolle ist geschützt' : 'Nur Rollen unterhalb des eigenen Rangs und innerhalb des Grant Ceilings bearbeitbar'}" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${superadminRole ? icon('lock') : icon('shield')}</span>`;
     return `
       <tr>
         <td>
           <span class="table-main">${esc(role.name)}</span>
-          <span class="table-sub">${superadminRole ? 'Sonderrolle Â· ausschlieÃŸlich Ã¼ber SUPERADMIN_FILE' : protectedRole ? 'Voller Zugriff auf alle Funktionen' : role.isSystem ? 'Standardrolle der Fuhrparkleitung' : 'Individuell konfigurierbare Rolle'}</span>
+          <span class="table-sub">${superadminRole ? 'Sonderrolle · ausschließlich über SUPERADMIN_FILE' : protectedRole ? 'Voller Zugriff auf alle Funktionen' : role.isSystem ? 'Standardrolle der Fuhrparkleitung' : 'Individuell konfigurierbare Rolle'}</span>
         </td>
-        <td><span class="table-main">${formatNumber(role.rank || 0)}</span><span class="table-sub">HÃ¶her = mehr Rechte</span></td>
+        <td><span class="table-main">${formatNumber(role.rank || 0)}</span><span class="table-sub">Höher = mehr Rechte</span></td>
         <td><span class="table-main">${role.userCount || 0}</span><span class="table-sub">${role.userCount === 1 ? 'Benutzer:in' : 'Benutzer:innen'}</span></td>
         <td>
           <div class="role-permissions">
             ${permissionSummary(role)}
             ${objectOverrideCount ? `<span class="badge badge-violet no-dot">${objectOverrideCount} Objekt-Ausnahmen</span>` : ''}
-            ${policyCount ? `<span class="badge badge-amber no-dot">${policyCount} Policy-EintrÃ¤ge</span>` : ''}
+            ${policyCount ? `<span class="badge badge-amber no-dot">${policyCount} Policy-Einträge</span>` : ''}
           </div>
         </td>
         <td>${typeBadge}</td>
@@ -1696,11 +1696,11 @@ function renderRoles() {
     </div>
     ${privileged() ? `<div class="info-banner" style="margin-bottom:18px">
       ${icon('lock')}
-      <div><strong>Superadmin ist datei-verwaltet</strong><p>Rolle und Konto des Superadmins sind systemgeschÃ¼tzt. Anlage, Passwortwechsel und Rotation erfolgen ausschlieÃŸlich Ã¼ber die Superadmin-Datei und einen Neustart; es gibt keine UI- oder API-Route dafÃ¼r. Das Konto erscheint nicht in der Benutzerliste.</p></div>
+      <div><strong>Superadmin ist datei-verwaltet</strong><p>Rolle und Konto des Superadmins sind systemgeschützt. Anlage, Passwortwechsel und Rotation erfolgen ausschließlich über die Superadmin-Datei und einen Neustart; es gibt keine UI- oder API-Route dafür. Das Konto erscheint nicht in der Benutzerliste.</p></div>
     </div>` : ''}
     <section class="card">
       <div class="card-head bordered">
-        <div><h3 class="card-title">RollenÃ¼bersicht</h3><p class="card-sub">Modulrechte steuern und pro Objekt Ã¼bersteuern</p></div>
+        <div><h3 class="card-title">Rollenübersicht</h3><p class="card-sub">Modulrechte steuern und pro Objekt übersteuern</p></div>
         <span class="badge badge-gray no-dot">${roles.length} gesamt</span>
       </div>
       ${roles.length ? `<div class="table-wrap is-scroll"><table class="data-table">
@@ -1708,7 +1708,7 @@ function renderRoles() {
         <tbody>${rows}</tbody>
       </table></div>` : emptyState('shield', 'Noch keine Rollen', 'Legen Sie die erste eigene Rolle an.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-role">Rolle anlegen</button>')}
       <div class="card-footer">
-        <span class="text-muted">Verwaltungsrechte schlieÃŸen die zugehÃ¶rigen Ansichtsrechte automatisch ein.</span>
+        <span class="text-muted">Verwaltungsrechte schließen die zugehörigen Ansichtsrechte automatisch ein.</span>
         <span class="text-muted">Objekt-Ausnahmen haben Vorrang vor den Modulrechten.</span>
       </div>
     </section>`;
@@ -1719,7 +1719,7 @@ function renderRoles() {
    ========================================================= */
 function renderOwnTrips() {
   if (!db.ownTrips) {
-    return emptyState('shield', 'Keine Fahrtenfreigabe', 'Ihr Konto ist nicht mit einem Fahrerprofil verknÃ¼pft oder der Zugriff auf eigene Fahrten ist nicht freigegeben.');
+    return emptyState('shield', 'Keine Fahrtenfreigabe', 'Ihr Konto ist nicht mit einem Fahrerprofil verknüpft oder der Zugriff auf eigene Fahrten ist nicht freigegeben.');
   }
   const trips = db.ownTrips.bookings;
   const requests = db.ownTrips.requests;
@@ -1735,7 +1735,7 @@ function renderOwnTrips() {
       ? `<button class="btn btn-soft btn-sm" type="button" data-action="start-booking" data-id="${trip.id}">${icon('play')} Fahrt starten</button>`
       : canExecute && trip.status === 'active'
         ? `<button class="btn btn-primary btn-sm" type="button" data-action="end-booking" data-id="${trip.id}">${icon('stop')} Fahrt beenden</button>`
-        : '<span class="text-muted">â€”</span>';
+        : '<span class="text-muted">—</span>';
     return `
       <tr>
         <td><span class="table-main">${formatDate(trip.start)}</span><span class="table-sub">${formatTimeRange(trip.start, trip.end)}</span></td>
@@ -1749,18 +1749,18 @@ function renderOwnTrips() {
   const requestRows = requests.map((request) => `
     <tr>
       <td><span class="table-main">${formatDate(request.start)}</span><span class="table-sub">${formatTimeRange(request.start, request.end)}</span></td>
-      <td><div class="table-vehicle"><span class="vehicle-dot" style="--dot:${esc(request.vehicleColor)}"></span><div><span class="table-main">${esc(request.vehicleName || 'â€”')}</span><span class="table-sub">${esc(request.vehiclePlate || '')}</span></div></div></td>
+      <td><div class="table-vehicle"><span class="vehicle-dot" style="--dot:${esc(request.vehicleColor)}"></span><div><span class="table-main">${esc(request.vehicleName || '—')}</span><span class="table-sub">${esc(request.vehiclePlate || '')}</span></div></div></td>
       <td><span class="table-main">${esc(request.purpose)}</span>${request.notes ? `<span class="table-sub">${esc(request.notes)}</span>` : ''}</td>
       <td>${requestStatusBadge(request.status)}${request.decisionNote ? `<span class="table-sub">${esc(request.decisionNote)}</span>` : ''}</td>
-      <td class="num">${request.status === 'requested' ? `<button class="btn btn-ghost btn-sm" type="button" data-action="cancel-booking-request" data-id="${request.id}">ZurÃ¼ckziehen</button>` : '<span class="text-muted">â€”</span>'}</td>
+      <td class="num">${request.status === 'requested' ? `<button class="btn btn-ghost btn-sm" type="button" data-action="cancel-booking-request" data-id="${request.id}">Zurückziehen</button>` : '<span class="text-muted">—</span>'}</td>
     </tr>`).join('');
 
   return `
-    ${pageHead('Eigene Fahrten', 'Meine Fahrten', `${esc(db.ownTrips.driver.name)} Â· eigene Buchungen und Anfragen im Ãœberblick.`,
+    ${pageHead('Eigene Fahrten', 'Meine Fahrten', `${esc(db.ownTrips.driver.name)} · eigene Buchungen und Anfragen im Überblick.`,
       db.ownTrips.canRequest ? `<button class="btn btn-primary" type="button" data-action="new-booking-request">${icon('plus')} Buchung anfragen</button>` : '')}
     <div class="info-banner" style="margin-bottom:18px">
       ${icon('shield')}
-      <div><strong>${canExecute ? 'Eigene Fahrten verwalten' : 'SchreibgeschÃ¼tzte Ansicht'}</strong><p>${canExecute ? 'Sie kÃ¶nnen Ihre eigenen geplanten Fahrten starten und aktive Fahrten beenden.' : 'Hier sehen Sie ausschlieÃŸlich Ihre eigenen Buchungen und Anfragen.'} Stammdaten, fremde Fahrten und Exporte sind nicht freigegeben.</p></div>
+      <div><strong>${canExecute ? 'Eigene Fahrten verwalten' : 'Schreibgeschützte Ansicht'}</strong><p>${canExecute ? 'Sie können Ihre eigenen geplanten Fahrten starten und aktive Fahrten beenden.' : 'Hier sehen Sie ausschließlich Ihre eigenen Buchungen und Anfragen.'} Stammdaten, fremde Fahrten und Exporte sind nicht freigegeben.</p></div>
     </div>
     <div class="kpi-grid">
       ${metricCard({ label: 'Geplante Fahrten', value: planned, sub: 'Eigene geplante Buchungen', iconName: 'calendar', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">Geplant</span>', glow: 'rgba(37,99,235,.055)' })}
@@ -1776,7 +1776,7 @@ function renderOwnTrips() {
       ${trips.length ? `<div class="table-wrap"><table class="data-table">
         <thead><tr><th>Zeitraum</th><th>Fahrzeug</th><th>Zweck</th><th>Status</th><th class="num">Aktion</th></tr></thead>
         <tbody>${tripRows}</tbody>
-      </table></div>` : emptyState('calendar', 'Noch keine eigenen Buchungen', 'Sobald fÃ¼r Sie eine Fahrt gebucht wurde, erscheint sie hier.', '', true)}
+      </table></div>` : emptyState('calendar', 'Noch keine eigenen Buchungen', 'Sobald für Sie eine Fahrt gebucht wurde, erscheint sie hier.', '', true)}
     </section>
     <section class="card mt-18">
       <div class="card-head bordered">
@@ -1786,13 +1786,13 @@ function renderOwnTrips() {
       ${requests.length ? `<div class="table-wrap"><table class="data-table">
         <thead><tr><th>Zeitraum</th><th>Fahrzeug</th><th>Zweck / Notiz</th><th>Status / Entscheidung</th><th class="num">Aktion</th></tr></thead>
         <tbody>${requestRows}</tbody>
-      </table></div>` : emptyState('calendar-check', 'Noch keine Anfragen', db.ownTrips.canRequest ? 'Stellen Sie eine Buchungsanfrage fÃ¼r ein Fahrzeug.' : 'FÃ¼r Buchungsanfragen fehlt die Freigabe.', db.ownTrips.canRequest ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-booking-request">Buchung anfragen</button>' : '', true)}
+      </table></div>` : emptyState('calendar-check', 'Noch keine Anfragen', db.ownTrips.canRequest ? 'Stellen Sie eine Buchungsanfrage für ein Fahrzeug.' : 'Für Buchungsanfragen fehlt die Freigabe.', db.ownTrips.canRequest ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-booking-request">Buchung anfragen</button>' : '', true)}
     </section>`;
 }
 
 function renderBookingRequests() {
   if (!can('booking_requests_manage')) {
-    return emptyState('shield', 'Keine Berechtigung', 'FÃ¼r Buchungsanfragen fehlt die Berechtigung â€žBuchungsanfragen verwaltenâ€œ.');
+    return emptyState('shield', 'Keine Berechtigung', 'Für Buchungsanfragen fehlt die Berechtigung „Buchungsanfragen verwalten“.');
   }
   const requests = db.bookingRequests || [];
   const rows = requests.map((request) => `
@@ -1808,7 +1808,7 @@ function renderBookingRequests() {
       <td>
         <div class="table-vehicle">
           <span class="vehicle-dot" style="--dot:${esc(request.vehicleColor)}"></span>
-          <div><span class="table-main">${esc(request.vehicleName || 'â€”')}</span><span class="table-sub">${esc(request.vehiclePlate || '')}</span></div>
+          <div><span class="table-main">${esc(request.vehicleName || '—')}</span><span class="table-sub">${esc(request.vehiclePlate || '')}</span></div>
         </div>
       </td>
       <td>
@@ -1823,7 +1823,7 @@ function renderBookingRequests() {
       </td>
     </tr>`).join('');
   return `
-    ${pageHead('Buchungen', 'Buchungsanfragen', 'Offene Anfragen innerhalb Ihres Rang- und Rollenbereichs prÃ¼fen und entscheiden.', '')}
+    ${pageHead('Buchungen', 'Buchungsanfragen', 'Offene Anfragen innerhalb Ihres Rang- und Rollenbereichs prüfen und entscheiden.', '')}
     <div class="summary-chips" style="margin-bottom:18px">
       <span class="summary-chip"><strong>${requests.length}</strong> offene ${requests.length === 1 ? 'Anfrage' : 'Anfragen'}</span>
       <span class="summary-chip">${icon('shield')} Sichtbarkeit nach Rang und Rollen-Policy</span>
@@ -1831,15 +1831,15 @@ function renderBookingRequests() {
     </div>
     <section class="card">
       <div class="card-head bordered">
-        <div><h3 class="card-title">Offene Anfragen</h3><p class="card-sub">Eigene Anfragen kÃ¶nnen nicht selbst entschieden werden.</p></div>
+        <div><h3 class="card-title">Offene Anfragen</h3><p class="card-sub">Eigene Anfragen können nicht selbst entschieden werden.</p></div>
         <span class="badge badge-${requests.length ? 'amber' : 'gray'} no-dot">${requests.length} offen</span>
       </div>
       ${requests.length ? `<div class="table-wrap is-scroll"><table class="data-table">
         <thead><tr><th>Antragsteller:in</th><th>Zeitraum</th><th>Fahrzeug</th><th>Zweck / Notiz</th><th class="num">Entscheidung</th></tr></thead>
         <tbody>${rows}</tbody>
-      </table></div>` : emptyState('calendar-check', 'Keine offenen Buchungsanfragen', 'Aktuell liegen keine Anfragen in Ihrem zulÃ¤ssigen Rang- und Rollenbereich vor.', '', true)}
+      </table></div>` : emptyState('calendar-check', 'Keine offenen Buchungsanfragen', 'Aktuell liegen keine Anfragen in Ihrem zulässigen Rang- und Rollenbereich vor.', '', true)}
       <div class="card-footer">
-        <span class="text-muted">Mehrere offene Anfragen fÃ¼r denselben Zeitraum sind mÃ¶glich. Die erste Genehmigung gewinnt.</span>
+        <span class="text-muted">Mehrere offene Anfragen für denselben Zeitraum sind möglich. Die erste Genehmigung gewinnt.</span>
       </div>
     </section>`;
 }
@@ -1850,8 +1850,8 @@ function renderBookingRequests() {
 function auditScopeMeta(scope) {
   if (scope === 'all') {
     return {
-      label: 'Alle AktivitÃ¤ten',
-      description: 'Sie sehen alle Audit-EintrÃ¤ge, einschlieÃŸlich Meta- und SystemeintrÃ¤gen.'
+      label: 'Alle Aktivitäten',
+      description: 'Sie sehen alle Audit-Einträge, einschließlich Meta- und Systemeinträgen.'
     };
   }
   if (scope === 'rank') {
@@ -1862,12 +1862,12 @@ function auditScopeMeta(scope) {
   }
   if (scope === 'self') {
     return {
-      label: 'Meine AktivitÃ¤ten',
-      description: 'Sie sehen ausschlieÃŸlich Ihre eigenen Aktionen. Suche und Filter kÃ¶nnen diesen Bereich nicht erweitern.'
+      label: 'Meine Aktivitäten',
+      description: 'Sie sehen ausschließlich Ihre eigenen Aktionen. Suche und Filter können diesen Bereich nicht erweitern.'
     };
   }
   return {
-    label: 'Ihre AktivitÃ¤ten',
+    label: 'Ihre Aktivitäten',
     description: 'Der Server bestimmt den sichtbaren Bereich anhand Ihrer Berechtigungen.'
   };
 }
@@ -1884,7 +1884,7 @@ function auditActionTone(action) {
 function shortAuditId(value) {
   const text = String(value || '');
   if (!text) return '';
-  return text.length > 10 ? `${text.slice(0, 8)}â€¦` : text;
+  return text.length > 10 ? `${text.slice(0, 8)}…` : text;
 }
 
 function renderAuditResults(data) {
@@ -1894,17 +1894,17 @@ function renderAuditResults(data) {
       return emptyState(
         'search',
         'Keine Treffer',
-        'FÃ¼r die gewÃ¤hlten Such- und Filterkriterien gibt es im freigegebenen Bereich keine EintrÃ¤ge.',
-        '<button class="btn btn-ghost btn-sm" type="button" data-action="audit-reset">Filter zurÃ¼cksetzen</button>'
+        'Für die gewählten Such- und Filterkriterien gibt es im freigegebenen Bereich keine Einträge.',
+        '<button class="btn btn-ghost btn-sm" type="button" data-action="audit-reset">Filter zurücksetzen</button>'
       );
     }
     if (data?.scope === 'self') {
-      return emptyState('history', 'Noch keine eigenen Aktionen', 'Sobald Sie Ã„nderungen vornehmen, erscheinen Ihre AktivitÃ¤ten hier.');
+      return emptyState('history', 'Noch keine eigenen Aktionen', 'Sobald Sie Änderungen vornehmen, erscheinen Ihre Aktivitäten hier.');
     }
     if (data?.scope === 'rank') {
-      return emptyState('shield', 'Keine Aktionen im Rangbereich', 'Im freigegebenen Rangbereich sind fÃ¼r den gewÃ¤hlten Zeitraum keine AktivitÃ¤ten vorhanden.');
+      return emptyState('shield', 'Keine Aktionen im Rangbereich', 'Im freigegebenen Rangbereich sind für den gewählten Zeitraum keine Aktivitäten vorhanden.');
     }
-    return emptyState('history', 'Noch keine Audit-EintrÃ¤ge', 'FÃ¼r den gewÃ¤hlten Zeitraum liegen keine protokollierten AktivitÃ¤ten vor.');
+    return emptyState('history', 'Noch keine Audit-Einträge', 'Für den gewählten Zeitraum liegen keine protokollierten Aktivitäten vor.');
   }
 
   const rows = items.map((item) => {
@@ -1913,7 +1913,7 @@ function renderAuditResults(data) {
     const roleMeta = actor.roleName
       ? `<span class="table-main">${esc(actor.roleName)}</span>`
       : actor.id
-        ? '<span class="table-main">â€”</span>'
+        ? '<span class="table-main">—</span>'
         : '<span class="table-main">System</span>';
     const rankMeta = actor.rank === null || actor.rank === undefined
       ? ''
@@ -1923,7 +1923,7 @@ function renderAuditResults(data) {
       ? `<div class="audit-details">${item.detailsSummary.map((entry) => `
           <span class="audit-detail"><span>${esc(entry.label)}</span><strong>${esc(entry.value)}</strong></span>
         `).join('')}</div>`
-      : '<span class="text-muted">â€”</span>';
+      : '<span class="text-muted">—</span>';
     const targetMeta = item.entityId
       ? `<span class="table-sub">#${esc(shortAuditId(item.entityId))}</span>`
       : '';
@@ -1931,7 +1931,7 @@ function renderAuditResults(data) {
       <tr>
         <td>
           <span class="table-main">${esc(formatDateTime(item.createdAt))}</span>
-          <span class="table-sub">#${esc(item.id)}${item.isMeta ? ' Â· Meta' : ''}</span>
+          <span class="table-sub">#${esc(item.id)}${item.isMeta ? ' · Meta' : ''}</span>
         </td>
         <td>
           <div class="table-person">
@@ -1948,7 +1948,7 @@ function renderAuditResults(data) {
           <span class="table-sub">${esc(item.entityTypeLabel || AUDIT_ENTITY_LABELS[item.entityType] || item.entityType)}</span>
         </td>
         <td>
-          <span class="table-main">${esc(item.targetLabel || 'â€”')}</span>
+          <span class="table-main">${esc(item.targetLabel || '—')}</span>
           ${targetMeta}
         </td>
         <td>${details}</td>
@@ -1968,12 +1968,12 @@ function renderAuditPagination(data) {
   const lastPage = Math.max(1, totalPages);
   return `
     <div class="table-footer audit-pagination">
-      <span>${formatNumber(total)} ${total === 1 ? 'Eintrag' : 'EintrÃ¤ge'} Â· Seite ${page} von ${lastPage}</span>
+      <span>${formatNumber(total)} ${total === 1 ? 'Eintrag' : 'Einträge'} · Seite ${page} von ${lastPage}</span>
       <div class="audit-pager">
         <button class="btn btn-ghost btn-sm" type="button" data-action="audit-page" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''} aria-label="Vorherige Seite">
-          ${icon('chevron-left')} ZurÃ¼ck
+          ${icon('chevron-left')} Zurück
         </button>
-        <button class="btn btn-ghost btn-sm" type="button" data-action="audit-page" data-page="${page + 1}" ${totalPages === 0 || page >= totalPages ? 'disabled' : ''} aria-label="NÃ¤chste Seite">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="audit-page" data-page="${page + 1}" ${totalPages === 0 || page >= totalPages ? 'disabled' : ''} aria-label="Nächste Seite">
           Weiter ${icon('chevron-right')}
         </button>
       </div>
@@ -1994,8 +1994,8 @@ function renderAudit() {
     .join('');
 
   return `
-    ${pageHead('Transparenz', 'Audit-Log', 'Nachvollziehbare AktivitÃ¤ten im Rahmen Ihrer Berechtigungen. EintrÃ¤ge sind schreibgeschÃ¼tzt.',
-      '<span class="badge badge-gray no-dot">SchreibgeschÃ¼tzt</span>')}
+    ${pageHead('Transparenz', 'Audit-Log', 'Nachvollziehbare Aktivitäten im Rahmen Ihrer Berechtigungen. Einträge sind schreibgeschützt.',
+      '<span class="badge badge-gray no-dot">Schreibgeschützt</span>')}
     <section class="audit-scope-banner" aria-labelledby="auditScopeLabel">
       <span class="audit-scope-icon">${icon('shield')}</span>
       <div class="audit-scope-copy">
@@ -2012,7 +2012,7 @@ function renderAudit() {
             <label for="auditQuery">Suche</label>
             <div class="input-icon-wrap audit-search-wrap">
               ${icon('search')}
-              <input class="input" id="auditQuery" name="q" type="search" value="${esc(ui.auditQuery)}" placeholder="Akteur:in, Rolle, Aktion, Ziel â€¦" autocomplete="off">
+              <input class="input" id="auditQuery" name="q" type="search" value="${esc(ui.auditQuery)}" placeholder="Akteur:in, Rolle, Aktion, Ziel …" autocomplete="off">
             </div>
           </div>
           <div class="field">
@@ -2046,16 +2046,16 @@ function renderAudit() {
             <input class="input" id="auditTo" name="to" type="date" value="${esc(ui.auditTo)}">
           </div>
           <div class="field">
-            <label for="auditPageSize">EintrÃ¤ge pro Seite</label>
+            <label for="auditPageSize">Einträge pro Seite</label>
             <select class="select" id="auditPageSize" name="pageSize">
               ${pageSizeOptions}
             </select>
           </div>
         </div>
         <div class="audit-filter-actions">
-          <span class="text-muted">Die Suche nutzt ausschlieÃŸlich freigegebene Felder; Details werden serverseitig reduziert.</span>
+          <span class="text-muted">Die Suche nutzt ausschließlich freigegebene Felder; Details werden serverseitig reduziert.</span>
           <div class="audit-filter-buttons">
-            <button class="btn btn-ghost btn-sm" type="button" data-action="audit-reset">${icon('x')} ZurÃ¼cksetzen</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-action="audit-reset">${icon('x')} Zurücksetzen</button>
             <button class="btn btn-primary btn-sm" type="submit">${icon('filter')} Filter anwenden</button>
           </div>
         </div>
@@ -2064,11 +2064,11 @@ function renderAudit() {
 
     <section class="card mt-18">
       <div class="card-head bordered">
-        <div><h3 class="card-title">Ereignisse</h3><p class="card-sub">Neueste EintrÃ¤ge zuerst Â· Zeitraum inklusive</p></div>
-        <span id="auditTotal" class="badge badge-gray no-dot">Wird geladen â€¦</span>
+        <div><h3 class="card-title">Ereignisse</h3><p class="card-sub">Neueste Einträge zuerst · Zeitraum inklusive</p></div>
+        <span id="auditTotal" class="badge badge-gray no-dot">Wird geladen …</span>
       </div>
       <div id="auditResults" aria-live="polite">
-        <div class="audit-loading" role="status"><span class="app-spinner"></span><span>Audit-EintrÃ¤ge werden geladen â€¦</span></div>
+        <div class="audit-loading" role="status"><span class="app-spinner"></span><span>Audit-Einträge werden geladen …</span></div>
       </div>
       <div id="auditPagination"></div>
     </section>`;
