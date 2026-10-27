@@ -78,13 +78,14 @@
         </button>
       </div>
 
-      <div class="nav-group">
+      <!-- Alle Navigationspunkte starten versteckt. Die Sichtbarkeit wird erst nach dem Laden von Session und State gesetzt, damit keine unerlaubten Punkte aufblitzen. -->
+      <div class="nav-group" hidden>
         <p class="nav-label">Übersicht</p>
         <nav class="nav">
-          <a class="nav-item" href="#/dashboard" data-route="dashboard">
+          <a class="nav-item" href="#/dashboard" data-route="dashboard" hidden>
             <svg class="icon"><use href="#i-grid"></use></svg><span>Dashboard</span>
           </a>
-          <a class="nav-item" href="#/buchungen" data-route="buchungen">
+          <a class="nav-item" href="#/buchungen" data-route="buchungen" hidden>
             <svg class="icon"><use href="#i-calendar"></use></svg><span>Buchungen</span>
             <span class="nav-count" id="navBookingCount">0</span>
           </a>
@@ -95,36 +96,36 @@
             <svg class="icon"><use href="#i-calendar-check"></use></svg><span>Buchungsanfragen</span>
             <span class="nav-count nav-count-alert" id="navRequestCount">0</span>
           </a>
-          <a class="nav-item" href="#/fahrtenbuch" data-route="fahrtenbuch">
+          <a class="nav-item" href="#/fahrtenbuch" data-route="fahrtenbuch" hidden>
             <svg class="icon"><use href="#i-book"></use></svg><span>Fahrtenbuch</span>
           </a>
         </nav>
       </div>
 
-      <div class="nav-group">
+      <div class="nav-group" hidden>
         <p class="nav-label">Fuhrpark</p>
         <nav class="nav">
-          <a class="nav-item" href="#/fahrzeuge" data-route="fahrzeuge">
+          <a class="nav-item" href="#/fahrzeuge" data-route="fahrzeuge" hidden>
             <svg class="icon"><use href="#i-car"></use></svg><span>Fahrzeuge</span>
             <span class="nav-count" id="navVehicleCount">0</span>
           </a>
-          <a class="nav-item" href="#/wartung" data-route="wartung">
+          <a class="nav-item" href="#/wartung" data-route="wartung" hidden>
             <svg class="icon"><use href="#i-wrench"></use></svg><span>Wartung &amp; TÜV</span>
             <span class="nav-count nav-count-alert" id="navMaintenanceCount">0</span>
           </a>
-          <a class="nav-item" href="#/kosten" data-route="kosten">
+          <a class="nav-item" href="#/kosten" data-route="kosten" hidden>
             <svg class="icon"><use href="#i-receipt"></use></svg><span>Kosten</span>
           </a>
         </nav>
       </div>
 
-      <div class="nav-group">
+      <div class="nav-group" hidden>
         <p class="nav-label">Organisation</p>
         <nav class="nav">
-          <a class="nav-item" href="#/fahrer" data-route="fahrer">
+          <a class="nav-item" href="#/fahrer" data-route="fahrer" hidden>
             <svg class="icon"><use href="#i-users"></use></svg><span>Fahrer:innen</span>
           </a>
-          <a class="nav-item" href="#/audit" data-route="audit">
+          <a class="nav-item" href="#/audit" data-route="audit" hidden>
             <svg class="icon"><use href="#i-history"></use></svg><span>Audit-Log</span>
           </a>
           <a class="nav-item" href="#/benutzer" data-route="benutzer" id="navUsers" hidden>
@@ -133,7 +134,7 @@
           <a class="nav-item" href="#/rollen" data-route="rollen" id="navRoles" hidden>
             <svg class="icon"><use href="#i-shield"></use></svg><span>Rollen &amp; Rechte</span>
           </a>
-          <a class="nav-item" href="#/einstellungen" data-route="einstellungen">
+          <a class="nav-item" href="#/einstellungen" data-route="einstellungen" hidden>
             <svg class="icon"><use href="#i-settings"></use></svg><span>Einstellungen</span>
           </a>
         </nav>

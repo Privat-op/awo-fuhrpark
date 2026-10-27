@@ -512,6 +512,17 @@ function applyBranding() {
   if (favicon) favicon.setAttribute('href', branding.favicon);
 }
 
+function updateNavigationVisibility() {
+  $$('.nav-item').forEach((item) => {
+    const route = item.dataset.route;
+    if (route) item.hidden = !routeAllowed(route);
+  });
+  $$('.nav-group').forEach((group) => {
+    const items = $$('.nav-item', group);
+    if (items.length) group.hidden = items.every((item) => item.hidden);
+  });
+}
+
 function updateChrome() {
   if (!db) return;
   applyBranding();
@@ -523,14 +534,7 @@ function updateChrome() {
     if (userRole) userRole.textContent = currentUser.roleName || roleLabel(currentUser.role);
     if (userAvatar) userAvatar.textContent = initials(currentUser.name);
   }
-  $$('.nav-item').forEach((item) => {
-    const route = item.dataset.route;
-    if (route) item.hidden = !routeAllowed(route);
-  });
-  $$('.nav-group').forEach((group) => {
-    const items = $$('.nav-item', group);
-    if (items.length) group.hidden = items.every((item) => item.hidden);
-  });
+  updateNavigationVisibility();
 
   const today = todayISO();
   const todayBookings = db.bookings.filter((booking) => booking.start.slice(0, 10) === today && booking.status !== 'canceled').length;
