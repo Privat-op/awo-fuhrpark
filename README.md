@@ -268,19 +268,21 @@ Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 4`
 - **Normale Benutzer und Admins:** **Einstellungen → Ihr Konto → Passwort ändern**. Das aktuelle Passwort und ein neues Passwort mit mindestens 10 Zeichen eingeben. Das Hashen übernimmt die Anwendung.
 - **Superadmin:** Kein UI-Passwortwechsel. Ein neues Passwort wird lokal mit bcrypt (Cost 12) gehasht und als `passwordHash` in der Superadmin-Datei eingetragen; anschließend Container/Service neu starten.
 
-Lokaler Helper mit verdeckter Eingabe (Windows):
+Der Helper gibt ausschließlich den bcrypt-Hash aus; das Passwort wird nicht gespeichert oder geloggt. Der Hash wird in `passwordHash` der Superadmin-Datei übernommen. Kein Klartextpasswort in die Datei schreiben.
+
+Komplette Superadmin-Datei mit eigenem Passwort erzeugen:
 
 ```bat
-scripts\superadmin-hash.cmd
+scripts\superadmin-setup.cmd
 ```
 
-oder mit npm:
+oder:
 
 ```bash
-npm run superadmin:hash
+npm run superadmin:setup
 ```
 
-Der Helper gibt ausschließlich den bcrypt-Hash aus; das Passwort wird nicht gespeichert oder geloggt. Der Hash wird in `passwordHash` der Superadmin-Datei übernommen. Kein Klartextpasswort in die Datei schreiben.
+Der Wizard fragt E-Mail, Name und Passwort verdeckt ab und schreibt die JSON-Datei außerhalb des Repos (Standard: `C:\awo-fuhrpark-local\superadmin.json`). Voraussetzung nach einem GitHub-Download: `npm ci` im Projektordner, damit `bcryptjs` vorhanden ist. Die Datei anschließend auf den Server nach `/etc/awo-fuhrpark/superadmin.json` kopieren und den Container neu starten.
 
 ## Benutzerkonten und Anonymisierung
 
