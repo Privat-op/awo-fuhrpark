@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -24,7 +24,7 @@ function ask(question) {
 
 function promptHidden(question) {
   if (!process.stdin.isTTY || !process.stdin.setRawMode) {
-    return Promise.reject(new Error('Bitte in einem interaktiven Terminal ausführen (kein Pipe-/CI-Modus).'));
+    return Promise.reject(new Error('Bitte in einem interaktiven Terminal ausfÃ¼hren (kein Pipe-/CI-Modus).'));
   }
   return new Promise((resolve, reject) => {
     const stdin = process.stdin;
@@ -95,26 +95,27 @@ async function main() {
   }
   const output = outputPathFromArgs();
   if (fs.existsSync(output) && !process.argv.includes('--force')) {
-    throw new Error(`Datei existiert bereits: ${output}. Nutze --force zum Überschreiben.`);
+    throw new Error(`Datei existiert bereits: ${output}. Nutze --force zum Ãœberschreiben.`);
   }
   const email = (await ask('Superadmin-E-Mail: ')).trim().toLowerCase();
   const name = (await ask('Superadmin-Name: ')).trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Die E-Mail-Adresse ist ungültig.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Die E-Mail-Adresse ist ungÃ¼ltig.');
   if (!name) throw new Error('Der Name darf nicht leer sein.');
   const password = await promptHidden('Passwort: ');
   const confirmation = await promptHidden('Passwort wiederholen: ');
   if (password.length < MIN_LENGTH) throw new Error(`Das Passwort muss mindestens ${MIN_LENGTH} Zeichen lang sein.`);
-  if (password !== confirmation) throw new Error('Die Passwörter stimmen nicht überein.');
+  if (password !== confirmation) throw new Error('Die PasswÃ¶rter stimmen nicht Ã¼berein.');
   const passwordHash = await bcrypt.hash(password, COST);
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, JSON.stringify({ email, name, passwordHash }, null, 2) + '\n', { mode: 0o600 });
   lockDown(output);
   console.log(`Datei erstellt: ${output}`);
-  console.log('Die Datei enthält nur den bcrypt-Hash, kein Klartextpasswort.');
-  console.log('Auf dem Server nach /etc/awo-fuhrpark/superadmin.json kopieren und Container neu starten.');
+  console.log('Die Datei enthÃ¤lt nur den bcrypt-Hash, kein Klartextpasswort.');
+  console.log('Auf einem Linux-Server: sudo ./scripts/install-superadmin.sh (automatisch, ohne manuelles Kopieren).');
 }
 
 main().catch((error) => {
   console.error(`Fehler: ${error.message}`);
   process.exitCode = 1;
 });
+
