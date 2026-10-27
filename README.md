@@ -282,7 +282,16 @@ oder:
 npm run superadmin:setup
 ```
 
-Der Wizard fragt E-Mail, Name und Passwort verdeckt ab und schreibt die JSON-Datei außerhalb des Repos (Standard: `C:\awo-fuhrpark-local\superadmin.json`). Voraussetzung nach einem GitHub-Download: `npm ci` im Projektordner, damit `bcryptjs` vorhanden ist. Die Datei anschließend auf den Server nach `/etc/awo-fuhrpark/superadmin.json` kopieren und den Container neu starten.
+Der Wizard fragt E-Mail, Name und Passwort verdeckt ab und schreibt die JSON-Datei außerhalb des Repos (Standard: `C:\awo-fuhrpark-local\superadmin.json`). Voraussetzung nach einem GitHub-Download: `npm ci` im Projektordner, damit `bcryptjs` vorhanden ist.
+
+**Ein-Befehl-Installer auf dem Linux-Server** (kein manuelles Kopieren oder separater Neustart):
+
+```bash
+cd /home/l-admin/awo-fuhrpark
+sudo ./scripts/install-superadmin.sh
+```
+
+Der Installer fragt E-Mail, Name und Passwort verdeckt ab, sichert eine bestehende Datei, installiert sie mit restriktiven Rechten und erstellt den Container mit read-only Secret-Mount neu. Voraussetzung: `npm ci` wurde im Projektordner ausgeführt.
 
 ## Benutzerkonten und Anonymisierung
 
