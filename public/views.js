@@ -1611,15 +1611,22 @@ function renderOwnTrips() {
   const planned = trips.filter((trip) => trip.status === 'planned').length;
   const active = trips.filter((trip) => trip.status === 'active').length;
   const completed = trips.filter((trip) => trip.status === 'completed').length;
+  const canExecute = Boolean(db.ownTrips.canExecute);
 
   const tripRows = trips.map((trip) => {
     const distance = trip.startKm != null && trip.endKm != null ? Math.max(0, Number(trip.endKm) - Number(trip.startKm)) : null;
+    const action = canExecute && trip.status === 'planned'
+      ? `<button class="btn btn-soft btn-sm" type="button" data-action="start-booking" data-id="${trip.id}">${icon('play')} Fahrt starten</button>`
+      : canExecute && trip.status === 'active'
+        ? `<button class="btn btn-primary btn-sm" type="button" data-action="end-booking" data-id="${trip.id}">${icon('stop')} Fahrt beenden</button>`
+        : '<span class="text-muted">—</span>';
     return `
       <tr>
         <td><span class="table-main">${formatDate(trip.start)}</span><span class="table-sub">${formatTimeRange(trip.start, trip.end)}</span></td>
-        <td><div class="table-vehicle"><span class="vehicle-dot" style="--dot:${esc(trip.vehicleColor)}"></span><div><span class="table-main">${esc(trip.vehicleName || '—')}</span><span class="table-sub">${esc(trip.vehiclePlate || '')}</span></div></div></td>
+        <td><div class="table-vehicle"><span class="vehicle-dot" style="--dot:${esc(trip.vehicleColor)}"></span><div><span class="table-main">${esc(trip.vehicleName || '-')}</span><span class="table-sub">${esc(trip.vehiclePlate || '')}</span></div></div></td>
         <td><span class="table-main">${esc(trip.purpose)}</span>${distance != null ? `<span class="table-sub">${formatKm(distance)}</span>` : ''}</td>
         <td>${statusBadge(trip.status)}</td>
+        <td class="num">${action}</td>
       </tr>`;
   }).join('');
 
@@ -1637,7 +1644,7 @@ function renderOwnTrips() {
       db.ownTrips.canRequest ? `<button class="btn btn-primary" type="button" data-action="new-booking-request">${icon('plus')} Buchung anfragen</button>` : '')}
     <div class="info-banner" style="margin-bottom:18px">
       ${icon('shield')}
-      <div><strong>Schreibgeschützte Ansicht</strong><p>Hier sehen Sie ausschließlich Ihre eigenen Buchungen und Anfragen. Stammdaten, fremde Fahrten und Exporte sind nicht freigegeben.</p></div>
+      <div><strong>${canExecute ? 'Eigene Fahrten verwalten' : 'Schreibgeschützte Ansicht'}</strong><p>${canExecute ? 'Sie können Ihre eigenen geplanten Fahrten starten und aktive Fahrten beenden.' : 'Hier sehen Sie ausschließlich Ihre eigenen Buchungen und Anfragen.'} Stammdaten, fremde Fahrten und Exporte sind nicht freigegeben.</p></div>
     </div>
     <div class="kpi-grid">
       ${metricCard({ label: 'Geplante Fahrten', value: planned, sub: 'Eigene geplante Buchungen', iconName: 'calendar', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">Geplant</span>', glow: 'rgba(37,99,235,.055)' })}
@@ -1651,7 +1658,7 @@ function renderOwnTrips() {
         <span class="badge badge-gray no-dot">${trips.length} gesamt</span>
       </div>
       ${trips.length ? `<div class="table-wrap"><table class="data-table">
-        <thead><tr><th>Zeitraum</th><th>Fahrzeug</th><th>Zweck</th><th>Status</th></tr></thead>
+        <thead><tr><th>Zeitraum</th><th>Fahrzeug</th><th>Zweck</th><th>Status</th><th class="num">Aktion</th></tr></thead>
         <tbody>${tripRows}</tbody>
       </table></div>` : emptyState('calendar', 'Noch keine eigenen Buchungen', 'Sobald für Sie eine Fahrt gebucht wurde, erscheint sie hier.', '', true)}
     </section>

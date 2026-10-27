@@ -254,6 +254,7 @@ function getState(db, user, auth = null) {
     costs_manage: can('costs_manage') || anyObject('cost', 'costs_manage') || anyObject('vehicle', 'costs_manage'),
     own_trips_view: Boolean(linkedDriverRow) && can('own_trips_view', linkedDriverRow ? { driver: linkedDriverRow } : {}),
     own_trips_request: Boolean(linkedDriverRow) && can('own_trips_request', linkedDriverRow ? { driver: linkedDriverRow } : {}),
+    own_trips_execute: Boolean(linkedDriverRow) && can('own_trips_execute', linkedDriverRow ? { driver: linkedDriverRow } : {}),
     booking_requests_manage: isAdmin || can('booking_requests_manage'),
     users_manage: isAdmin || can('users_manage'),
     roles_manage: isAdmin || can('roles_manage'),
@@ -288,6 +289,7 @@ function getState(db, user, auth = null) {
         color: linkedDriverRow.color
       },
       canRequest: moduleAccess.own_trips_request,
+      canExecute: moduleAccess.own_trips_execute,
       vehicles: vehicleRows.map(mapMinimalVehicle),
       bookings: ownBookings,
       requests: ownRequestRows.map((row) => mapBookingRequest(row, { vehicle: vehicleById.get(row.vehicle_id) }))

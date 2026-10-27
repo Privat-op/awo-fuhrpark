@@ -26,7 +26,8 @@ const PERMISSION_GROUPS = [
     label: 'Meine Fahrten',
     permissions: [
       { key: 'own_trips_view', label: 'Eigene Fahrten ansehen' },
-      { key: 'own_trips_request', label: 'Buchung anfragen' }
+      { key: 'own_trips_request', label: 'Buchung anfragen' },
+      { key: 'own_trips_execute', label: 'Eigene Fahrten starten und beenden' }
     ]
   },
   {
@@ -98,6 +99,7 @@ const IMPLICATIONS = {
   costs_manage: ['costs_view'],
   drivers_manage: ['drivers_view'],
   own_trips_request: ['own_trips_view'],
+  own_trips_execute: ['own_trips_view'],
   audit_view_all: ['audit_view']
 };
 
@@ -141,7 +143,7 @@ const OBJECT_TYPES = [
       'drivers_view', 'drivers_manage',
       'bookings_view', 'bookings_create', 'bookings_manage',
       'logbook_view', 'logbook_manage',
-      'own_trips_view', 'own_trips_request'
+      'own_trips_view', 'own_trips_request', 'own_trips_execute'
     ]
   },
   {
@@ -188,7 +190,8 @@ const OBJECT_IMPLICATIONS = {
     bookings_create: ['bookings_view'],
     bookings_manage: ['bookings_view'],
     logbook_manage: ['logbook_view'],
-    own_trips_request: ['own_trips_view']
+    own_trips_request: ['own_trips_view'],
+    own_trips_execute: ['own_trips_view']
   },
   booking: {
     bookings_manage: ['bookings_view'],
@@ -220,7 +223,8 @@ const OBJECT_PREREQUISITES = {
     bookings_create: ['bookings_view'],
     bookings_manage: ['bookings_view'],
     logbook_manage: ['logbook_view'],
-    own_trips_request: ['own_trips_view']
+    own_trips_request: ['own_trips_view'],
+    own_trips_execute: ['own_trips_view']
   },
   booking: {
     bookings_manage: ['bookings_view'],
@@ -563,6 +567,7 @@ function driverDefaultPermissions(driver) {
   if (Number(driver.own_trips_access) !== 1) return defaults;
   defaults.add('own_trips_view');
   defaults.add('own_trips_request');
+  defaults.add('own_trips_execute');
   return defaults;
 }
 

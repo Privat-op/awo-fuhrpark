@@ -459,13 +459,13 @@ function openBookingDetails(bookingId) {
 }
 
 function openEndTripModal(bookingId) {
-  if (!canOn('booking', bookingId, 'bookings_manage')) {
+  if (!canExecuteOwnBooking(bookingId)) {
     toast('Keine Berechtigung', 'Für diese Buchung fehlt die Berechtigung zum Beenden.', 'error');
     return;
   }
-  const booking = db.bookings.find((item) => item.id === bookingId);
+  const booking = getBookingForAction(bookingId);
   if (!booking) return;
-  const vehicle = getVehicle(booking.vehicleId);
+  const vehicle = bookingVehicle(booking);
   if (!vehicle) return;
   const startKm = booking.startKm != null ? Number(booking.startKm) : Number(vehicle.mileage);
   const suggestedEnd = Math.max(Number(vehicle.mileage), startKm) + 10;

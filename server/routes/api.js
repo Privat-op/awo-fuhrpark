@@ -66,6 +66,14 @@ function assertCan(req, permission, context = {}) {
   }
 }
 
+function assertBookingAction(req, booking, vehicle, driver) {
+  const context = { booking, vehicle, driver };
+  if (hasEffectivePermission(req, 'bookings_manage', context)) return;
+  if (booking.driver_id === req.auth?.linkedDriverId
+    && hasEffectivePermission(req, 'own_trips_execute', context)) return;
+  throw new HttpError(403, 'Für diese Buchung fehlt die Berechtigung.');
+}
+
 function getVehicle(id) {
   return db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
 }
@@ -628,7 +636,7 @@ router.post('/bookings/:id/start', (req, res, next) => {
       if (booking.status !== 'planned') throw new HttpError(409, 'Nur geplante Fahrten können gestartet werden.');
       const vehicle = ensureVehicleExists(booking.vehicle_id);
       const driver = getDriver(booking.driver_id);
-      assertCan(req, 'bookings_manage', { booking, vehicle, driver });
+      assertBookingAction(req, booking, vehicle, driver);
       if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
       const activeVehicle = db.prepare("SELECT id FROM bookings WHERE vehicle_id = ? AND status = 'active' AND id <> ? LIMIT 1").get(vehicle.id, booking.id);
       if (activeVehicle) throw new HttpError(409, 'Für dieses Fahrzeug läuft bereits eine andere Fahrt.');
@@ -656,7 +664,7 @@ router.post('/bookings/:id/end', (req, res, next) => {
       if (booking.status !== 'active') throw new HttpError(409, 'Nur aktive Fahrten können beendet werden.');
       const vehicle = ensureVehicleExists(booking.vehicle_id);
       const driver = getDriver(booking.driver_id);
-      assertCan(req, 'bookings_manage', { booking, vehicle, driver });
+      assertBookingAction(req, booking, vehicle, driver);
       const startKm = booking.start_km ?? vehicle.mileage;
       if (endKm < startKm) throw new HttpError(400, 'Der Endkilometerstand darf nicht kleiner als der Startkilometerstand sein.');
       const now = isoNow();
