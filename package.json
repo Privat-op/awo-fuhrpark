@@ -8,6 +8,7 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "backup": "node server/backup.js",
+    "superadmin:hash": "node scripts/superadmin-hash.js",
     "test": "node --test"
   },
   "engines": {

@@ -263,6 +263,25 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 
 Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 4`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
+## Passwörter ändern
+
+- **Normale Benutzer und Admins:** **Einstellungen → Ihr Konto → Passwort ändern**. Das aktuelle Passwort und ein neues Passwort mit mindestens 10 Zeichen eingeben. Das Hashen übernimmt die Anwendung.
+- **Superadmin:** Kein UI-Passwortwechsel. Ein neues Passwort wird lokal mit bcrypt (Cost 12) gehasht und als `passwordHash` in der Superadmin-Datei eingetragen; anschließend Container/Service neu starten.
+
+Lokaler Helper mit verdeckter Eingabe (Windows):
+
+```bat
+scripts\superadmin-hash.cmd
+```
+
+oder mit npm:
+
+```bash
+npm run superadmin:hash
+```
+
+Der Helper gibt ausschließlich den bcrypt-Hash aus; das Passwort wird nicht gespeichert oder geloggt. Der Hash wird in `passwordHash` der Superadmin-Datei übernommen. Kein Klartextpasswort in die Datei schreiben.
+
 ## Benutzerkonten und Anonymisierung
 
 Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Die Deaktivierung lässt eine bestehende Fahrer-Konto-Verknüpfung unverändert; der Login ist gesperrt. Deaktivierte Konten können anschließend anonymisiert werden:
