@@ -1270,6 +1270,87 @@ function renderBrandingCard() {
     </form>`;
 }
 
+function driverLinkStatus(driver) {
+  if (!driver) return null;
+  if (driver.status === 'away') return { label: 'Abwesend', badge: 'gray' };
+  const active = (db.bookings || []).some((booking) => booking.driverId === driver.id && booking.status === 'active');
+  return active
+    ? { label: 'Im Einsatz', badge: 'blue' }
+    : { label: 'Verfügbar', badge: 'green' };
+}
+
+function renderAdminDriverProfileCard() {
+  if (!capabilities?.isAdmin && !currentUser?.isAdmin) return '';
+  const drivers = Array.isArray(db.drivers) ? db.drivers : [];
+  const linkedDriver = drivers.find((driver) => driver.userId === currentUser?.id) || null;
+  const availableDrivers = drivers
+    .filter((driver) => !driver.userId || driver.id === linkedDriver?.id)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'de'));
+  const status = driverLinkStatus(linkedDriver);
+  const ownTripsChecked = linkedDriver ? linkedDriver.ownTripsAccess !== false : true;
+  const driverOptions = availableDrivers.map((driver) => `
+    <option value="${esc(driver.id)}" ${driver.id === linkedDriver?.id ? 'selected' : ''}>${esc(driver.name)} · ${esc(driver.role || 'Fahrer:in')}</option>
+  `).join('');
+  const currentLink = linkedDriver
+    ? `<div class="detail-list-item">
+        ${driverAvatar(linkedDriver, 'avatar-lg')}
+        <div class="main"><strong>${esc(linkedDriver.name)}</strong><span>${esc(linkedDriver.role || 'Fahrer:in')}</span></div>
+        <span class="badge badge-${status.badge} no-dot">${status.label}</span>
+      </div>`
+    : `<div class="detail-list-item">
+        <span class="mini-icon tint-blue">${icon('users')}</span>
+        <div class="main"><strong>Nicht verknüpft</strong><span>Ihr Administratorkonto ist derzeit keinem Fahrerprofil zugeordnet.</span></div>
+      </div>`;
+  const cardHead = `
+    <div class="card-head bordered">
+      <div><h3 class="card-title">Fahrerprofil</h3><p class="card-sub">Verknüpfung mit Ihrem Administratorkonto</p></div>
+      <span class="badge badge-red no-dot">Administration</span>
+    </div>`;
+  if (!availableDrivers.length) {
+    const emptyTitle = drivers.length ? 'Keine freien Fahrer:innen' : 'Noch keine Fahrer:innen';
+    const emptyText = drivers.length
+      ? 'Alle Fahrerprofile sind bereits mit anderen Konten verknüpft. Entfernen Sie dort zuerst die Verknüpfung.'
+      : 'Legen Sie zuerst ein Fahrerprofil an, um es mit Ihrem Administratorkonto zu verknüpfen.';
+    return `
+      <section class="card settings-card">
+        ${cardHead}
+        <div class="card-body">
+          <div class="detail-list" style="margin-bottom:16px">${currentLink}</div>
+          ${emptyState('users', emptyTitle, emptyText, '', true)}
+        </div>
+      </section>`;
+  }
+  return `
+    <form class="card settings-card" id="driverLinkForm" novalidate>
+      ${cardHead}
+      <div class="card-body">
+        <div class="form-alert">${icon('alert')}<span></span></div>
+        <div class="detail-list" style="margin-bottom:16px">${currentLink}</div>
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="driverLinkSelect">${linkedDriver ? 'Fahrerprofil wechseln' : 'Fahrerprofil auswählen'}</label>
+            <select class="select" id="driverLinkSelect" name="driverId" data-linked-driver="${esc(linkedDriver?.id || '')}" required>
+              ${linkedDriver ? '' : '<option value="" selected disabled>Bitte auswählen …</option>'}
+              ${driverOptions}
+            </select>
+            <p class="field-hint">Nur freie Fahrerprofile oder Ihre eigene Verknüpfung sind auswählbar.</p>
+          </div>
+          <div class="field field-full" id="driverLinkAccessField" ${linkedDriver ? '' : 'hidden'}>
+            <label class="check-row"><input type="checkbox" id="driverLinkOwnTripsAccess" name="ownTripsAccess" ${ownTripsChecked ? 'checked' : ''} ${linkedDriver ? '' : 'disabled'}> Standardzugriff auf Meine Fahrten aktiv</label>
+            <p class="field-hint">Gilt für die Verknüpfung mit Ihrem Administratorkonto. Explizite Rollen- und Benutzerregeln können den Standard übersteuern.</p>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">${linkedDriver ? 'Änderungen gelten sofort für Ihr Konto.' : 'Die Verknüpfung ist optional.'}</span>
+        <div class="setting-actions" style="margin-top:0">
+          ${linkedDriver ? `<button class="btn btn-danger-ghost btn-sm" type="button" data-action="unlink-admin-driver">${icon('x')} Entfernen</button>` : ''}
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} ${linkedDriver ? 'Speichern' : 'Verknüpfen'}</button>
+        </div>
+      </div>
+    </form>`;
+}
+
 function renderSettings() {
   const roleDisplay = currentUser?.roleName || roleLabel(currentUser?.role);
   const canEditSettings = can('settings_manage');
@@ -1389,6 +1470,8 @@ function renderSettings() {
             <button class="btn btn-danger-ghost btn-sm" type="button" data-action="logout">${icon('log-out')} Abmelden</button>
           </div>
         </section>
+
+        ${renderAdminDriverProfileCard()}
 
         ${showInstallationInfo ? `
         <section class="card">

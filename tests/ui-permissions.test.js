@@ -38,49 +38,49 @@ const ALL_NAV_ROUTES = NAV_GROUPS.flat();
 const SESSION_ROLES = {
   admin: {
     nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen'],
-    settings: { organisation: true, branding: true, export: true, users: true, roles: true, about: true, shortcuts: true },
+    settings: { organisation: true, branding: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: true },
     eyebrow: 'Organisation',
     subtitle: 'Organisation, Erscheinungsbild, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
   },
   manager: {
     nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen'],
-    settings: { organisation: true, branding: false, export: true, users: true, roles: true, about: true, shortcuts: true },
+    settings: { organisation: true, branding: false, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Organisation',
     subtitle: 'Organisation, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
   },
   usersRoles: {
     nav: ['dashboard', 'audit', 'benutzer', 'rollen', 'einstellungen'],
-    settings: { organisation: false, branding: false, export: false, users: true, roles: true, about: true, shortcuts: true },
+    settings: { organisation: false, branding: false, export: false, users: true, roles: true, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Verwaltung',
     subtitle: 'Benutzer, Rollen sowie Ihr Konto verwalten.'
   },
   ownTrips: {
     nav: ['meine-fahrten', 'audit', 'einstellungen'],
-    settings: { organisation: false, branding: false, export: false, users: false, roles: false, about: false, shortcuts: false },
+    settings: { organisation: false, branding: false, export: false, users: false, roles: false, about: false, shortcuts: false, driverLink: false },
     eyebrow: 'Konto',
     subtitle: 'Ihr Konto und Ihre Zugangsdaten verwalten.'
   },
   viewer: {
     nav: ['dashboard', 'buchungen', 'fahrzeuge', 'fahrer', 'audit', 'einstellungen'],
-    settings: { organisation: false, branding: false, export: false, users: false, roles: false, about: false, shortcuts: false },
+    settings: { organisation: false, branding: false, export: false, users: false, roles: false, about: false, shortcuts: false, driverLink: false },
     eyebrow: 'Konto',
     subtitle: 'Ihr Konto und Ihre Zugangsdaten verwalten.'
   },
   exportOnly: {
     nav: ['dashboard', 'audit', 'einstellungen'],
-    settings: { organisation: false, branding: false, export: true, users: false, roles: false, about: true, shortcuts: true },
+    settings: { organisation: false, branding: false, export: true, users: false, roles: false, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Datenexport',
     subtitle: 'Datenexport sowie Ihr Konto verwalten.'
   },
   brandingOnly: {
     nav: ['dashboard', 'audit', 'einstellungen'],
-    settings: { organisation: false, branding: true, export: false, users: false, roles: false, about: true, shortcuts: true },
+    settings: { organisation: false, branding: true, export: false, users: false, roles: false, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Erscheinungsbild',
     subtitle: 'Erscheinungsbild sowie Ihr Konto verwalten.'
   },
   settingsOnly: {
     nav: ['dashboard', 'audit', 'einstellungen'],
-    settings: { organisation: true, branding: false, export: false, users: false, roles: false, about: true, shortcuts: true },
+    settings: { organisation: true, branding: false, export: false, users: false, roles: false, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Organisation',
     subtitle: 'Organisation sowie Ihr Konto verwalten.'
   }
@@ -209,6 +209,14 @@ function insertLinkedDriver(id, name, userId) {
     INSERT INTO drivers (id, name, role, department, phone, email, license, status, color, user_id, own_trips_access, created_at, updated_at)
     VALUES (?, ?, 'Mitarbeiter:in', 'Test', '', ?, '["B"]', 'available', '#2563eb', ?, 1, ?, ?)
   `).run(id, name, `${id}@example.invalid`, userId, now, now);
+}
+
+function insertFreeDriver(id, name) {
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO drivers (id, name, role, department, phone, email, license, status, color, user_id, own_trips_access, created_at, updated_at)
+    VALUES (?, ?, 'Mitarbeiter:in', 'Test', '', ?, '["B"]', 'available', '#2563eb', NULL, 1, ?, ?)
+  `).run(id, name, `${id}@example.invalid`, now, now);
 }
 
 function classList() {
@@ -396,6 +404,7 @@ before(async () => {
   insertUser('user-logout', 'Logout Test', EMAILS.logout, 'role-viewer');
   insertUser('user-manager', 'UI Fuhrparkleitung', EMAILS.manager, 'manager');
   insertLinkedDriver('driver-own-trips', 'Eigene Fahrten', 'user-own-trips');
+  insertFreeDriver('driver-free', 'Freie Fahrerin');
 
   for (const [key, email] of Object.entries(EMAILS)) {
     if (key === 'logout') continue;
@@ -465,6 +474,14 @@ test('Einstellungen zeigen nur die erlaubten Karten und keine Berechtigungshinwe
     assert.equal(html.includes('href="#/rollen"'), settings.roles, `Rollenlink für ${key}`);
     assert.equal(html.includes('<h3 class="card-title">Über diese Installation</h3>'), settings.about, `Installationsinfo für ${key}`);
     assert.equal(html.includes('<h3 class="card-title">Tastenkürzel</h3>'), settings.shortcuts, `Tastenkürzel für ${key}`);
+    assert.equal(html.includes('<h3 class="card-title">Fahrerprofil</h3>'), settings.driverLink, `Fahrerprofilkarte für ${key}`);
+    assert.equal(html.includes('id="driverLinkForm"'), settings.driverLink, `Fahrerprofilformular für ${key}`);
+    if (settings.driverLink) {
+      assert.ok(html.includes('Nicht verknüpft'), `Leerzustand der Fahrerprofilkarte fehlt für ${key}`);
+      assert.ok(html.includes('Freie Fahrerin'), `Freie Fahrer:in fehlt in der Auswahl für ${key}`);
+      assert.ok(html.includes('id="driverLinkOwnTripsAccess"'), `Standardzugriff-Checkbox fehlt für ${key}`);
+      assert.ok(html.includes('Standardzugriff auf Meine Fahrten aktiv'), `Standardzugriff-Label fehlt für ${key}`);
+    }
     assert.ok(html.includes('<h3 class="card-title">Ihr Konto</h3>'), `Kontokarte fehlt für ${key}`);
     assert.ok(html.includes('data-action="change-password"'), `Passwortaktion fehlt für ${key}`);
     assert.ok(html.includes('data-action="logout"'), `Abmeldeaktion fehlt für ${key}`);
@@ -472,10 +489,49 @@ test('Einstellungen zeigen nur die erlaubten Karten und keine Berechtigungshinwe
     assert.ok(html.includes(escapedText(expected.subtitle)), `Untertitel passt nicht für ${key}`);
     assert.ok(!html.includes('Keine Berechtigung'), `„Keine Berechtigung“ ist für ${key} noch sichtbar`);
     assert.ok(!html.includes('Nur lesend'), `„Nur lesend“ ist für ${key} noch sichtbar`);
-    assert.ok(!html.includes(' disabled'), `Deaktivierte Formulare sind für ${key} noch sichtbar`);
+    const settingsForm = html.match(/<form class="card settings-card" id="settingsForm">[\s\S]*?<\/form>/)?.[0] || '';
+    assert.ok(!/\sdisabled(?:\s|>)/.test(settingsForm), `Deaktivierte Organisationseingaben sind für ${key} noch sichtbar`);
     const hasAdminColumn = settings.organisation || settings.branding || settings.export;
     assert.equal(html.includes('settings-grid is-single'), !hasAdminColumn, `Einspaltiges Layout für ${key}`);
   }
+});
+
+test('Admin-Fahrerprofilkarte zeigt aktuelle Verknüpfung, Status und Standardzugriff', () => {
+  const client = {
+    ...clients.admin,
+    state: JSON.parse(JSON.stringify(clients.admin.state))
+  };
+  const adminId = client.session.user.id;
+  const driver = client.state.drivers.find((entry) => entry.id === 'driver-free');
+  assert.ok(driver, 'Freie Fahrer:in fehlt im Admin-State');
+  driver.userId = adminId;
+  driver.ownTripsAccess = false;
+  driver.status = 'away';
+  const adminUser = client.state.users.find((user) => user.id === adminId);
+  adminUser.driverId = driver.id;
+  adminUser.driverName = driver.name;
+  adminUser.ownTripsAccess = false;
+
+  const { html } = settingsHtmlFor(client);
+  assert.ok(html.includes('Freie Fahrerin'), 'Name der aktuellen Verknüpfung fehlt');
+  assert.ok(html.includes('Mitarbeiter:in'), 'Rolle der aktuellen Verknüpfung fehlt');
+  assert.ok(html.includes('Abwesend'), 'Status der aktuellen Verknüpfung fehlt');
+  assert.ok(html.includes(`value="${driver.id}" selected`), 'Eigene Verknüpfung ist nicht ausgewählt');
+  const checkbox = html.match(/<input[^>]*id="driverLinkOwnTripsAccess"[^>]*>/)?.[0] || '';
+  assert.ok(checkbox, 'Standardzugriff-Checkbox fehlt');
+  assert.ok(!/\schecked(?:\s|>)/.test(checkbox), 'Standardzugriff muss den gespeicherten Wert false widerspiegeln');
+});
+
+test('Admin-Fahrerprofilkarte zeigt einen Leerzustand ohne Fahrer:innen', () => {
+  const client = {
+    ...clients.admin,
+    state: JSON.parse(JSON.stringify(clients.admin.state))
+  };
+  client.state.drivers = [];
+  client.state.driversForLinking = [];
+  const { html } = settingsHtmlFor(client);
+  assert.ok(html.includes('Noch keine Fahrer:innen'), 'Leerzustand ohne Fahrer:innen fehlt');
+  assert.ok(!html.includes('id="driverLinkForm"'), 'Ohne Fahrer:innen darf kein Auswahlformular erscheinen');
 });
 
 test('Mobile-Sidebar öffnet und schließt weiterhin korrekt', () => {

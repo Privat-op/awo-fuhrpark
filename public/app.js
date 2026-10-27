@@ -387,6 +387,48 @@ async function logout() {
   }
 }
 
+function updateDriverLinkAccessField() {
+  const select = $('#driverLinkSelect');
+  const field = $('#driverLinkAccessField');
+  const checkbox = $('#driverLinkOwnTripsAccess');
+  if (!select || !field || !checkbox) return;
+  const selected = Boolean(select.value);
+  field.hidden = !selected;
+  checkbox.disabled = !selected;
+  if (selected && select.value !== (select.dataset.linkedDriver || '')) checkbox.checked = true;
+}
+
+function unlinkAdminDriver() {
+  if (!capabilities.isAdmin && !currentUser?.isAdmin) {
+    toast('Keine Berechtigung', 'Die Fahrerprofil-Verknüpfung ist Administrator:innen vorbehalten.', 'error');
+    return;
+  }
+  const linkedDriver = (db.drivers || []).find((driver) => driver.userId === currentUser?.id);
+  if (!linkedDriver) {
+    toast('Nicht verknüpft', 'Ihr Administratorkonto ist derzeit keinem Fahrerprofil zugeordnet.', 'info');
+    return;
+  }
+  openConfirm({
+    title: 'Fahrerprofil entfernen?',
+    text: `Die Verknüpfung zwischen Ihrem Administratorkonto und <strong>${esc(linkedDriver.name)}</strong> wird entfernt. Die Fahrer:in bleibt bestehen.`,
+    confirmLabel: 'Verknüpfung entfernen',
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch('/api/me/driver-link', {
+          method: 'PATCH',
+          body: { driverId: null, ownTripsAccess: false }
+        });
+        applyServerState(state);
+        if (ui.route === 'einstellungen') renderCurrentView();
+        else renderRoute(false);
+        toast('Fahrerprofil entfernt', `${linkedDriver.name} ist nicht mehr mit Ihrem Administratorkonto verknüpft.`);
+      } catch (error) {
+        toast('Entfernen fehlgeschlagen', error.message, 'error');
+      }
+    }
+  });
+}
+
 function updateSaveIndicator() {
   const indicator = $('#saveIndicator');
   if (!indicator) return;
@@ -1125,6 +1167,7 @@ function dispatchAction(element) {
     case 'export-data': exportData(); break;
     case 'logout': logout(); break;
     case 'change-password': openPasswordModal(); break;
+    case 'unlink-admin-driver': unlinkAdminDriver(); break;
     case 'remove-branding-logo': removeBrandingLogoPreview(); break;
     case 'set-brand-accent': setBrandAccent(element.dataset.color); break;
     case 'reset-brand-colors': resetBrandColors(); break;
@@ -1394,6 +1437,8 @@ function bindEvents() {
     } else if (event.target.id === 'brandingLogoInput') {
       const file = event.target.files?.[0];
       if (file) previewBrandingLogo(file);
+    } else if (event.target.id === 'driverLinkSelect') {
+      updateDriverLinkAccessField();
     }
   });
 
@@ -1403,6 +1448,36 @@ function bindEvents() {
       event.preventDefault();
       readAuditFilters(form);
       loadAuditLog();
+      return;
+    }
+    if (form.id === 'driverLinkForm') {
+      event.preventDefault();
+      clearFormError(form);
+      const data = new FormData(form);
+      const driverId = String(data.get('driverId') || '');
+      if (!driverId) {
+        showFormError(form, 'Bitte wählen Sie ein Fahrerprofil aus.');
+        return;
+      }
+      const ownTripsAccess = form.querySelector('#driverLinkOwnTripsAccess')?.checked ?? true;
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      const driverName = (db.drivers || []).find((driver) => driver.id === driverId)?.name || 'Fahrerprofil';
+      try {
+        const state = await apiFetch('/api/me/driver-link', {
+          method: 'PATCH',
+          body: { driverId, ownTripsAccess }
+        });
+        applyServerState(state);
+        if (ui.route === 'einstellungen') renderCurrentView();
+        else renderRoute(false);
+        toast('Fahrerprofil gespeichert', `${driverName} ist jetzt mit Ihrem Administratorkonto verknüpft.`);
+      } catch (error) {
+        showFormError(form, error.message);
+        toast('Fahrerprofil konnte nicht gespeichert werden', error.message, 'error');
+      } finally {
+        if (submitButton) submitButton.disabled = false;
+      }
       return;
     }
     if (form.id === 'brandingForm') {

@@ -386,6 +386,62 @@ router.post('/auth/password', async (req, res, next) => {
   }
 });
 
+router.patch('/me/driver-link', requireAdmin, (req, res, next) => {
+  try {
+    const body = req.body || {};
+    if (!Object.prototype.hasOwnProperty.call(body, 'driverId')) {
+      throw new HttpError(400, 'Bitte wählen Sie ein Fahrerprofil aus oder entfernen Sie die Verknüpfung.');
+    }
+    const driverId = body.driverId === null || body.driverId === ''
+      ? null
+      : requiredString(body.driverId, 'Fahrer:in', { max: 120 });
+    const ownTripsAccess = booleanValue(body.ownTripsAccess, true) ? 1 : 0;
+    const currentDriver = getLinkedDriver(req.user.id);
+    let nextDriver = null;
+
+    if (driverId) {
+      nextDriver = getDriver(driverId);
+      if (!nextDriver) throw new HttpError(400, 'Die ausgewählte Fahrer:in existiert nicht.');
+      if (nextDriver.user_id && nextDriver.user_id !== req.user.id) {
+        throw new HttpError(409, 'Diese Fahrer:in ist bereits mit einem Benutzerkonto verknüpft.');
+      }
+    }
+
+    const linkChanged = (currentDriver?.id || null) !== driverId;
+    const accessChanged = Boolean(driverId) && Number(currentDriver?.own_trips_access ?? 1) !== ownTripsAccess;
+    if (linkChanged || accessChanged) {
+      const now = isoNow();
+      db.transaction(() => {
+        if (currentDriver && currentDriver.id !== driverId) {
+          db.prepare('UPDATE drivers SET user_id = NULL, updated_at = ? WHERE id = ?')
+            .run(now, currentDriver.id);
+        }
+        if (nextDriver) {
+          db.prepare('UPDATE drivers SET user_id = ?, own_trips_access = ?, updated_at = ? WHERE id = ?')
+            .run(req.user.id, ownTripsAccess, now, nextDriver.id);
+        }
+        if (driverId) {
+          audit(req, 'link_driver', 'user', req.user.id, {
+            driverId,
+            ownTripsAccess
+          });
+        } else {
+          audit(req, 'unlink_driver', 'user', req.user.id, {
+            driverId: currentDriver?.id || null,
+            ownTripsAccess: null
+          });
+        }
+      })();
+    }
+    sendState(req, res);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE' && String(error.message).includes('drivers.user_id')) {
+      return next(new HttpError(409, 'Diese Fahrer:in ist bereits mit einem Benutzerkonto verknüpft.'));
+    }
+    next(error);
+  }
+});
+
 router.post('/notifications/read', (req, res) => {
   const keys = Array.isArray(req.body?.keys) ? req.body.keys : [];
   const validKeys = [...new Set(keys.map(String).filter((key) => key.length > 0 && key.length <= 200))].slice(0, 250);
