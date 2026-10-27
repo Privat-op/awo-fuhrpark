@@ -1439,7 +1439,7 @@ function renderSettings() {
           </div>
           <div class="version-box">
             <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-            <span class="version-badge">Server-MVP 0.6.1</span>
+            <span class="version-badge">Server-MVP 0.6.2</span>
           </div>
         </div>
       </section>` : ''

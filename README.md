@@ -47,6 +47,12 @@ v0.6.1 ergänzt Own-Trip-Actions, Superadmin (Etappe 3) und den UI-Berechtigungs
 
 Details: [Release Notes v0.6.1](RELEASE_NOTES_v0.6.1.md) · [Feature-Doku v0.6.1](FEATURE_DOKU_v0.6.1.md).
 
+## Release v0.6.2
+
+v0.6.2 ist ein UI-/Text-Patch: doppelt kodierte UTF-8-Texte in Frontend, README und ausgewählten Hilfsskripten wurden verlustfrei repariert. Keine Rechte-, Datenbank- oder API-Änderung.
+
+Details: [Release Notes v0.6.2](RELEASE_NOTES_v0.6.2.md).
+
 > **Hinweis zum Fahrtenbuch:** Historische Nachtragungen dürfen einen Startkilometer unter dem aktuellen Fahrzeugstand haben. Die Oberfläche zeigt in diesem Fall einen Hinweis, blockiert das Speichern aber nicht; der Fahrzeugstand wird nur angehoben, wenn der eingetragene Endkilometer höher liegt.
 
 ## Schnellstart mit Docker
