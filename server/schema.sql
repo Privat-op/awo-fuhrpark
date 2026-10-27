@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS vehicles (
   department TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'in_use', 'maintenance')),
   mileage INTEGER NOT NULL DEFAULT 0 CHECK (mileage >= 0),
+  blocked INTEGER NOT NULL DEFAULT 0 CHECK (blocked IN (0, 1)),
+  blocked_reason TEXT NOT NULL DEFAULT '',
   next_service TEXT,
   tuv TEXT,
   insurance TEXT NOT NULL DEFAULT '',

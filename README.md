@@ -10,6 +10,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
 - Automatische Anonymisierung deaktivierter Konten nach einer global einstellbaren Frist
 - Fahrzeuge mit Bild-Upload, Standort, Kilometerstand, HU/AU und Service
+- Dauerhafte Fahrzeug-Sperre mit Begründung, Audit und serverseitiger 409-Sperre für neue Buchungen und Anfragen
 - Buchungen mit serverseitiger Konfliktprüfung für Fahrzeug und Fahrer:in
 - Eigene Fahrten: verknüpfte Fahrer:innen sehen ausschließlich ihre eigenen Buchungen und können Buchungsanfragen stellen
 - Buchungsanfragen mit Rang- und Rollen-Policy, transaktionaler Genehmigung und Audit
@@ -169,6 +170,13 @@ Unter **Benutzer → Benutzer-Ausnahmen** können Personen mit `users_manage` pe
 - Ablehnen ist mit optionaler Begründung möglich. Zurückziehen kann nur die antragstellende Person und nur im Status `requested`.
 - Wird das anfragende Konto deaktiviert oder anonymisiert, werden offene Anfragen automatisch storniert und auditiert. Bereits entschiedene oder gebuchte Anfragen bleiben erhalten; bei der Anonymisierung wird die Fahrer-Konto-Verknüpfung entfernt.
 - Create, Approve, Reject und Cancel werden auditiert. E-Mail-/Teams-Benachrichtigungen sind noch nicht enthalten.
+
+### Dauerhafte Fahrzeug-Sperre
+
+- Fahrzeuge können über die Fahrzeugverwaltung (`vehicles_manage`) dauerhaft gesperrt und wieder entsperrt werden. Eine Begründung ist optional und wird in Liste, Detailansicht und Auswahl angezeigt.
+- Setzen und Aufheben der Sperre werden ebenso wie die Begründung auditiert.
+- `POST /api/bookings` und `POST /api/booking-requests` antworten für ein gesperrtes Fahrzeug mit `409` und einer klaren Meldung. Eine Buchungsanfrage kann nach einer späteren Sperre nicht mehr genehmigt werden; sie bleibt offen.
+- Bestehende Buchungen bleiben unverändert. Fahrtstart, Fahrtende und Stornierung unterliegen weiterhin den bisherigen Regeln und werden durch die Sperre nicht blockiert.
 
 ## Benutzerkonten und Anonymisierung
 

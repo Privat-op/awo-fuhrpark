@@ -401,9 +401,13 @@ router.post('/notifications/read', (req, res) => {
 /* =========================================================
    Fahrzeuge
    ========================================================= */
-function parseVehiclePayload(body) {
+function parseVehiclePayload(body, existing = null) {
   const name = requiredString(body.name, 'Bezeichnung', { max: 120 });
   const plate = requiredString(body.plate, 'Kennzeichen', { max: 30 }).toUpperCase();
+  const blocked = body.blocked === undefined ? Boolean(existing?.blocked) : booleanValue(body.blocked, false);
+  const blockedReason = blocked
+    ? optionalString(body.blockedReason === undefined ? existing?.blocked_reason : body.blockedReason, { max: 500 })
+    : '';
   return {
     name,
     plate,
@@ -418,8 +422,15 @@ function parseVehiclePayload(body) {
     tuv: optionalDate(body.tuv, 'HU/AU'),
     insurance: optionalString(body.insurance, { max: 160 }),
     notes: optionalString(body.notes, { max: 1000 }),
+    blocked,
+    blockedReason,
     color: hexColorValue(body.color, VEHICLE_COLORS[db.prepare('SELECT COUNT(*) AS count FROM vehicles').get().count % VEHICLE_COLORS.length])
   };
+}
+
+function vehicleBlockedMessage(vehicle) {
+  const reason = vehicle.blocked_reason ? ` Grund: ${vehicle.blocked_reason}` : '';
+  return `${vehicle.name} ist dauerhaft gesperrt und für neue Buchungen oder Buchungsanfragen nicht verfügbar.${reason}`;
 }
 
 router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, next) => {
@@ -436,15 +447,17 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
     if (activeBooking) values.status = 'in_use';
     db.prepare(`
       INSERT INTO vehicles
-        (id, name, plate, type, fuel, seats, location, department, status, mileage, next_service, tuv, insurance, acquired, color, notes, image_file, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, name, plate, type, fuel, seats, location, department, status, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, values.name, values.plate, values.type, values.fuel, values.seats,
       values.location, values.department, values.status, values.mileage,
+      values.blocked ? 1 : 0, values.blockedReason,
       values.nextService, values.tuv, values.insurance, todayISO(),
       values.color, values.notes, imageFile, now, now
     );
-    audit(req, 'create', 'vehicle', id, { name: values.name, plate: values.plate });
+    audit(req, 'create', 'vehicle', id, { name: values.name, plate: values.plate, blocked: values.blocked, blockedReason: values.blockedReason });
+    if (values.blocked) audit(req, 'block', 'vehicle', id, { reason: values.blockedReason });
     sendState(req, res, 201);
   } catch (error) {
     if (imageFile) deleteUpload(imageFile);
@@ -458,7 +471,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
   try {
     const existing = ensureVehicleExists(req.params.id);
     assertCan(req, 'vehicles_manage', { vehicle: existing });
-    const values = parseVehiclePayload(req.body || {});
+    const values = parseVehiclePayload(req.body || {}, existing);
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ? AND id <> ?').get(values.plate, existing.id);
     if (duplicate) throw new HttpError(409, `Das Kennzeichen ${values.plate} ist bereits vergeben.`);
 
@@ -468,21 +481,36 @@ router.patch('/vehicles/:id', async (req, res, next) => {
 
     const active = db.prepare("SELECT 1 FROM bookings WHERE vehicle_id = ? AND status = 'active' LIMIT 1").get(existing.id);
     if (active && values.status !== 'maintenance') values.status = 'in_use';
+    const blockedChanged = Boolean(existing.blocked) !== values.blocked;
 
-    db.prepare(`
-      UPDATE vehicles SET
-        name = ?, plate = ?, type = ?, fuel = ?, seats = ?, location = ?, department = ?,
-        status = ?, mileage = ?, next_service = ?, tuv = ?, insurance = ?, color = ?, notes = ?,
-        image_file = ?, updated_at = ?
-      WHERE id = ?
-    `).run(
-      values.name, values.plate, values.type, values.fuel, values.seats,
-      values.location, values.department, values.status, values.mileage,
-      values.nextService, values.tuv, values.insurance, values.color, values.notes,
-      imageFile, isoNow(), existing.id
-    );
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE vehicles SET
+          name = ?, plate = ?, type = ?, fuel = ?, seats = ?, location = ?, department = ?,
+          status = ?, mileage = ?, blocked = ?, blocked_reason = ?, next_service = ?, tuv = ?, insurance = ?, color = ?, notes = ?,
+          image_file = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        values.name, values.plate, values.type, values.fuel, values.seats,
+        values.location, values.department, values.status, values.mileage,
+        values.blocked ? 1 : 0, values.blockedReason,
+        values.nextService, values.tuv, values.insurance, values.color, values.notes,
+        imageFile, isoNow(), existing.id
+      );
+      audit(req, 'update', 'vehicle', existing.id, {
+        name: values.name,
+        plate: values.plate,
+        blocked: values.blocked,
+        blockedReason: values.blockedReason
+      });
+      if (blockedChanged) {
+        audit(req, values.blocked ? 'block' : 'unblock', 'vehicle', existing.id, {
+          reason: values.blockedReason,
+          previousReason: existing.blocked_reason || ''
+        });
+      }
+    })();
     if (existing.image_file && existing.image_file !== imageFile) deleteUpload(existing.image_file);
-    audit(req, 'update', 'vehicle', existing.id, { name: values.name, plate: values.plate });
     sendState(req, res);
   } catch (error) {
     if (newImageFile) deleteUpload(newImageFile);
@@ -573,6 +601,7 @@ router.post('/bookings', (req, res, next) => {
     const vehicle = ensureVehicleExists(vehicleId);
     const driver = ensureDriverExists(driverId);
     assertCan(req, 'bookings_create', { vehicle, driver });
+    if (vehicle.blocked) throw new HttpError(409, vehicleBlockedMessage(vehicle));
     if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
     if (driver.status === 'away') throw new HttpError(409, `${driver.name} ist aktuell abwesend.`);
     assertBookingConflict(vehicle.id, driver.id, start, end, vehicle.name, driver.name);
@@ -695,6 +724,7 @@ router.post('/booking-requests', (req, res, next) => {
     }
     const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
     assertCan(req, 'own_trips_request', { driver: linkedDriver, vehicle });
+    if (vehicle.blocked) throw new HttpError(409, vehicleBlockedMessage(vehicle));
     const purpose = requiredString(body.purpose, 'Einsatzzweck', { max: 200 });
     const date = requiredDate(body.date, 'Datum');
     const start = combineDateTime(date, String(body.startTime || ''), 'Start');
@@ -744,6 +774,7 @@ router.post('/booking-requests/:id/approve', requirePermission('booking_requests
       }
       const vehicle = ensureVehicleExists(request.vehicle_id);
       const driver = ensureDriverExists(request.driver_id);
+      if (vehicle.blocked) throw new HttpError(409, vehicleBlockedMessage(vehicle));
       if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
       if (driver.status === 'away') throw new HttpError(409, `${driver.name} ist aktuell abwesend.`);
       assertBookingConflict(vehicle.id, driver.id, request.start_at, request.end_at, vehicle.name, driver.name);

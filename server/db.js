@@ -80,6 +80,14 @@ function initSchema() {
   }
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_user_id ON drivers(user_id) WHERE user_id IS NOT NULL');
 
+  const vehicleColumns = db.prepare('PRAGMA table_info(vehicles)').all();
+  if (vehicleColumns.length && !vehicleColumns.some((column) => column.name === 'blocked')) {
+    db.exec('ALTER TABLE vehicles ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0');
+  }
+  if (vehicleColumns.length && !vehicleColumns.some((column) => column.name === 'blocked_reason')) {
+    db.exec("ALTER TABLE vehicles ADD COLUMN blocked_reason TEXT NOT NULL DEFAULT ''");
+  }
+
   const userColumns = db.prepare('PRAGMA table_info(users)').all();
   if (!userColumns.some((column) => column.name === 'anonymized_at')) {
     db.exec('ALTER TABLE users ADD COLUMN anonymized_at TEXT');

@@ -141,16 +141,18 @@ function renderVehicleCard(vehicle) {
   const tuvAlert = tuvDays !== null && tuvDays <= 60;
   const bookedToday = db.bookings.some((booking) => booking.vehicleId === vehicle.id && booking.start.slice(0, 10) === todayISO() && booking.status !== 'canceled');
   const disabled = vehicle.status === 'maintenance';
+  const blocked = Boolean(vehicle.blocked);
   const hasPhoto = Boolean(vehicle.image);
+  const canManage = canOn('vehicle', vehicle.id, 'vehicles_manage');
 
   return `
-    <article class="vehicle-card" style="--vehicle-soft:${hexToRgba(vehicle.color, 0.13)}">
+    <article class="vehicle-card ${blocked ? 'is-blocked' : ''}" style="--vehicle-soft:${hexToRgba(vehicle.color, 0.13)}">
       <div class="vehicle-visual ${hasPhoto ? 'has-photo' : ''}">
         ${hasPhoto
           ? `<img class="vehicle-photo" src="${esc(vehicle.image)}" alt="${esc(vehicle.name)}"><span class="vehicle-photo-shade"></span>`
           : `<div class="vehicle-art">${vehicleArt(vehicle.type, vehicle.color)}</div>`}
         <div class="vehicle-visual-top">
-          <span class="badge badge-${status.badge}">${status.label}</span>
+          ${blocked ? '<span class="badge badge-red">Gesperrt</span>' : `<span class="badge badge-${status.badge}">${status.label}</span>`}
           <span class="vehicle-type">${icon('car')} ${esc(vehicle.type)}</span>
         </div>
       </div>
@@ -164,8 +166,9 @@ function renderVehicleCard(vehicle) {
               <span>${esc(vehicle.department)}</span>
             </div>
           </div>
-          ${bookedToday ? `<span class="badge badge-blue no-dot">Heute gebucht</span>` : ''}
+          ${blocked ? '<span class="badge badge-red no-dot">Dauerhaft gesperrt</span>' : bookedToday ? `<span class="badge badge-blue no-dot">Heute gebucht</span>` : ''}
         </div>
+        ${blocked ? `<div class="info-banner" style="margin:12px 0 0;padding:10px 12px">${icon('alert')}<div><strong>Sperre aktiv</strong><p>${esc(vehicle.blockedReason || 'Keine Begründung hinterlegt.')}</p></div></div>` : ''}
         <div class="vehicle-specs">
           <div class="spec">${icon('fuel')}<div><span class="spec-label">Kraftstoff</span><span class="spec-value">${esc(vehicle.fuel)}</span></div></div>
           <div class="spec">${icon('seat')}<div><span class="spec-label">Sitzplätze</span><span class="spec-value">${vehicle.seats} Plätze</span></div></div>
@@ -178,8 +181,9 @@ function renderVehicleCard(vehicle) {
             <span>${tuvDays === null ? 'HU/AU nicht hinterlegt' : tuvDays < 0 ? `HU/AU ${Math.abs(tuvDays)} Tage überfällig` : `HU/AU ${formatDate(vehicle.tuv)}`}</span>
           </div>
           <div class="vehicle-card-actions">
+            ${canManage ? `<button class="btn btn-ghost btn-sm" type="button" data-action="toggle-vehicle-block" data-id="${vehicle.id}">${blocked ? icon('check-circle') : icon('alert')} ${blocked ? 'Entsperren' : 'Sperren'}</button>` : ''}
             <button class="btn btn-ghost btn-sm" type="button" data-action="vehicle-details" data-id="${vehicle.id}">Details</button>
-            ${canOn('vehicle', vehicle.id, 'bookings_create') ? `<button class="btn btn-soft btn-sm" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${disabled ? 'disabled title="Fahrzeug befindet sich in Wartung"' : ''}>${icon('calendar')} Buchen</button>` : ''}
+            ${canOn('vehicle', vehicle.id, 'bookings_create') ? `<button class="btn btn-soft btn-sm" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${disabled || blocked ? `disabled title="${blocked ? 'Fahrzeug ist dauerhaft gesperrt' : 'Fahrzeug befindet sich in Wartung'}"` : ''}>${icon('calendar')} Buchen</button>` : ''}
           </div>
         </div>
       </div>
@@ -544,7 +548,7 @@ function renderWeekCalendar() {
   }).join('');
 
   const rows = db.vehicles.map((vehicle) => {
-    const vehicleCanCreate = canCreate && canOn('vehicle', vehicle.id, 'bookings_create');
+    const vehicleCanCreate = canCreate && !vehicle.blocked && canOn('vehicle', vehicle.id, 'bookings_create');
     const cells = days.map((dateISO) => {
       const dayBookings = sortByDateAsc(bookings.filter((booking) => booking.vehicleId === vehicle.id && booking.start.slice(0, 10) === dateISO));
       return `<div class="cal-cell ${dateISO === today ? 'is-today' : ''} ${vehicleCanCreate ? '' : 'is-readonly'}"

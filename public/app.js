@@ -956,6 +956,7 @@ function dispatchAction(element) {
     case 'delete-role': openDeleteRoleConfirm(id); break;
     case 'vehicle-details': openVehicleDetails(id); break;
     case 'edit-vehicle': openVehicleModal(id); break;
+    case 'toggle-vehicle-block': openVehicleBlockModal(id); break;
     case 'book-vehicle': openBookingModal({ vehicleId: id }); break;
     case 'edit-driver': openDriverModal(id); break;
     case 'edit-user': openUserModal(id); break;

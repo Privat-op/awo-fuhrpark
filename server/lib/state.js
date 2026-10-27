@@ -19,6 +19,8 @@ function mapVehicle(row) {
     acquired: row.acquired,
     color: row.color,
     notes: row.notes,
+    blocked: Boolean(row.blocked),
+    blockedReason: row.blocked_reason || '',
     image: row.image_file ? `/api/vehicles/${encodeURIComponent(row.id)}/image?v=${version}` : ''
   };
 }
@@ -125,7 +127,9 @@ function mapMinimalVehicle(row) {
     plate: row.plate,
     type: row.type,
     color: row.color,
-    status: row.status
+    status: row.status,
+    blocked: Boolean(row.blocked),
+    blockedReason: row.blocked_reason || ''
   };
 }
 
