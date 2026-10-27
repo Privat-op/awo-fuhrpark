@@ -24,6 +24,18 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
 
+## Release v0.6.0
+
+v0.6.0 bündelt Etappe 2 (Own Trips, Buchungsanfragen, dauerhafte Fahrzeug-Sperre) und das Audit-Paket. Beide Pakete sind QS-verifiziert; der integrierte Stand `4a18ec2` ist die Release-Basis.
+
+- **Own Trips:** 1:1-Verknüpfung von Fahrer:innen und Benutzerkonten, schlanke Ansicht „Meine Fahrten“, Default-Rechte über `own_trips_access`.
+- **Buchungsanfragen:** `booking_requests_manage`, Rollen-Policy und Rang-Gate, keine Selbstgenehmigung, transaktionale Genehmigung mit Doppelbelegungscheck.
+- **Fahrzeug-Sperre:** dauerhaft gesperrte Fahrzeuge verursachen 409 bei neuen Buchungen und Buchungsanfragen; bestehende Buchungen bleiben unverändert.
+- **Audit-Log:** Self-only ohne Audit-Recht, Rangbereich mit `audit_view`, alle Einträge mit `audit_view_all` – ohne Switch; Suche/Filter, Maskierung, Meta-Audit und Pagination.
+- **Oberfläche:** Zahnrad als zentraler Settings-Einstieg; Sidebar-Fix `d69755b`.
+
+Details, Migration und bekannte Einschränkungen: [Release Notes v0.6.0](RELEASE_NOTES_v0.6.0.md).
+
 > **Hinweis zum Fahrtenbuch:** Historische Nachtragungen dürfen einen Startkilometer unter dem aktuellen Fahrzeugstand haben. Die Oberfläche zeigt in diesem Fall einen Hinweis, blockiert das Speichern aber nicht; der Fahrzeugstand wird nur angehoben, wenn der eingetragene Endkilometer höher liegt.
 
 ## Schnellstart mit Docker
