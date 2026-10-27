@@ -305,7 +305,14 @@ function renderDashboard() {
       ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Ihre Rolle enthält derzeit keine Einsicht in Fuhrparkdaten.', '<a class="btn btn-ghost" href="#/einstellungen">Einstellungen</a>')}
       <section class="card">${emptyState('shield', 'Keine Fuhrparkdaten freigegeben', 'Die Administration kann Ihrer Rolle unter „Rollen & Rechte“ die passenden Berechtigungen zuweisen.', '<a class="btn btn-primary btn-sm" href="#/einstellungen">Zum Konto</a>')}</section>`;
   }
-  if (!db.vehicles.length && !db.drivers.length) return renderOnboarding(greeting, displayName);
+  if (!db.vehicles.length && !db.drivers.length) {
+    if (db.bookings.length) {
+      return `
+        ${pageHead(formatDateLong(today), `${greeting}, ${esc(displayName)} <span class="wave">👋</span>`, 'Ihre Rolle sieht abgeschlossene Fahrten im Fahrtenbuch.', '<a class="btn btn-primary" href="#/fahrtenbuch">Fahrtenbuch öffnen</a>')}
+        <section class="card">${emptyState('book', 'Fahrtenbuch verfügbar', `${db.bookings.length} abgeschlossene ${db.bookings.length === 1 ? 'Fahrt ist' : 'Fahrten sind'} für Ihre Rolle sichtbar. Die allgemeine Fahrzeug- und Buchungsverwaltung bleibt gesperrt.`, '<a class="btn btn-primary btn-sm" href="#/fahrtenbuch">Zum Fahrtenbuch</a>')}</section>`;
+    }
+    return renderOnboarding(greeting, displayName);
+  }
   const todayBookings = sortByDateAsc(db.bookings.filter((booking) => booking.start.slice(0, 10) === today && booking.status !== 'canceled'));
   const activeToday = todayBookings.filter((booking) => booking.status === 'active').length;
   const available = db.vehicles.filter((vehicle) => vehicle.status === 'available').length;
@@ -1004,8 +1011,8 @@ function renderLogbook() {
   const vehiclesUsed = new Set(trips.map((trip) => trip.vehicleId)).size;
 
   const rows = trips.map((trip) => {
-    const vehicle = getVehicle(trip.vehicleId);
-    const driver = getDriver(trip.driverId);
+    const vehicle = bookingVehicle(trip);
+    const driver = bookingDriver(trip);
     const km = Math.max(0, Number(trip.endKm || 0) - Number(trip.startKm || 0));
     return `
       <tr>
@@ -1028,7 +1035,7 @@ function renderLogbook() {
     <div class="kpi-grid">
       ${metricCard({ label: 'Fahrten', value: trips.length, sub: ui.logPeriod === 'all' ? 'Alle dokumentierten Fahrten' : 'Im ausgewählten Zeitraum', iconName: 'route', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">Fahrtenbuch</span>', glow: 'rgba(37,99,235,.055)' })}
       ${metricCard({ label: 'Gefahrene Kilometer', value: formatNumber(distance), sub: `≈ ${formatDecimal(average, 0)} km pro Fahrt`, iconName: 'gauge', tint: 'tint-green', badge: '<span class="badge badge-green no-dot">Strecke</span>', glow: 'rgba(17,138,91,.055)' })}
-      ${metricCard({ label: 'Fahrzeuge im Einsatz', value: vehiclesUsed, sub: `${db.vehicles.length} Fahrzeuge in der Flotte`, iconName: 'car', tint: 'tint-teal', badge: '<span class="badge badge-teal no-dot">Flotte</span>', glow: 'rgba(15,143,138,.055)' })}
+      ${metricCard({ label: 'Fahrzeuge im Einsatz', value: vehiclesUsed, sub: `${vehiclesUsed} ${vehiclesUsed === 1 ? 'Fahrzeug' : 'Fahrzeuge'} im Fahrtenbuch`, iconName: 'car', tint: 'tint-teal', badge: '<span class="badge badge-teal no-dot">Flotte</span>', glow: 'rgba(15,143,138,.055)' })}
       ${metricCard({ label: 'Ø Distanz', value: `${formatDecimal(average, 0)} km`, sub: 'Pro dokumentierter Fahrt', iconName: 'trend-up', tint: 'tint-violet', badge: '<span class="badge badge-violet no-dot">Kennzahl</span>', glow: 'rgba(109,71,217,.05)' })}
     </div>
     <section class="card mt-18">
@@ -1321,7 +1328,7 @@ function renderSettings() {
             </div>
             <div class="version-box">
               <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-              <span class="version-badge">Server-MVP 0.5.1</span>
+              <span class="version-badge">Server-MVP 0.5.2</span>
             </div>
           </div>
         </section>

@@ -155,7 +155,8 @@ router.get('/state', (req, res) => {
 });
 
 function csvEscape(value) {
-  const text = String(value ?? '');
+  let text = String(value ?? '');
+  if (/^[\s]*[=+\-@\t\r]/.test(text)) text = `'${text}`;
   return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
@@ -188,9 +189,9 @@ router.get('/export/logbook.csv', requirePermission('logbook_export'), (req, res
         const distance = Math.max(0, Number(trip.endKm || 0) - Number(trip.startKm || 0));
         return [
           trip.start.slice(0, 10).split('-').reverse().join('.'),
-          vehicle?.name || '',
-          vehicle?.plate || '',
-          driver?.name || '',
+          vehicle?.name || trip.vehicleName || '',
+          vehicle?.plate || trip.vehiclePlate || '',
+          driver?.name || trip.driverName || '',
           trip.purpose,
           trip.start.slice(11, 16),
           trip.end.slice(11, 16),

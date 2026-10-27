@@ -20,6 +20,8 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
 
+> **Hinweis zum Fahrtenbuch:** Historische Nachtragungen dürfen einen Startkilometer unter dem aktuellen Fahrzeugstand haben. Die Oberfläche zeigt in diesem Fall einen Hinweis, blockiert das Speichern aber nicht; der Fahrzeugstand wird nur angehoben, wenn der eingetragene Endkilometer höher liegt.
+
 ## Schnellstart mit Docker
 
 Voraussetzungen: Linux-Server mit Docker und Docker Compose, optional eine Domain mit HTTPS.
@@ -103,6 +105,13 @@ Danach den Container neu starten. Der Server sollte nicht ungeschützt direkt au
 | Eigene Rollen | Frei anlegbare Rollen mit individuellen Modul- und Objekt-Ausnahmen |
 
 Nur Administratoren können Konten anlegen, Rollen ändern, Benutzer-Ausnahmen pflegen, Konten deaktivieren und Passwörter zurücksetzen. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
+
+### Fahrtenbuch-Rechte
+
+- `logbook_view` und `logbook_export` öffnen ausschließlich das Fahrtenbuch mit abgeschlossenen Fahrten. Sie geben keinen Zugriff auf die allgemeine Buchungsverwaltung oder die vollständigen Fahrzeug-/Fahrer-Stammdatenseiten.
+- Fahrzeug- und Fahrername werden im Fahrtenbuch als minimale Referenz mitgeliefert, damit die Tabelle und der CSV-Export lesbar bleiben.
+- `logbook_manage` (Fahrten nachtragen) setzt zusätzlich die Fahrzeug- und Fahreransicht voraus, damit eine Fahrt ausgewählt werden kann.
+- Historische Nachträge dürfen unter dem aktuellen Fahrzeugkilometerstand liegen; die UI zeigt einen Hinweis, blockiert aber nicht.
 
 ### Rechte-Hierarchie
 

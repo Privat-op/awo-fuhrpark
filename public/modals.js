@@ -222,8 +222,8 @@ function openBookingModal(prefill = {}) {
 function openBookingDetails(bookingId) {
   const booking = db.bookings.find((item) => item.id === bookingId);
   if (!booking) return;
-  const vehicle = getVehicle(booking.vehicleId);
-  const driver = getDriver(booking.driverId);
+  const vehicle = bookingVehicle(booking);
+  const driver = bookingDriver(booking);
   const distance = booking.startKm != null && booking.endKm != null ? Math.max(0, Number(booking.endKm) - Number(booking.startKm)) : null;
   const canManage = canOn('booking', booking.id, 'bookings_manage');
   const canStart = canManage && booking.status === 'planned';
@@ -1861,6 +1861,7 @@ function openLogModal() {
     body: `
       <form id="logForm" novalidate>
         ${formAlertMarkup()}
+        <div class="info-banner" id="logKmHint" hidden></div>
         <div class="form-grid">
           <div class="field field-full">
             <label for="logVehicle">Fahrzeug <span class="optional">*</span></label>
@@ -1909,6 +1910,20 @@ function openLogModal() {
   const vehicleSelect = $('#logVehicle');
   const startKmInput = $('#logStartKm');
   const endKmInput = $('#logEndKm');
+  const kmHint = $('#logKmHint');
+
+  const updateKmHint = () => {
+    if (!kmHint) return;
+    const vehicle = getVehicle(vehicleSelect.value);
+    const startKm = Number(startKmInput.value);
+    if (!vehicle || !Number.isFinite(startKm) || startKm >= Number(vehicle.mileage)) {
+      kmHint.hidden = true;
+      kmHint.innerHTML = '';
+      return;
+    }
+    kmHint.innerHTML = `${icon('info')}<div><strong>Historischer Nachtrag</strong><p>Der Startkilometer (${formatNumber(startKm)} km) liegt unter dem aktuellen Fahrzeugstand (${formatNumber(vehicle.mileage)} km). Das ist bei nachträglichen Fahrten möglich; die Fahrt wird gespeichert.</p></div>`;
+    kmHint.hidden = false;
+  };
 
   vehicleSelect.addEventListener('change', () => {
     const vehicle = getVehicle(vehicleSelect.value);
@@ -1916,7 +1931,10 @@ function openLogModal() {
       startKmInput.value = vehicle.mileage;
       endKmInput.value = Number(vehicle.mileage) + 20;
     }
+    updateKmHint();
   });
+  startKmInput.addEventListener('input', updateKmHint);
+  updateKmHint();
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();

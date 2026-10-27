@@ -43,11 +43,19 @@ function mapDriver(row) {
   };
 }
 
-function mapBooking(row) {
+function mapBooking(row, vehicle = null, driver = null) {
   return {
     id: row.id,
     vehicleId: row.vehicle_id,
     driverId: row.driver_id,
+    vehicleName: vehicle?.name || '',
+    vehiclePlate: vehicle?.plate || '',
+    vehicleType: vehicle?.type || 'Pkw',
+    vehicleColor: vehicle?.color || '#64748b',
+    vehicleLocation: vehicle?.location || '',
+    driverName: driver?.name || '',
+    driverRole: driver?.role || '',
+    driverColor: driver?.color || '#64748b',
     purpose: row.purpose,
     start: row.start_at,
     end: row.end_at,
@@ -148,7 +156,7 @@ function getState(db, user, auth = null) {
   const visibleDriverRows = driverRows.filter((row) => can('drivers_view', { driver: row }));
   const visibleBookingRows = bookingRows.filter((row) => {
     const context = bookingContext(row);
-    return can('bookings_view', context) || can('logbook_view', context);
+    return can('bookings_view', context) || (row.status === 'completed' && can('logbook_view', context));
   });
   const visibleMaintenanceRows = maintenanceRows.filter((row) => can('maintenance_view', maintenanceContext(row)));
   const visibleCostRows = costRows.filter((row) => can('costs_view', costContext(row)));
@@ -250,7 +258,7 @@ function getState(db, user, auth = null) {
     },
     vehicles: visibleVehicleRows.map(mapVehicle),
     drivers: visibleDriverRows.map(mapDriver),
-    bookings: visibleBookingRows.map(mapBooking),
+    bookings: visibleBookingRows.map((row) => mapBooking(row, vehicleById.get(row.vehicle_id), driverById.get(row.driver_id))),
     maintenance: visibleMaintenanceRows.map(mapMaintenance),
     costs: visibleCostRows.map(mapCost),
     notificationReads

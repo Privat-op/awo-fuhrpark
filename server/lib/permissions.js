@@ -71,8 +71,7 @@ const IMPLICATIONS = {
   bookings_view: ['vehicles_view', 'drivers_view'],
   bookings_create: ['bookings_view'],
   bookings_manage: ['bookings_view'],
-  logbook_view: ['vehicles_view', 'drivers_view'],
-  logbook_manage: ['logbook_view'],
+  logbook_manage: ['logbook_view', 'vehicles_view', 'drivers_view'],
   logbook_export: ['logbook_view'],
   maintenance_view: ['vehicles_view'],
   maintenance_manage: ['maintenance_view'],
@@ -148,7 +147,6 @@ const OBJECT_IMPLICATIONS = {
     bookings_view: ['vehicles_view'],
     bookings_create: ['bookings_view'],
     bookings_manage: ['bookings_view'],
-    logbook_view: ['vehicles_view'],
     logbook_manage: ['logbook_view'],
     maintenance_view: ['vehicles_view'],
     maintenance_manage: ['maintenance_view'],
@@ -160,12 +158,10 @@ const OBJECT_IMPLICATIONS = {
     bookings_view: ['drivers_view'],
     bookings_create: ['bookings_view'],
     bookings_manage: ['bookings_view'],
-    logbook_view: ['drivers_view'],
     logbook_manage: ['logbook_view']
   },
   booking: {
     bookings_manage: ['bookings_view'],
-    logbook_view: ['bookings_view'],
     logbook_manage: ['logbook_view']
   },
   cost: {
@@ -182,7 +178,6 @@ const OBJECT_PREREQUISITES = {
     bookings_view: ['vehicles_view'],
     bookings_create: ['bookings_view'],
     bookings_manage: ['bookings_view'],
-    logbook_view: ['vehicles_view'],
     logbook_manage: ['logbook_view'],
     maintenance_view: ['vehicles_view'],
     maintenance_manage: ['maintenance_view'],
@@ -194,12 +189,10 @@ const OBJECT_PREREQUISITES = {
     bookings_view: ['drivers_view'],
     bookings_create: ['bookings_view'],
     bookings_manage: ['bookings_view'],
-    logbook_view: ['drivers_view'],
     logbook_manage: ['logbook_view']
   },
   booking: {
     bookings_manage: ['bookings_view'],
-    logbook_view: ['bookings_view'],
     logbook_manage: ['logbook_view']
   },
   cost: {

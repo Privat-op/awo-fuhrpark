@@ -67,6 +67,42 @@ function getDriver(id) {
   return db.drivers.find((driver) => driver.id === id);
 }
 
+function bookingVehicle(booking) {
+  const vehicle = getVehicle(booking?.vehicleId);
+  if (vehicle) return vehicle;
+  if (!booking?.vehicleName) return null;
+  return {
+    id: booking.vehicleId,
+    name: booking.vehicleName,
+    plate: booking.vehiclePlate || '',
+    type: booking.vehicleType || 'Pkw',
+    color: booking.vehicleColor || '#64748b',
+    location: booking.vehicleLocation || '',
+    department: '',
+    fuel: '',
+    seats: 0,
+    status: 'available',
+    mileage: 0
+  };
+}
+
+function bookingDriver(booking) {
+  const driver = getDriver(booking?.driverId);
+  if (driver) return driver;
+  if (!booking?.driverName) return null;
+  return {
+    id: booking.driverId,
+    name: booking.driverName,
+    role: booking.driverRole || '',
+    color: booking.driverColor || '#64748b',
+    department: '',
+    phone: '',
+    email: '',
+    license: [],
+    status: 'available'
+  };
+}
+
 function isMaintenanceDone(item) {
   return Boolean(item && (item.completedAt || item.status === 'done'));
 }
@@ -551,8 +587,8 @@ function renderSearchResults() {
   const vehicles = db.vehicles.filter((vehicle) => `${vehicle.name} ${vehicle.plate} ${vehicle.location} ${vehicle.department} ${vehicle.type}`.toLowerCase().includes(query)).slice(0, 4);
   const drivers = db.drivers.filter((driver) => `${driver.name} ${driver.role} ${driver.department}`.toLowerCase().includes(query)).slice(0, 4);
   const bookings = db.bookings.filter((booking) => {
-    const vehicle = getVehicle(booking.vehicleId);
-    const driver = getDriver(booking.driverId);
+    const vehicle = bookingVehicle(booking);
+    const driver = bookingDriver(booking);
     return `${booking.purpose} ${vehicle?.name || ''} ${vehicle?.plate || ''} ${driver?.name || ''}`.toLowerCase().includes(query);
   }).slice(0, 3);
 
@@ -568,7 +604,7 @@ function renderSearchResults() {
   }
   if (bookings.length) {
     html += `<div class="search-group-label">Buchungen</div>${bookings.map((booking) => {
-      const vehicle = getVehicle(booking.vehicleId);
+      const vehicle = bookingVehicle(booking);
       return searchResultMarkup('booking', booking.id, booking.purpose, `${formatDate(booking.start)} · ${vehicle?.name || ''}`, 'calendar');
     }).join('')}`;
   }
