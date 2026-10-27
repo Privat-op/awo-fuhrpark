@@ -27,6 +27,11 @@ const { storeVehicleImage, storeReceipt, storeBrandingLogo, deleteUpload, upload
 const { writeAudit } = require('../lib/audit');
 const { anonymizeUser, runAutoAnonymization } = require('../lib/anonymize');
 const {
+  normalizeBookingRequestPolicy,
+  isRequestVisibleToApprover,
+  cancelOpenBookingRequests
+} = require('../lib/booking-requests');
+const {
   PERMISSION_GROUPS,
   normalizePermissions,
   normalizePermissionOverrides,
@@ -200,29 +205,45 @@ function ensureDriverExists(id) {
   return driver;
 }
 
+function getLinkedDriver(userId) {
+  return db.prepare('SELECT * FROM drivers WHERE user_id = ?').get(userId) || null;
+}
+
 function formatConflictTime(value) {
   return String(value).slice(11, 16);
 }
 
-function assertBookingConflict(vehicleId, driverId, start, end, vehicleName, driverName) {
+function getBookingConflict(vehicleId, driverId, start, end, vehicleName, driverName) {
   const vehicleConflict = db.prepare(`
     SELECT id, purpose, start_at, end_at FROM bookings
     WHERE vehicle_id = ? AND status IN ('planned', 'active')
       AND start_at < ? AND end_at > ?
     ORDER BY start_at LIMIT 1
   `).get(vehicleId, end, start);
-  if (vehicleConflict) {
-    throw new HttpError(409, `${vehicleName} ist in diesem Zeitraum bereits von ${formatConflictTime(vehicleConflict.start_at)} bis ${formatConflictTime(vehicleConflict.end_at)} gebucht (${vehicleConflict.purpose}). Bitte wählen Sie einen anderen Zeitraum.`);
-  }
   const driverConflict = db.prepare(`
     SELECT id, purpose, start_at, end_at FROM bookings
     WHERE driver_id = ? AND status IN ('planned', 'active')
       AND start_at < ? AND end_at > ?
     ORDER BY start_at LIMIT 1
   `).get(driverId, end, start);
-  if (driverConflict) {
-    throw new HttpError(409, `${driverName} ist in diesem Zeitraum bereits eingeplant (${driverConflict.purpose}). Bitte wählen Sie eine andere Fahrer:in.`);
+  const messages = [];
+  if (vehicleConflict) {
+    messages.push(`${vehicleName} ist in diesem Zeitraum bereits von ${formatConflictTime(vehicleConflict.start_at)} bis ${formatConflictTime(vehicleConflict.end_at)} gebucht (${vehicleConflict.purpose}). Bitte wählen Sie einen anderen Zeitraum.`);
   }
+  if (driverConflict) {
+    messages.push(`${driverName} ist in diesem Zeitraum bereits eingeplant (${driverConflict.purpose}). Bitte wählen Sie eine andere Fahrer:in.`);
+  }
+  return {
+    hasConflict: messages.length > 0,
+    vehicleConflict,
+    driverConflict,
+    message: messages.join(' ')
+  };
+}
+
+function assertBookingConflict(vehicleId, driverId, start, end, vehicleName, driverName) {
+  const conflict = getBookingConflict(vehicleId, driverId, start, end, vehicleName, driverName);
+  if (conflict.hasConflict) throw new HttpError(409, conflict.message);
 }
 
 function syncVehicleStatus(vehicleId) {
@@ -256,6 +277,8 @@ router.get('/session', (req, res) => {
     capabilities: {
       manageUsers: isAdmin || req.permissions.has('users_manage'),
       manageRoles: isAdmin || req.permissions.has('roles_manage'),
+      manageBookingRequests: isAdmin || req.permissions.has('booking_requests_manage'),
+      hasOwnTrips: Boolean(req.auth?.linkedDriverId),
       isAdmin,
       viewCosts: req.permissions.has('costs_view')
     }
@@ -378,9 +401,13 @@ router.post('/notifications/read', (req, res) => {
 /* =========================================================
    Fahrzeuge
    ========================================================= */
-function parseVehiclePayload(body) {
+function parseVehiclePayload(body, existing = null) {
   const name = requiredString(body.name, 'Bezeichnung', { max: 120 });
   const plate = requiredString(body.plate, 'Kennzeichen', { max: 30 }).toUpperCase();
+  const blocked = body.blocked === undefined ? Boolean(existing?.blocked) : booleanValue(body.blocked, false);
+  const blockedReason = blocked
+    ? optionalString(body.blockedReason === undefined ? existing?.blocked_reason : body.blockedReason, { max: 500 })
+    : '';
   return {
     name,
     plate,
@@ -395,8 +422,15 @@ function parseVehiclePayload(body) {
     tuv: optionalDate(body.tuv, 'HU/AU'),
     insurance: optionalString(body.insurance, { max: 160 }),
     notes: optionalString(body.notes, { max: 1000 }),
+    blocked,
+    blockedReason,
     color: hexColorValue(body.color, VEHICLE_COLORS[db.prepare('SELECT COUNT(*) AS count FROM vehicles').get().count % VEHICLE_COLORS.length])
   };
+}
+
+function vehicleBlockedMessage(vehicle) {
+  const reason = vehicle.blocked_reason ? ` Grund: ${vehicle.blocked_reason}` : '';
+  return `${vehicle.name} ist dauerhaft gesperrt und für neue Buchungen oder Buchungsanfragen nicht verfügbar.${reason}`;
 }
 
 router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, next) => {
@@ -413,15 +447,17 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
     if (activeBooking) values.status = 'in_use';
     db.prepare(`
       INSERT INTO vehicles
-        (id, name, plate, type, fuel, seats, location, department, status, mileage, next_service, tuv, insurance, acquired, color, notes, image_file, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, name, plate, type, fuel, seats, location, department, status, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, values.name, values.plate, values.type, values.fuel, values.seats,
       values.location, values.department, values.status, values.mileage,
+      values.blocked ? 1 : 0, values.blockedReason,
       values.nextService, values.tuv, values.insurance, todayISO(),
       values.color, values.notes, imageFile, now, now
     );
-    audit(req, 'create', 'vehicle', id, { name: values.name, plate: values.plate });
+    audit(req, 'create', 'vehicle', id, { name: values.name, plate: values.plate, blocked: values.blocked, blockedReason: values.blockedReason });
+    if (values.blocked) audit(req, 'block', 'vehicle', id, { reason: values.blockedReason });
     sendState(req, res, 201);
   } catch (error) {
     if (imageFile) deleteUpload(imageFile);
@@ -435,7 +471,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
   try {
     const existing = ensureVehicleExists(req.params.id);
     assertCan(req, 'vehicles_manage', { vehicle: existing });
-    const values = parseVehiclePayload(req.body || {});
+    const values = parseVehiclePayload(req.body || {}, existing);
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ? AND id <> ?').get(values.plate, existing.id);
     if (duplicate) throw new HttpError(409, `Das Kennzeichen ${values.plate} ist bereits vergeben.`);
 
@@ -445,21 +481,36 @@ router.patch('/vehicles/:id', async (req, res, next) => {
 
     const active = db.prepare("SELECT 1 FROM bookings WHERE vehicle_id = ? AND status = 'active' LIMIT 1").get(existing.id);
     if (active && values.status !== 'maintenance') values.status = 'in_use';
+    const blockedChanged = Boolean(existing.blocked) !== values.blocked;
 
-    db.prepare(`
-      UPDATE vehicles SET
-        name = ?, plate = ?, type = ?, fuel = ?, seats = ?, location = ?, department = ?,
-        status = ?, mileage = ?, next_service = ?, tuv = ?, insurance = ?, color = ?, notes = ?,
-        image_file = ?, updated_at = ?
-      WHERE id = ?
-    `).run(
-      values.name, values.plate, values.type, values.fuel, values.seats,
-      values.location, values.department, values.status, values.mileage,
-      values.nextService, values.tuv, values.insurance, values.color, values.notes,
-      imageFile, isoNow(), existing.id
-    );
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE vehicles SET
+          name = ?, plate = ?, type = ?, fuel = ?, seats = ?, location = ?, department = ?,
+          status = ?, mileage = ?, blocked = ?, blocked_reason = ?, next_service = ?, tuv = ?, insurance = ?, color = ?, notes = ?,
+          image_file = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        values.name, values.plate, values.type, values.fuel, values.seats,
+        values.location, values.department, values.status, values.mileage,
+        values.blocked ? 1 : 0, values.blockedReason,
+        values.nextService, values.tuv, values.insurance, values.color, values.notes,
+        imageFile, isoNow(), existing.id
+      );
+      audit(req, 'update', 'vehicle', existing.id, {
+        name: values.name,
+        plate: values.plate,
+        blocked: values.blocked,
+        blockedReason: values.blockedReason
+      });
+      if (blockedChanged) {
+        audit(req, values.blocked ? 'block' : 'unblock', 'vehicle', existing.id, {
+          reason: values.blockedReason,
+          previousReason: existing.blocked_reason || ''
+        });
+      }
+    })();
     if (existing.image_file && existing.image_file !== imageFile) deleteUpload(existing.image_file);
-    audit(req, 'update', 'vehicle', existing.id, { name: values.name, plate: values.plate });
     sendState(req, res);
   } catch (error) {
     if (newImageFile) deleteUpload(newImageFile);
@@ -550,6 +601,7 @@ router.post('/bookings', (req, res, next) => {
     const vehicle = ensureVehicleExists(vehicleId);
     const driver = ensureDriverExists(driverId);
     assertCan(req, 'bookings_create', { vehicle, driver });
+    if (vehicle.blocked) throw new HttpError(409, vehicleBlockedMessage(vehicle));
     if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
     if (driver.status === 'away') throw new HttpError(409, `${driver.name} ist aktuell abwesend.`);
     assertBookingConflict(vehicle.id, driver.id, start, end, vehicle.name, driver.name);
@@ -654,6 +706,177 @@ router.delete('/bookings/:id', (req, res, next) => {
     assertCan(req, 'bookings_manage', { booking, vehicle, driver });
     db.prepare('DELETE FROM bookings WHERE id = ?').run(booking.id);
     audit(req, 'delete', 'booking', booking.id, { purpose: booking.purpose });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* =========================================================
+   Eigene Fahrten & Buchungsanfragen
+   ========================================================= */
+router.post('/booking-requests', (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const linkedDriver = getLinkedDriver(req.user.id);
+    if (!linkedDriver) {
+      throw new HttpError(403, 'Für Buchungsanfragen ist kein Fahrerprofil mit Ihrem Konto verknüpft.');
+    }
+    const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
+    assertCan(req, 'own_trips_request', { driver: linkedDriver, vehicle });
+    if (vehicle.blocked) throw new HttpError(409, vehicleBlockedMessage(vehicle));
+    const purpose = requiredString(body.purpose, 'Einsatzzweck', { max: 200 });
+    const date = requiredDate(body.date, 'Datum');
+    const start = combineDateTime(date, String(body.startTime || ''), 'Start');
+    const end = combineDateTime(date, String(body.endTime || ''), 'Ende');
+    if (end <= start) throw new HttpError(400, 'Das Ende der Buchungsanfrage muss nach dem Beginn liegen.');
+    const conflict = getBookingConflict(vehicle.id, linkedDriver.id, start, end, vehicle.name, linkedDriver.name);
+    const id = crypto.randomUUID();
+    const now = isoNow();
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO booking_requests
+          (id, vehicle_id, driver_id, requested_by, purpose, start_at, end_at, notes, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)
+      `).run(
+        id, vehicle.id, linkedDriver.id, req.user.id, purpose, start, end,
+        optionalString(body.notes, { max: 1000 }), now, now
+      );
+      audit(req, 'create', 'booking_request', id, {
+        vehicleId: vehicle.id,
+        driverId: linkedDriver.id,
+        purpose,
+        start,
+        end,
+        conflictWarning: conflict.hasConflict
+      });
+    })();
+    const state = getState(db, req.user, req.auth);
+    res.status(201).json({ ...state, requestWarning: conflict.hasConflict ? conflict.message : null });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/booking-requests/:id/approve', requirePermission('booking_requests_manage'), (req, res, next) => {
+  try {
+    const decisionNote = optionalString(req.body?.decisionNote, { max: 500 });
+    let bookingId = null;
+    const transaction = db.transaction(() => {
+      const request = db.prepare('SELECT * FROM booking_requests WHERE id = ?').get(req.params.id);
+      if (!request) throw new HttpError(404, 'Buchungsanfrage wurde nicht gefunden.');
+      const requester = db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(request.requested_by);
+      if (!isRequestVisibleToApprover(db, req.user, request, requester, { isAdmin: req.user.role === 'admin' })) {
+        throw new HttpError(403, 'Diese Buchungsanfrage darf nicht von Ihnen entschieden werden.');
+      }
+      if (request.status !== 'requested') {
+        throw new HttpError(409, 'Diese Buchungsanfrage wurde bereits entschieden.');
+      }
+      const vehicle = ensureVehicleExists(request.vehicle_id);
+      const driver = ensureDriverExists(request.driver_id);
+      if (vehicle.blocked) throw new HttpError(409, vehicleBlockedMessage(vehicle));
+      if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
+      if (driver.status === 'away') throw new HttpError(409, `${driver.name} ist aktuell abwesend.`);
+      assertBookingConflict(vehicle.id, driver.id, request.start_at, request.end_at, vehicle.name, driver.name);
+      bookingId = crypto.randomUUID();
+      const now = isoNow();
+      db.prepare(`
+        INSERT INTO bookings (id, vehicle_id, driver_id, purpose, start_at, end_at, status, notes, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'planned', ?, ?, ?, ?)
+      `).run(
+        bookingId, vehicle.id, driver.id, request.purpose, request.start_at, request.end_at,
+        request.notes || '', req.user.id, now, now
+      );
+      const changed = db.prepare(`
+        UPDATE booking_requests
+        SET status = 'approved', decided_by = ?, decided_at = ?, decision_note = ?, booking_id = ?, updated_at = ?
+        WHERE id = ? AND status = 'requested'
+      `).run(req.user.id, now, decisionNote, bookingId, now, request.id).changes;
+      if (changed !== 1) throw new HttpError(409, 'Diese Buchungsanfrage wurde bereits entschieden.');
+      audit(req, 'create', 'booking', bookingId, {
+        purpose: request.purpose,
+        vehicleId: vehicle.id,
+        driverId: driver.id,
+        start: request.start_at,
+        end: request.end_at,
+        requestId: request.id
+      });
+      audit(req, 'approve', 'booking_request', request.id, {
+        bookingId,
+        vehicleId: vehicle.id,
+        driverId: driver.id,
+        start: request.start_at,
+        end: request.end_at
+      });
+    });
+    transaction();
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/booking-requests/:id/reject', requirePermission('booking_requests_manage'), (req, res, next) => {
+  try {
+    const decisionNote = optionalString(req.body?.decisionNote, { max: 500 });
+    const transaction = db.transaction(() => {
+      const request = db.prepare('SELECT * FROM booking_requests WHERE id = ?').get(req.params.id);
+      if (!request) throw new HttpError(404, 'Buchungsanfrage wurde nicht gefunden.');
+      const requester = db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(request.requested_by);
+      if (!isRequestVisibleToApprover(db, req.user, request, requester, { isAdmin: req.user.role === 'admin' })) {
+        throw new HttpError(403, 'Diese Buchungsanfrage darf nicht von Ihnen entschieden werden.');
+      }
+      if (request.status !== 'requested') {
+        throw new HttpError(409, 'Diese Buchungsanfrage wurde bereits entschieden.');
+      }
+      const now = isoNow();
+      const changed = db.prepare(`
+        UPDATE booking_requests
+        SET status = 'rejected', decided_by = ?, decided_at = ?, decision_note = ?, updated_at = ?
+        WHERE id = ? AND status = 'requested'
+      `).run(req.user.id, now, decisionNote, now, request.id).changes;
+      if (changed !== 1) throw new HttpError(409, 'Diese Buchungsanfrage wurde bereits entschieden.');
+      audit(req, 'reject', 'booking_request', request.id, {
+        vehicleId: request.vehicle_id,
+        driverId: request.driver_id,
+        start: request.start_at,
+        end: request.end_at,
+        decisionNote
+      });
+    });
+    transaction();
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/booking-requests/:id/cancel', (req, res, next) => {
+  try {
+    const transaction = db.transaction(() => {
+      const request = db.prepare('SELECT * FROM booking_requests WHERE id = ?').get(req.params.id);
+      if (!request) throw new HttpError(404, 'Buchungsanfrage wurde nicht gefunden.');
+      if (request.requested_by !== req.user.id) {
+        throw new HttpError(403, 'Nur die anfragende Person kann diese Buchungsanfrage zurückziehen.');
+      }
+      if (request.status !== 'requested') {
+        throw new HttpError(409, 'Nur offene Buchungsanfragen können zurückgezogen werden.');
+      }
+      const now = isoNow();
+      db.prepare(`
+        UPDATE booking_requests
+        SET status = 'canceled', decided_by = ?, decided_at = ?, decision_note = ?, updated_at = ?
+        WHERE id = ? AND status = 'requested'
+      `).run(req.user.id, now, 'Vom Antragsteller zurückgezogen.', now, request.id);
+      audit(req, 'cancel', 'booking_request', request.id, {
+        vehicleId: request.vehicle_id,
+        driverId: request.driver_id,
+        start: request.start_at,
+        end: request.end_at,
+        reason: 'requester_canceled'
+      });
+    });
+    transaction();
     sendState(req, res);
   } catch (error) {
     next(error);
@@ -889,16 +1112,17 @@ router.post('/roles', requirePermission('roles_manage'), (req, res, next) => {
     const permissions = normalizePermissions(req.body?.permissions);
     const rank = rankBelowActor(req, req.body?.rank ?? defaultRoleRank(req));
     assertGrantCeiling(req, permissions);
+    const bookingRequestPolicy = normalizeBookingRequestPolicy(db, req.body?.bookingRequestPolicy, { actorRank: actorRank(req) });
     const duplicate = db.prepare('SELECT id FROM roles WHERE name = ? COLLATE NOCASE').get(name);
     if (duplicate) throw new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.');
     const id = `role-${crypto.randomUUID()}`;
     const now = isoNow();
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO roles (id, name, permissions, object_permissions, is_system, rank, created_at, updated_at)
-        VALUES (?, ?, ?, '{}', 0, ?, ?, ?)
-      `).run(id, name, JSON.stringify(permissions), rank, now, now);
-      audit(req, 'create', 'role', id, { name, permissions, rank });
+        INSERT INTO roles (id, name, permissions, object_permissions, booking_request_policy, is_system, rank, created_at, updated_at)
+        VALUES (?, ?, ?, '{}', ?, 0, ?, ?, ?)
+      `).run(id, name, JSON.stringify(permissions), JSON.stringify(bookingRequestPolicy), rank, now, now);
+      audit(req, 'create', 'role', id, { name, permissions, rank, bookingRequestPolicy });
     })();
     sendState(req, res, 201);
   } catch (error) {
@@ -918,12 +1142,24 @@ router.patch('/roles/:id', requirePermission('roles_manage'), (req, res, next) =
       ? Number(existing.rank) || 0
       : rankBelowActor(req, req.body.rank);
     assertGrantCeiling(req, permissions);
+    const policyProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'bookingRequestPolicy');
+    const bookingRequestPolicy = policyProvided
+      ? normalizeBookingRequestPolicy(db, req.body.bookingRequestPolicy, { actorRank: actorRank(req) })
+      : null;
     const duplicate = db.prepare('SELECT id FROM roles WHERE name = ? COLLATE NOCASE AND id <> ?').get(name, existing.id);
     if (duplicate) throw new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.');
     db.transaction(() => {
-      db.prepare('UPDATE roles SET name = ?, permissions = ?, rank = ?, updated_at = ? WHERE id = ?')
-        .run(name, JSON.stringify(permissions), rank, isoNow(), existing.id);
-      audit(req, 'update', 'role', existing.id, { name, permissions, rank });
+      db.prepare(`
+        UPDATE roles SET name = ?, permissions = ?, rank = ?,
+          booking_request_policy = COALESCE(?, booking_request_policy), updated_at = ?
+        WHERE id = ?
+      `).run(name, JSON.stringify(permissions), rank, bookingRequestPolicy ? JSON.stringify(bookingRequestPolicy) : null, isoNow(), existing.id);
+      audit(req, 'update', 'role', existing.id, {
+        name,
+        permissions,
+        rank,
+        ...(policyProvided ? { bookingRequestPolicy } : {})
+      });
     })();
     sendState(req, res);
   } catch (error) {
@@ -986,6 +1222,13 @@ router.post('/users', requirePermission('users_manage'), (req, res, next) => {
     const name = requiredString(body.name, 'Name', { max: 120 });
     const role = assertRoleGrantable(req, requiredString(body.role, 'Rolle', { max: 120 })).id;
     const password = passwordValue(body.password);
+    const driverId = body.driverId ? requiredString(body.driverId, 'Fahrer:in', { max: 120 }) : null;
+    const ownTripsAccess = booleanValue(body.ownTripsAccess, true) ? 1 : 0;
+    if (driverId) {
+      const driver = getDriver(driverId);
+      if (!driver) throw new HttpError(400, 'Die ausgewählte Fahrer:in existiert nicht.');
+      if (driver.user_id) throw new HttpError(409, 'Diese Fahrer:in ist bereits mit einem Benutzerkonto verknüpft.');
+    }
     const duplicate = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email);
     if (duplicate) throw new HttpError(409, 'Für diese E-Mail-Adresse existiert bereits ein Konto.');
     const id = crypto.randomUUID();
@@ -995,11 +1238,19 @@ router.post('/users', requirePermission('users_manage'), (req, res, next) => {
         INSERT INTO users (id, email, name, password_hash, role, active, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(id, email, name, bcrypt.hashSync(password, 12), role, 1, now, now);
-      audit(req, 'create', 'user', id, { email, role, roleRank: getRoleRank(db, role) });
+      if (driverId) {
+        db.prepare('UPDATE drivers SET user_id = ?, own_trips_access = ?, updated_at = ? WHERE id = ?')
+          .run(id, ownTripsAccess, now, driverId);
+      }
+      audit(req, 'create', 'user', id, { email, role, roleRank: getRoleRank(db, role), driverId, ownTripsAccess: driverId ? ownTripsAccess : null });
+      if (driverId) audit(req, 'link_driver', 'user', id, { driverId, ownTripsAccess });
     })();
     sendState(req, res, 201);
   } catch (error) {
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Diese E-Mail-Adresse ist bereits vergeben.'));
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if (String(error.message).includes('drivers.user_id')) return next(new HttpError(409, 'Diese Fahrer:in ist bereits mit einem Benutzerkonto verknüpft.'));
+      return next(new HttpError(409, 'Diese E-Mail-Adresse ist bereits vergeben.'));
+    }
     next(error);
   }
 });
@@ -1019,6 +1270,24 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
     const duplicate = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?').get(email, existing.id);
     if (duplicate) throw new HttpError(409, 'Für diese E-Mail-Adresse existiert bereits ein Konto.');
     const password = body.password ? passwordValue(body.password) : null;
+
+    const currentDriver = db.prepare('SELECT * FROM drivers WHERE user_id = ?').get(existing.id) || null;
+    let nextDriverId = currentDriver?.id || null;
+    if (Object.prototype.hasOwnProperty.call(body, 'driverId')) {
+      nextDriverId = body.driverId ? requiredString(body.driverId, 'Fahrer:in', { max: 120 }) : null;
+    }
+    let nextOwnTripsAccess = currentDriver ? Number(currentDriver.own_trips_access) : 1;
+    if (Object.prototype.hasOwnProperty.call(body, 'ownTripsAccess')) {
+      nextOwnTripsAccess = booleanValue(body.ownTripsAccess, true) ? 1 : 0;
+    }
+    if (nextDriverId) {
+      const driver = getDriver(nextDriverId);
+      if (!driver) throw new HttpError(400, 'Die ausgewählte Fahrer:in existiert nicht.');
+      if (driver.user_id && driver.user_id !== existing.id) {
+        throw new HttpError(409, 'Diese Fahrer:in ist bereits mit einem Benutzerkonto verknüpft.');
+      }
+    }
+
     const now = isoNow();
     let deactivatedAt = existing.deactivated_at;
     if (active) deactivatedAt = null;
@@ -1036,14 +1305,47 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
       if (role === 'admin') {
         db.prepare("UPDATE users SET permission_overrides = '{}', object_permissions = '{}' WHERE id = ?").run(existing.id);
       }
+      const linkChanged = (currentDriver?.id || null) !== nextDriverId;
+      if (linkChanged) {
+        if (currentDriver && currentDriver.id !== nextDriverId) {
+          db.prepare('UPDATE drivers SET user_id = NULL, updated_at = ? WHERE id = ?').run(now, currentDriver.id);
+        }
+        if (nextDriverId) {
+          db.prepare('UPDATE drivers SET user_id = ?, own_trips_access = ?, updated_at = ? WHERE id = ?')
+            .run(existing.id, nextOwnTripsAccess, now, nextDriverId);
+        }
+      } else if (currentDriver && nextDriverId && Number(currentDriver.own_trips_access) !== nextOwnTripsAccess) {
+        db.prepare('UPDATE drivers SET own_trips_access = ?, updated_at = ? WHERE id = ?')
+          .run(nextOwnTripsAccess, now, currentDriver.id);
+      }
+      if (!active) {
+        cancelOpenBookingRequests(db, existing.id, { actorId: req.user.id, reason: 'requester_deactivated' });
+      }
       if (password || !active) {
         db.prepare("DELETE FROM sessions WHERE sid <> ? AND json_extract(sess, '$.userId') = ?").run(req.sessionID, existing.id);
       }
-      audit(req, 'update', 'user', existing.id, { email, role, roleRank: getRoleRank(db, role), active, passwordChanged: Boolean(password) });
+      audit(req, 'update', 'user', existing.id, {
+        email,
+        role,
+        roleRank: getRoleRank(db, role),
+        active,
+        passwordChanged: Boolean(password),
+        driverId: nextDriverId,
+        ownTripsAccess: nextDriverId ? nextOwnTripsAccess : null
+      });
+      if (linkChanged) {
+        audit(req, nextDriverId ? 'link_driver' : 'unlink_driver', 'user', existing.id, {
+          driverId: nextDriverId || currentDriver?.id || null,
+          ownTripsAccess: nextDriverId ? nextOwnTripsAccess : null
+        });
+      }
     })();
     sendState(req, res);
   } catch (error) {
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Diese E-Mail-Adresse ist bereits vergeben.'));
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if (String(error.message).includes('drivers.user_id')) return next(new HttpError(409, 'Diese Fahrer:in ist bereits mit einem Benutzerkonto verknüpft.'));
+      return next(new HttpError(409, 'Diese E-Mail-Adresse ist bereits vergeben.'));
+    }
     next(error);
   }
 });

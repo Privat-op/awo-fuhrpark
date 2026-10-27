@@ -44,6 +44,11 @@ function statusBadge(status, type = 'booking') {
   return `<span class="badge badge-${meta.badge}">${meta.label}</span>`;
 }
 
+function requestStatusBadge(status) {
+  const meta = BOOKING_REQUEST_STATUS[status] || { label: status, badge: 'gray' };
+  return `<span class="badge badge-${meta.badge}">${meta.label}</span>`;
+}
+
 function vehicleDot(vehicle) {
   return `<span class="vehicle-dot" style="--dot:${vehicle ? vehicle.color : '#cbd2dc'}"></span>`;
 }
@@ -136,16 +141,18 @@ function renderVehicleCard(vehicle) {
   const tuvAlert = tuvDays !== null && tuvDays <= 60;
   const bookedToday = db.bookings.some((booking) => booking.vehicleId === vehicle.id && booking.start.slice(0, 10) === todayISO() && booking.status !== 'canceled');
   const disabled = vehicle.status === 'maintenance';
+  const blocked = Boolean(vehicle.blocked);
   const hasPhoto = Boolean(vehicle.image);
+  const canManage = canOn('vehicle', vehicle.id, 'vehicles_manage');
 
   return `
-    <article class="vehicle-card" style="--vehicle-soft:${hexToRgba(vehicle.color, 0.13)}">
+    <article class="vehicle-card ${blocked ? 'is-blocked' : ''}" style="--vehicle-soft:${hexToRgba(vehicle.color, 0.13)}">
       <div class="vehicle-visual ${hasPhoto ? 'has-photo' : ''}">
         ${hasPhoto
           ? `<img class="vehicle-photo" src="${esc(vehicle.image)}" alt="${esc(vehicle.name)}"><span class="vehicle-photo-shade"></span>`
           : `<div class="vehicle-art">${vehicleArt(vehicle.type, vehicle.color)}</div>`}
         <div class="vehicle-visual-top">
-          <span class="badge badge-${status.badge}">${status.label}</span>
+          ${blocked ? '<span class="badge badge-red">Gesperrt</span>' : `<span class="badge badge-${status.badge}">${status.label}</span>`}
           <span class="vehicle-type">${icon('car')} ${esc(vehicle.type)}</span>
         </div>
       </div>
@@ -159,8 +166,9 @@ function renderVehicleCard(vehicle) {
               <span>${esc(vehicle.department)}</span>
             </div>
           </div>
-          ${bookedToday ? `<span class="badge badge-blue no-dot">Heute gebucht</span>` : ''}
+          ${blocked ? '<span class="badge badge-red no-dot">Dauerhaft gesperrt</span>' : bookedToday ? `<span class="badge badge-blue no-dot">Heute gebucht</span>` : ''}
         </div>
+        ${blocked ? `<div class="info-banner" style="margin:12px 0 0;padding:10px 12px">${icon('alert')}<div><strong>Sperre aktiv</strong><p>${esc(vehicle.blockedReason || 'Keine Begründung hinterlegt.')}</p></div></div>` : ''}
         <div class="vehicle-specs">
           <div class="spec">${icon('fuel')}<div><span class="spec-label">Kraftstoff</span><span class="spec-value">${esc(vehicle.fuel)}</span></div></div>
           <div class="spec">${icon('seat')}<div><span class="spec-label">Sitzplätze</span><span class="spec-value">${vehicle.seats} Plätze</span></div></div>
@@ -173,8 +181,9 @@ function renderVehicleCard(vehicle) {
             <span>${tuvDays === null ? 'HU/AU nicht hinterlegt' : tuvDays < 0 ? `HU/AU ${Math.abs(tuvDays)} Tage überfällig` : `HU/AU ${formatDate(vehicle.tuv)}`}</span>
           </div>
           <div class="vehicle-card-actions">
+            ${canManage ? `<button class="btn btn-ghost btn-sm" type="button" data-action="toggle-vehicle-block" data-id="${vehicle.id}">${blocked ? icon('check-circle') : icon('alert')} ${blocked ? 'Entsperren' : 'Sperren'}</button>` : ''}
             <button class="btn btn-ghost btn-sm" type="button" data-action="vehicle-details" data-id="${vehicle.id}">Details</button>
-            ${canOn('vehicle', vehicle.id, 'bookings_create') ? `<button class="btn btn-soft btn-sm" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${disabled ? 'disabled title="Fahrzeug befindet sich in Wartung"' : ''}>${icon('calendar')} Buchen</button>` : ''}
+            ${canOn('vehicle', vehicle.id, 'bookings_create') ? `<button class="btn btn-soft btn-sm" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${disabled || blocked ? `disabled title="${blocked ? 'Fahrzeug ist dauerhaft gesperrt' : 'Fahrzeug befindet sich in Wartung'}"` : ''}>${icon('calendar')} Buchen</button>` : ''}
           </div>
         </div>
       </div>
@@ -539,7 +548,7 @@ function renderWeekCalendar() {
   }).join('');
 
   const rows = db.vehicles.map((vehicle) => {
-    const vehicleCanCreate = canCreate && canOn('vehicle', vehicle.id, 'bookings_create');
+    const vehicleCanCreate = canCreate && !vehicle.blocked && canOn('vehicle', vehicle.id, 'bookings_create');
     const cells = days.map((dateISO) => {
       const dayBookings = sortByDateAsc(bookings.filter((booking) => booking.vehicleId === vehicle.id && booking.start.slice(0, 10) === dateISO));
       return `<div class="cal-cell ${dateISO === today ? 'is-today' : ''} ${vehicleCanCreate ? '' : 'is-readonly'}"
@@ -1330,7 +1339,7 @@ function renderSettings() {
             </div>
             <div class="version-box">
               <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-              <span class="version-badge">Server-MVP 0.6.0 · Etappe 1</span>
+              <span class="version-badge">Server-MVP 0.6.0 · Etappe 2</span>
             </div>
           </div>
         </section>
@@ -1439,6 +1448,7 @@ function renderUsers() {
           <span class="badge badge-${user.role === 'admin' ? 'red' : 'blue'}">${esc(roleLabel(user.role))}</span>
           <span class="table-sub">Rang ${formatNumber(user.roleRank || roleRankOf(user.role))}</span>
           ${overrideCount ? `<span class="badge badge-violet no-dot">${overrideCount} Ausnahmen</span>` : ''}
+          ${user.driverId ? `<span class="badge badge-${user.ownTripsAccess ? 'green' : 'gray'} no-dot">Fahrer:in: ${esc(user.driverName)}${user.ownTripsAccess ? '' : ' · ohne Standardzugriff'}</span>` : ''}
         </td>
         <td>${isAnonymized ? '<span class="badge badge-gray">Anonymisiert</span>' : user.active ? '<span class="badge badge-green">Aktiv</span>' : '<span class="badge badge-gray">Deaktiviert</span>'}</td>
         <td>${isAnonymized ? '<span class="text-muted">—</span>' : user.lastLoginAt ? `<span class="table-main">${formatDateTime(user.lastLoginAt)}</span>` : '<span class="text-muted">Noch nicht angemeldet</span>'}</td>
@@ -1529,6 +1539,7 @@ function renderRoles() {
     const manageable = canManageRole(role);
     const objectOverrideCount = Object.values(role.objectPermissions || {})
       .reduce((sum, entries) => sum + Object.keys(entries || {}).length, 0);
+    const policyCount = (role.bookingRequestPolicy?.allow?.length || 0) + (role.bookingRequestPolicy?.deny?.length || 0);
     const typeBadge = protectedRole
       ? '<span class="badge badge-red no-dot">Geschützt</span>'
       : role.isSystem
@@ -1555,6 +1566,7 @@ function renderRoles() {
           <div class="role-permissions">
             ${permissionSummary(role)}
             ${objectOverrideCount ? `<span class="badge badge-violet no-dot">${objectOverrideCount} Objekt-Ausnahmen</span>` : ''}
+            ${policyCount ? `<span class="badge badge-amber no-dot">${policyCount} Policy-Einträge</span>` : ''}
           </div>
         </td>
         <td>${typeBadge}</td>
@@ -1587,12 +1599,137 @@ function renderRoles() {
 }
 
 /* =========================================================
+   Eigene Fahrten & Buchungsanfragen
+   ========================================================= */
+function renderOwnTrips() {
+  if (!db.ownTrips) {
+    return emptyState('shield', 'Keine Fahrtenfreigabe', 'Ihr Konto ist nicht mit einem Fahrerprofil verknüpft oder der Zugriff auf eigene Fahrten ist nicht freigegeben.');
+  }
+  const trips = db.ownTrips.bookings;
+  const requests = db.ownTrips.requests;
+  const openRequests = requests.filter((request) => request.status === 'requested').length;
+  const planned = trips.filter((trip) => trip.status === 'planned').length;
+  const active = trips.filter((trip) => trip.status === 'active').length;
+  const completed = trips.filter((trip) => trip.status === 'completed').length;
+
+  const tripRows = trips.map((trip) => {
+    const distance = trip.startKm != null && trip.endKm != null ? Math.max(0, Number(trip.endKm) - Number(trip.startKm)) : null;
+    return `
+      <tr>
+        <td><span class="table-main">${formatDate(trip.start)}</span><span class="table-sub">${formatTimeRange(trip.start, trip.end)}</span></td>
+        <td><div class="table-vehicle"><span class="vehicle-dot" style="--dot:${esc(trip.vehicleColor)}"></span><div><span class="table-main">${esc(trip.vehicleName || '—')}</span><span class="table-sub">${esc(trip.vehiclePlate || '')}</span></div></div></td>
+        <td><span class="table-main">${esc(trip.purpose)}</span>${distance != null ? `<span class="table-sub">${formatKm(distance)}</span>` : ''}</td>
+        <td>${statusBadge(trip.status)}</td>
+      </tr>`;
+  }).join('');
+
+  const requestRows = requests.map((request) => `
+    <tr>
+      <td><span class="table-main">${formatDate(request.start)}</span><span class="table-sub">${formatTimeRange(request.start, request.end)}</span></td>
+      <td><div class="table-vehicle"><span class="vehicle-dot" style="--dot:${esc(request.vehicleColor)}"></span><div><span class="table-main">${esc(request.vehicleName || '—')}</span><span class="table-sub">${esc(request.vehiclePlate || '')}</span></div></div></td>
+      <td><span class="table-main">${esc(request.purpose)}</span>${request.notes ? `<span class="table-sub">${esc(request.notes)}</span>` : ''}</td>
+      <td>${requestStatusBadge(request.status)}${request.decisionNote ? `<span class="table-sub">${esc(request.decisionNote)}</span>` : ''}</td>
+      <td class="num">${request.status === 'requested' ? `<button class="btn btn-ghost btn-sm" type="button" data-action="cancel-booking-request" data-id="${request.id}">Zurückziehen</button>` : '<span class="text-muted">—</span>'}</td>
+    </tr>`).join('');
+
+  return `
+    ${pageHead('Eigene Fahrten', 'Meine Fahrten', `${esc(db.ownTrips.driver.name)} · eigene Buchungen und Anfragen im Überblick.`,
+      db.ownTrips.canRequest ? `<button class="btn btn-primary" type="button" data-action="new-booking-request">${icon('plus')} Buchung anfragen</button>` : '')}
+    <div class="info-banner" style="margin-bottom:18px">
+      ${icon('shield')}
+      <div><strong>Schreibgeschützte Ansicht</strong><p>Hier sehen Sie ausschließlich Ihre eigenen Buchungen und Anfragen. Stammdaten, fremde Fahrten und Exporte sind nicht freigegeben.</p></div>
+    </div>
+    <div class="kpi-grid">
+      ${metricCard({ label: 'Geplante Fahrten', value: planned, sub: 'Eigene geplante Buchungen', iconName: 'calendar', tint: 'tint-blue', badge: '<span class="badge badge-blue no-dot">Geplant</span>', glow: 'rgba(37,99,235,.055)' })}
+      ${metricCard({ label: 'Aktive Fahrten', value: active, sub: 'Eigene laufende Fahrten', iconName: 'route', tint: 'tint-green', badge: '<span class="badge badge-green no-dot">Aktiv</span>', glow: 'rgba(17,138,91,.055)' })}
+      ${metricCard({ label: 'Abgeschlossen', value: completed, sub: 'Eigene dokumentierte Fahrten', iconName: 'book', tint: 'tint-violet', badge: '<span class="badge badge-violet no-dot">Historie</span>', glow: 'rgba(109,71,217,.05)' })}
+      ${metricCard({ label: 'Offene Anfragen', value: openRequests, sub: 'Warten auf Entscheidung', iconName: 'calendar-check', tint: 'tint-amber', badge: '<span class="badge badge-amber no-dot">Anfragen</span>', glow: 'rgba(184,104,0,.06)' })}
+    </div>
+    <section class="card mt-18">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Meine Buchungen</h3><p class="card-sub">Geplant, aktiv und abgeschlossen</p></div>
+        <span class="badge badge-gray no-dot">${trips.length} gesamt</span>
+      </div>
+      ${trips.length ? `<div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Zeitraum</th><th>Fahrzeug</th><th>Zweck</th><th>Status</th></tr></thead>
+        <tbody>${tripRows}</tbody>
+      </table></div>` : emptyState('calendar', 'Noch keine eigenen Buchungen', 'Sobald für Sie eine Fahrt gebucht wurde, erscheint sie hier.', '', true)}
+    </section>
+    <section class="card mt-18">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Meine Buchungsanfragen</h3><p class="card-sub">Offene und entschiedene Anfragen</p></div>
+        <span class="badge badge-gray no-dot">${requests.length} gesamt</span>
+      </div>
+      ${requests.length ? `<div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Zeitraum</th><th>Fahrzeug</th><th>Zweck / Notiz</th><th>Status / Entscheidung</th><th class="num">Aktion</th></tr></thead>
+        <tbody>${requestRows}</tbody>
+      </table></div>` : emptyState('calendar-check', 'Noch keine Anfragen', db.ownTrips.canRequest ? 'Stellen Sie eine Buchungsanfrage für ein Fahrzeug.' : 'Für Buchungsanfragen fehlt die Freigabe.', db.ownTrips.canRequest ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-booking-request">Buchung anfragen</button>' : '', true)}
+    </section>`;
+}
+
+function renderBookingRequests() {
+  if (!can('booking_requests_manage')) {
+    return emptyState('shield', 'Keine Berechtigung', 'Für Buchungsanfragen fehlt die Berechtigung „Buchungsanfragen verwalten“.');
+  }
+  const requests = db.bookingRequests || [];
+  const rows = requests.map((request) => `
+    <tr>
+      <td>
+        <span class="table-main">${esc(request.requesterName || 'Unbekannt')}</span>
+        <span class="table-sub">${esc(roleLabel(request.requesterRole))}</span>
+      </td>
+      <td>
+        <span class="table-main">${formatDate(request.start)}</span>
+        <span class="table-sub">${formatTimeRange(request.start, request.end)}</span>
+      </td>
+      <td>
+        <div class="table-vehicle">
+          <span class="vehicle-dot" style="--dot:${esc(request.vehicleColor)}"></span>
+          <div><span class="table-main">${esc(request.vehicleName || '—')}</span><span class="table-sub">${esc(request.vehiclePlate || '')}</span></div>
+        </div>
+      </td>
+      <td>
+        <span class="table-main">${esc(request.purpose)}</span>
+        ${request.notes ? `<span class="table-sub">${esc(request.notes)}</span>` : ''}
+      </td>
+      <td class="num">
+        <div class="table-actions">
+          <button class="btn btn-primary btn-sm" type="button" data-action="approve-booking-request" data-id="${request.id}">${icon('check')} Genehmigen</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="reject-booking-request" data-id="${request.id}">${icon('x')} Ablehnen</button>
+        </div>
+      </td>
+    </tr>`).join('');
+  return `
+    ${pageHead('Buchungen', 'Buchungsanfragen', 'Offene Anfragen innerhalb Ihres Rang- und Rollenbereichs prüfen und entscheiden.', '')}
+    <div class="summary-chips" style="margin-bottom:18px">
+      <span class="summary-chip"><strong>${requests.length}</strong> offene ${requests.length === 1 ? 'Anfrage' : 'Anfragen'}</span>
+      <span class="summary-chip">${icon('shield')} Sichtbarkeit nach Rang und Rollen-Policy</span>
+      <span class="summary-chip">${icon('calendar-check')} Genehmigung erzeugt genau eine geplante Buchung</span>
+    </div>
+    <section class="card">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Offene Anfragen</h3><p class="card-sub">Eigene Anfragen können nicht selbst entschieden werden.</p></div>
+        <span class="badge badge-${requests.length ? 'amber' : 'gray'} no-dot">${requests.length} offen</span>
+      </div>
+      ${requests.length ? `<div class="table-wrap is-scroll"><table class="data-table">
+        <thead><tr><th>Antragsteller:in</th><th>Zeitraum</th><th>Fahrzeug</th><th>Zweck / Notiz</th><th class="num">Entscheidung</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>` : emptyState('calendar-check', 'Keine offenen Buchungsanfragen', 'Aktuell liegen keine Anfragen in Ihrem zulässigen Rang- und Rollenbereich vor.', '', true)}
+      <div class="card-footer">
+        <span class="text-muted">Mehrere offene Anfragen für denselben Zeitraum sind möglich. Die erste Genehmigung gewinnt.</span>
+      </div>
+    </section>`;
+}
+
+/* =========================================================
    Routen
    ========================================================= */
 const ROUTES = {
   dashboard: renderDashboard,
+  'meine-fahrten': renderOwnTrips,
   fahrzeuge: renderVehicles,
   buchungen: renderBookings,
+  anfragen: renderBookingRequests,
   fahrtenbuch: renderLogbook,
   wartung: renderMaintenance,
   kosten: renderCosts,

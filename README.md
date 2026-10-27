@@ -10,7 +10,10 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
 - Automatische Anonymisierung deaktivierter Konten nach einer global einstellbaren Frist
 - Fahrzeuge mit Bild-Upload, Standort, Kilometerstand, HU/AU und Service
+- Dauerhafte Fahrzeug-Sperre mit Begründung, Audit und serverseitiger 409-Sperre für neue Buchungen und Anfragen
 - Buchungen mit serverseitiger Konfliktprüfung für Fahrzeug und Fahrer:in
+- Eigene Fahrten: verknüpfte Fahrer:innen sehen ausschließlich ihre eigenen Buchungen und können Buchungsanfragen stellen
+- Buchungsanfragen mit Rang- und Rollen-Policy, transaktionaler Genehmigung und Audit
 - Fahrtenbuch mit Fahrtstart, Fahrtende und manueller Nachtragung
 - Wartungsplan mit automatischer Kostenübernahme bei Erledigung
 - Kostenverwaltung inklusive Beleg-Upload (JPG, PNG, PDF)
@@ -104,7 +107,7 @@ Danach den Container neu starten. Der Server sollte nicht ungeschützt direkt au
 | Fuhrparkleitung | Standardrolle mit allen Fuhrparkfunktionen, Einstellungen und den delegierten Rechten `users_manage`/`roles_manage`; Rechte, Rang und Objekt-Ausnahmen können angepasst werden |
 | Eigene Rollen | Frei anlegbare Rollen mit individuellem Rang, Modulrechten und Objekt-Ausnahmen |
 
-Konten mit `users_manage` können Benutzer anlegen, bearbeiten, deaktivieren, anonymisieren und Benutzer-Ausnahmen pflegen. Konten mit `roles_manage` verwalten Rollen, Ränge und Objekt-Ausnahmen. Beide Rechte sind getrennt vergebbar. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
+Konten mit `users_manage` können Benutzer anlegen, bearbeiten, deaktivieren, anonymisieren, Benutzer-Ausnahmen pflegen und Fahrer-Konten verknüpfen. Konten mit `roles_manage` verwalten Rollen, Ränge, Objekt-Ausnahmen und die Buchungsanfrage-Policy. Beide Rechte sind getrennt vergebbar. Die Fuhrparkleitung erhält zusätzlich `booking_requests_manage`. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
 
 ### Delegierte Verwaltung und Rangfolge
 
@@ -136,6 +139,8 @@ Die Rechte werden in dieser Reihenfolge aufgelöst, von der spezifischsten zur a
 
 Auf derselben Ebene gewinnt bei Konflikten die Verweigerung. Eine Objekt-Ausnahme kann ein Recht erlauben oder verweigern, auch wenn das Rollenrecht anders lautet. Die Administrator-Rolle ignoriert Benutzer-Ausnahmen und bleibt immer vollständig.
 
+Für `own_trips_view` und `own_trips_request` gibt es eine zusätzliche unterste Ebene: den Fahrer-Default bei aktiver Konto-Verknüpfung und `own_trips_access=1`. Er greift nur, wenn keine explizite Benutzer- oder Rollenregel entscheidet. Die Reihenfolge lautet daher: Benutzer-Objekt → Benutzer global → Rollen-Objekt → Rollenrecht → Fahrer-Default.
+
 ### Objekt-Ausnahmen
 
 Unter **Rollen & Rechte → Objekt-Ausnahmen** lassen sich pro Rolle und Objekt einzelne Aktionen auf **Standard**, **Erlauben** oder **Verweigern** stellen. Unterstützt werden:
@@ -152,14 +157,35 @@ Die Einstellungen gelten serverseitig für Datenanzeige und Aktionen. Ein Benutz
 
 Unter **Benutzer → Benutzer-Ausnahmen** können Personen mit `users_manage` persönliche Modul- und Objekt-Ausnahmen pflegen, soweit Rang und Grant Ceiling dies zulassen. Diese haben Vorrang vor den Rollenrechten. Beim Wechsel in die Administrator-Rolle oder bei der Anonymisierung werden persönliche Ausnahmen entfernt.
 
+### Eigene Fahrten und Buchungsanfragen
+
+- Fahrer:innen können mit einem Benutzerkonto verknüpft werden. Ein Konto gehört höchstens zu einem Fahrerprofil; Bestandsfahrer:innen bleiben unverknüpft.
+- Die Verknüpfung und der Schalter **Standardzugriff auf „Meine Fahrten“** (`own_trips_access`) werden über die Benutzerverwaltung gepflegt (`users_manage`). Ein Wechsel der Verknüpfung und jede Änderung des Standardzugriffs wird auditiert.
+- Bei aktiver Verknüpfung und `own_trips_access=1` erhalten Konten standardmäßig `own_trips_view` und `own_trips_request`. Der Standard liegt unter allen expliziten Benutzer- und Rollenregeln. `own_trips_access=0` schaltet nur diesen Standard ab; explizite Erlaubnisse können ihn wieder aktivieren.
+- **Meine Fahrten** ist eine schreibgeschützte Ansicht für die eigenen geplanten, aktiven und abgeschlossenen Buchungen sowie die eigenen Anfragen. Sie enthält keine fremden Daten, keine Stammdatenverwaltung und keinen Export. Für Buchungsanfragen wird nur eine minimale Fahrzeugliste bereitgestellt.
+- Verknüpfte Fahrer:innen mit explizitem `bookings_create` dürfen weiterhin direkt buchen. Ohne dieses Recht können sie ausschließlich Buchungsanfragen stellen.
+- Eine Buchungsanfrage wird mit Status `requested` gespeichert und reserviert **kein** Fahrzeug. Ein Konflikt mit vorhandenen Buchungen wird beim Stellen nur als Warnung angezeigt.
+- Berechtigte mit `booking_requests_manage` (Standard Fuhrparkleitung) sehen offene Anfragen nur von Rollen **strikt unterhalb** ihres Rangs. Die Rollen-Policy `allow`/`deny` filtert zusätzlich; eine leere Allow-Liste bedeutet „alle zulässigen unteren Rollen“, Deny gewinnt. Eigene Anfragen können nicht selbst entschieden werden.
+- Die Genehmigung ist transaktional: Sie prüft den Status erneut, legt genau eine geplante Buchung an und setzt `booking_id`. Bei einem Fahrzeug- oder Fahrer:innen-Konflikt antwortet der Server mit `409`, die Anfrage bleibt offen. Ein zweiter Genehmigungsversuch wird mit `409` abgelehnt.
+- Ablehnen ist mit optionaler Begründung möglich. Zurückziehen kann nur die antragstellende Person und nur im Status `requested`.
+- Wird das anfragende Konto deaktiviert oder anonymisiert, werden offene Anfragen automatisch storniert und auditiert. Bereits entschiedene oder gebuchte Anfragen bleiben erhalten; bei der Anonymisierung wird die Fahrer-Konto-Verknüpfung entfernt.
+- Create, Approve, Reject und Cancel werden auditiert. E-Mail-/Teams-Benachrichtigungen sind noch nicht enthalten.
+
+### Dauerhafte Fahrzeug-Sperre
+
+- Fahrzeuge können über die Fahrzeugverwaltung (`vehicles_manage`) dauerhaft gesperrt und wieder entsperrt werden. Eine Begründung ist optional und wird in Liste, Detailansicht und Auswahl angezeigt.
+- Setzen und Aufheben der Sperre werden ebenso wie die Begründung auditiert.
+- `POST /api/bookings` und `POST /api/booking-requests` antworten für ein gesperrtes Fahrzeug mit `409` und einer klaren Meldung. Eine Buchungsanfrage kann nach einer späteren Sperre nicht mehr genehmigt werden; sie bleibt offen.
+- Bestehende Buchungen bleiben unverändert. Fahrtstart, Fahrtende und Stornierung unterliegen weiterhin den bisherigen Regeln und werden durch die Sperre nicht blockiert.
+
 ## Benutzerkonten und Anonymisierung
 
-Die Verknüpfung von Fahrer:innen mit Benutzerkonten ist **Etappe 2** vorbehalten und in Etappe 1 nicht enthalten.
-
-Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Deaktivierte Konten können anschließend anonymisiert werden:
+Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Die Deaktivierung lässt eine bestehende Fahrer-Konto-Verknüpfung unverändert; der Login ist gesperrt. Deaktivierte Konten können anschließend anonymisiert werden:
 
 - Name, E-Mail-Adresse und Passwort werden dauerhaft entfernt.
 - Persönliche Rechte-Ausnahmen werden entfernt.
+- Eine Fahrer-Konto-Verknüpfung wird entfernt.
+- Offene Buchungsanfragen des Kontos werden storniert und auditiert.
 - Alle Sitzungen des Kontos werden beendet.
 - Verknüpfte Buchungen, Kosten und Audit-Einträge bleiben erhalten.
 - E-Mail-Adressen in zugehörigen Audit-Einträgen werden bereinigt.

@@ -107,11 +107,18 @@ function openBookingModal(prefill = {}) {
   }
   const availableVehicles = db.vehicles;
   const prefillVehicle = prefill.vehicleId ? getVehicle(prefill.vehicleId) : null;
-  const selectedVehicle = prefillVehicle || availableVehicles.find((vehicle) => vehicle.status === 'available') || availableVehicles[0];
+  const selectedVehicle = (prefillVehicle && !prefillVehicle.blocked ? prefillVehicle : null)
+    || availableVehicles.find((vehicle) => !vehicle.blocked && vehicle.status === 'available')
+    || availableVehicles.find((vehicle) => !vehicle.blocked)
+    || availableVehicles[0];
   const drivers = db.drivers.filter((driver) => driver.status !== 'away');
   const selectedDriver = prefill.driverId ? getDriver(prefill.driverId) : drivers[0];
   if (!availableVehicles.length) {
     toast('Kein Fahrzeug vorhanden', 'Bitte legen Sie zuerst ein Fahrzeug an.', 'info');
+    return;
+  }
+  if (!availableVehicles.some((vehicle) => !vehicle.blocked)) {
+    toast('Alle Fahrzeuge gesperrt', 'Für neue Buchungen ist aktuell kein Fahrzeug freigegeben.', 'info');
     return;
   }
   if (!drivers.length) {
@@ -125,7 +132,8 @@ function openBookingModal(prefill = {}) {
 
   const vehicleOptions = availableVehicles.map((vehicle) => {
     const status = VEHICLE_STATUS[vehicle.status];
-    return `<option value="${vehicle.id}" ${vehicle.id === selectedVehicle?.id ? 'selected' : ''}>${esc(vehicle.name)} · ${esc(vehicle.plate)}${vehicle.status === 'maintenance' ? ' · In Wartung' : ''}</option>`;
+    const blockedLabel = vehicle.blocked ? ' · Dauerhaft gesperrt' : vehicle.status === 'maintenance' ? ' · In Wartung' : '';
+    return `<option value="${vehicle.id}" ${vehicle.id === selectedVehicle?.id ? 'selected' : ''} ${vehicle.blocked ? 'disabled' : ''}>${esc(vehicle.name)} · ${esc(vehicle.plate)}${blockedLabel}</option>`;
   }).join('');
   const driverOptions = drivers.map((driver) => `<option value="${driver.id}" ${driver.id === selectedDriver?.id ? 'selected' : ''}>${esc(driver.name)} · ${esc(driver.role)}</option>`).join('');
 
@@ -199,6 +207,10 @@ function openBookingModal(prefill = {}) {
       showFormError(form, 'Das Ende der Buchung muss nach dem Beginn liegen.');
       return;
     }
+    if (vehicle?.blocked) {
+      showFormError(form, 'Dieses Fahrzeug ist dauerhaft gesperrt und kann nicht gebucht werden.');
+      return;
+    }
 
     const submitButton = modalRoot.querySelector('button[form="bookingForm"]');
     if (submitButton) submitButton.disabled = true;
@@ -211,6 +223,173 @@ function openBookingModal(prefill = {}) {
       closeModal(false);
       renderCurrentView();
       toast('Buchung angelegt', `${vehicle ? vehicle.name : 'Fahrzeug'} · ${formatDate(bookingDate)}, ${from}–${to} Uhr`);
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function openBookingRequestModal(prefill = {}) {
+  if (!db.ownTrips?.canRequest) {
+    toast('Keine Berechtigung', 'Für Buchungsanfragen fehlt die Freigabe „Buchung anfragen“.', 'error');
+    return;
+  }
+  const vehicles = db.ownTrips.vehicles || [];
+  if (!vehicles.length) {
+    toast('Kein Fahrzeug vorhanden', 'Es ist aktuell kein Fahrzeug für Buchungsanfragen hinterlegt.', 'info');
+    return;
+  }
+  if (!vehicles.some((vehicle) => !vehicle.blocked)) {
+    toast('Alle Fahrzeuge gesperrt', 'Für neue Buchungsanfragen ist aktuell kein Fahrzeug freigegeben.', 'info');
+    return;
+  }
+  const selectedVehicle = prefill.vehicleId
+    ? vehicles.find((vehicle) => vehicle.id === prefill.vehicleId && !vehicle.blocked)
+    : vehicles.find((vehicle) => !vehicle.blocked && vehicle.status !== 'maintenance') || vehicles.find((vehicle) => !vehicle.blocked) || vehicles[0];
+  const date = prefill.date || todayISO();
+  const startTime = prefill.startTime || '09:00';
+  const endTime = prefill.endTime || '11:00';
+  const vehicleOptions = vehicles.map((vehicle) => {
+    const statusLabel = vehicle.blocked ? ' · Dauerhaft gesperrt' : vehicle.status === 'maintenance' ? ' · In Wartung' : '';
+    return `<option value="${vehicle.id}" ${vehicle.id === selectedVehicle?.id ? 'selected' : ''} ${vehicle.blocked ? 'disabled' : ''}>${esc(vehicle.name)} · ${esc(vehicle.plate)}${statusLabel}</option>`;
+  }).join('');
+
+  showModal({
+    title: 'Buchung anfragen',
+    eyebrow: 'Meine Fahrten',
+    subtitle: `Anfrage für ${db.ownTrips.driver.name} – die Genehmigung erfolgt durch die Fuhrparkleitung.`,
+    body: `
+      <form id="bookingRequestForm" novalidate autocomplete="off">
+        ${formAlertMarkup()}
+        <div class="info-banner">
+          ${icon('info')}
+          <div><strong>Keine Reservierung durch die Anfrage</strong><p>Die Anfrage wird nur gespeichert. Erst die Genehmigung legt eine geplante Buchung an und prüft den Zeitraum verbindlich auf Konflikte.</p></div>
+        </div>
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="requestVehicle">Fahrzeug <span class="optional">*</span></label>
+            <select class="select" id="requestVehicle" name="vehicleId" required>${vehicleOptions}</select>
+          </div>
+          <div class="field">
+            <label for="requestDate">Datum <span class="optional">*</span></label>
+            <input class="input" id="requestDate" name="date" type="date" value="${esc(date)}" required>
+          </div>
+          <div class="field">
+            <label for="requestPurpose">Einsatzzweck <span class="optional">*</span></label>
+            <input class="input" id="requestPurpose" name="purpose" type="text" value="${esc(prefill.purpose || '')}" placeholder="z. B. Hausbesuche" maxlength="200" required>
+          </div>
+          <div class="field">
+            <label for="requestStart">Von <span class="optional">*</span></label>
+            <input class="input" id="requestStart" name="startTime" type="time" value="${esc(startTime)}" step="300" required>
+          </div>
+          <div class="field">
+            <label for="requestEnd">Bis <span class="optional">*</span></label>
+            <input class="input" id="requestEnd" name="endTime" type="time" value="${esc(endTime)}" step="300" required>
+          </div>
+          <div class="field field-full">
+            <label for="requestNotes">Notizen <span class="optional">optional</span></label>
+            <textarea class="textarea" id="requestNotes" name="notes" rows="2" maxlength="1000" placeholder="Weitere Informationen zur Fahrt …">${esc(prefill.notes || '')}</textarea>
+          </div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="bookingRequestForm">${icon('calendar-check')} Anfrage senden</button>`
+  });
+
+  const form = $('#bookingRequestForm');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const vehicleId = String(data.get('vehicleId') || '');
+    const bookingDate = String(data.get('date') || '');
+    const from = String(data.get('startTime') || '');
+    const to = String(data.get('endTime') || '');
+    const purpose = String(data.get('purpose') || '').trim();
+    const vehicle = vehicles.find((entry) => entry.id === vehicleId);
+    if (!vehicleId || !bookingDate || !from || !to || !purpose) {
+      showFormError(form, 'Bitte füllen Sie alle Pflichtfelder aus.');
+      return;
+    }
+    if (to <= from) {
+      showFormError(form, 'Das Ende der Anfrage muss nach dem Beginn liegen.');
+      return;
+    }
+    if (vehicle?.blocked) {
+      showFormError(form, 'Dieses Fahrzeug ist dauerhaft gesperrt. Bitte wählen Sie ein anderes Fahrzeug.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="bookingRequestForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch('/api/booking-requests', {
+        method: 'POST',
+        body: {
+          vehicleId,
+          date: bookingDate,
+          startTime: from,
+          endTime: to,
+          purpose,
+          notes: String(data.get('notes') || '').trim()
+        }
+      });
+      const warning = state.requestWarning;
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast('Buchungsanfrage gesendet', `${vehicle ? vehicle.name : 'Fahrzeug'} · ${formatDate(bookingDate)}, ${from}–${to} Uhr`);
+      if (warning) toast('Hinweis zur Verfügbarkeit', warning, 'info');
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function openRejectBookingRequestModal(requestId) {
+  if (!can('booking_requests_manage')) {
+    toast('Keine Berechtigung', 'Für das Ablehnen von Buchungsanfragen fehlt die Berechtigung.', 'error');
+    return;
+  }
+  const request = db.bookingRequests?.find((item) => item.id === requestId);
+  if (!request) return;
+  showModal({
+    title: 'Buchungsanfrage ablehnen',
+    eyebrow: 'Entscheidung',
+    subtitle: `${request.requesterName || 'Fahrer:in'} · ${request.vehicleName} · ${formatDate(request.start)}`,
+    body: `
+      <form id="rejectBookingRequestForm" novalidate>
+        ${formAlertMarkup()}
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="rejectDecisionNote">Begründung <span class="optional">optional</span></label>
+            <textarea class="textarea" id="rejectDecisionNote" name="decisionNote" rows="3" maxlength="500" placeholder="Hinweis für die anfragende Person …"></textarea>
+          </div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-danger" type="submit" form="rejectBookingRequestForm">${icon('x')} Anfrage ablehnen</button>`
+  });
+  const form = $('#rejectBookingRequestForm');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const submitButton = modalRoot.querySelector('button[form="rejectBookingRequestForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch(`/api/booking-requests/${encodeURIComponent(requestId)}/reject`, {
+        method: 'POST',
+        body: { decisionNote: String(new FormData(form).get('decisionNote') || '').trim() }
+      });
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast('Buchungsanfrage abgelehnt', 'Die anfragende Person sieht die Entscheidung in „Meine Fahrten“.');
     } catch (error) {
       showFormError(form, error.message);
     } finally {
@@ -443,7 +622,7 @@ function openVehicleModal(vehicleId = null) {
   const defaults = {
     name: '', plate: '', type: 'Pkw', fuel: 'Diesel', seats: 5, status: 'available',
     location: '', department: '', mileage: 0, nextService: addDays(todayISO(), 90),
-    tuv: addDays(todayISO(), 365), insurance: '', notes: '', image: ''
+    tuv: addDays(todayISO(), 365), insurance: '', notes: '', image: '', blocked: false, blockedReason: ''
   };
   const vehicle = existing || defaults;
   const title = existing ? 'Fahrzeug bearbeiten' : 'Fahrzeug anlegen';
@@ -536,6 +715,15 @@ function openVehicleModal(vehicleId = null) {
             <label for="vehicleTuv">Nächste HU/AU</label>
             <input class="input" id="vehicleTuv" name="tuv" type="date" value="${esc(vehicle.tuv)}">
           </div>
+          <div class="form-section-title">Dauerhafte Sperre</div>
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" id="vehicleBlocked" name="blocked" ${vehicle.blocked ? 'checked' : ''}> Fahrzeug dauerhaft für neue Buchungen und Anfragen sperren</label>
+            <p class="field-hint">Bestehende Buchungen, Fahrtstart und Fahrtende bleiben unverändert. Die Sperre wird auditiert.</p>
+          </div>
+          <div class="field field-full" id="vehicleBlockedReasonField" ${vehicle.blocked ? '' : 'hidden'}>
+            <label for="vehicleBlockedReason">Grund der Sperre <span class="optional">optional</span></label>
+            <textarea class="textarea" id="vehicleBlockedReason" name="blockedReason" rows="2" maxlength="500" placeholder="z. B. Werkstattauftrag, Schaden oder fehlende Prüfung">${esc(vehicle.blockedReason || '')}</textarea>
+          </div>
           <div class="field field-full">
             <label for="vehicleNotes">Notizen <span class="optional">optional</span></label>
             <textarea class="textarea" id="vehicleNotes" name="notes" rows="2" maxlength="500" placeholder="Besonderheiten, Ausstattung oder Hinweise …">${esc(vehicle.notes)}</textarea>
@@ -552,6 +740,13 @@ function openVehicleModal(vehicleId = null) {
   const imagePreviewBox = $('#vehicleImagePreview');
   const removeImageButton = $('#vehicleImageRemove');
   const uploadBox = $('#vehicleImageUpload');
+  const blockedCheckbox = $('#vehicleBlocked');
+  const blockedReasonField = $('#vehicleBlockedReasonField');
+  const refreshBlockedState = () => {
+    if (blockedReasonField && blockedCheckbox) blockedReasonField.hidden = !blockedCheckbox.checked;
+  };
+  blockedCheckbox?.addEventListener('change', refreshBlockedState);
+  refreshBlockedState();
 
   const refreshImagePreview = () => {
     imagePreviewBox.innerHTML = pendingImage
@@ -635,6 +830,8 @@ function openVehicleModal(vehicleId = null) {
       nextService: String(data.get('nextService') || ''),
       tuv: String(data.get('tuv') || ''),
       notes: String(data.get('notes') || '').trim(),
+      blocked: data.get('blocked') === 'on',
+      blockedReason: String(data.get('blockedReason') || '').trim(),
       color: existing?.color,
       imageData: newImageData,
       removeImage
@@ -659,11 +856,109 @@ function openVehicleModal(vehicleId = null) {
   });
 }
 
+function vehicleMutationPayload(vehicle, overrides = {}) {
+  return {
+    name: vehicle.name,
+    plate: vehicle.plate,
+    type: vehicle.type,
+    fuel: vehicle.fuel,
+    seats: vehicle.seats,
+    status: vehicle.status,
+    location: vehicle.location || '',
+    department: vehicle.department || '',
+    mileage: vehicle.mileage,
+    nextService: vehicle.nextService || '',
+    tuv: vehicle.tuv || '',
+    insurance: vehicle.insurance || '',
+    notes: vehicle.notes || '',
+    color: vehicle.color,
+    blocked: Boolean(vehicle.blocked),
+    blockedReason: vehicle.blockedReason || '',
+    ...overrides
+  };
+}
+
+function openVehicleBlockModal(vehicleId) {
+  const vehicle = getVehicle(vehicleId);
+  if (!vehicle) return;
+  if (!canOn('vehicle', vehicle.id, 'vehicles_manage')) {
+    toast('Keine Berechtigung', 'Für das Sperren oder Entsperren fehlt die Berechtigung „Fahrzeuge verwalten“.', 'error');
+    return;
+  }
+  if (vehicle.blocked) {
+    openConfirm({
+      title: 'Fahrzeug entsperren?',
+      text: `<strong>${esc(vehicle.name)}</strong> (${esc(vehicle.plate)}) wird wieder für neue Buchungen und Buchungsanfragen freigegeben. Bestehende Buchungen bleiben unverändert.`,
+      confirmLabel: 'Sperre aufheben',
+      danger: false,
+      onConfirm: async () => {
+        try {
+          const state = await apiFetch(`/api/vehicles/${encodeURIComponent(vehicle.id)}`, {
+            method: 'PATCH',
+            body: vehicleMutationPayload(vehicle, { blocked: false, blockedReason: '' })
+          });
+          applyServerState(state);
+          renderCurrentView();
+          toast('Fahrzeug entsperrt', `${vehicle.name} ist wieder buchbar.`);
+        } catch (error) {
+          toast('Sperre konnte nicht aufgehoben werden', error.message, 'error');
+        }
+      }
+    });
+    return;
+  }
+  showModal({
+    title: 'Fahrzeug sperren',
+    eyebrow: 'Fuhrpark',
+    subtitle: `${vehicle.name} · ${vehicle.plate}`,
+    body: `
+      <form id="vehicleBlockForm" novalidate>
+        ${formAlertMarkup()}
+        <div class="info-banner">
+          ${icon('alert')}
+          <div><strong>Neue Buchungen und Anfragen werden blockiert</strong><p>Bestehende Buchungen bleiben unverändert; Fahrtstart und Fahrtende sind weiterhin möglich. Die Sperre kann jederzeit über die Fahrzeugverwaltung aufgehoben werden.</p></div>
+        </div>
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="vehicleBlockReason">Grund der Sperre <span class="optional">optional</span></label>
+            <textarea class="textarea" id="vehicleBlockReason" name="blockedReason" rows="3" maxlength="500" placeholder="z. B. Werkstattauftrag, Schaden oder fehlende Prüfung"></textarea>
+          </div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-danger" type="submit" form="vehicleBlockForm">${icon('alert')} Dauerhaft sperren</button>`
+  });
+  const form = $('#vehicleBlockForm');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const reason = String(new FormData(form).get('blockedReason') || '').trim();
+    const submitButton = modalRoot.querySelector('button[form="vehicleBlockForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch(`/api/vehicles/${encodeURIComponent(vehicle.id)}`, {
+        method: 'PATCH',
+        body: vehicleMutationPayload(vehicle, { blocked: true, blockedReason: reason })
+      });
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast('Fahrzeug gesperrt', `${vehicle.name} ist für neue Buchungen und Anfragen gesperrt.`);
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
 function openVehicleDetails(vehicleId) {
   const vehicle = getVehicle(vehicleId);
   if (!vehicle) return;
   const canManageVehicle = canOn('vehicle', vehicleId, 'vehicles_manage');
   const canBookVehicle = canOn('vehicle', vehicleId, 'bookings_create');
+  const blocked = Boolean(vehicle.blocked);
   const showBookings = canOn('vehicle', vehicleId, 'bookings_view');
   const showMaintenance = canOn('vehicle', vehicleId, 'maintenance_view');
   const showCosts = canOn('vehicle', vehicleId, 'costs_view');
@@ -706,9 +1001,10 @@ function openVehicleDetails(vehicleId) {
         <div class="detail-title">
           <h3>${esc(vehicle.name)}</h3>
           <div class="vehicle-sub"><span class="plate">${esc(vehicle.plate)}</span><span>·</span><span>${esc(vehicle.location)}</span></div>
-          <div style="margin-top:8px"><span class="badge badge-${status.badge}">${status.label}</span></div>
+          <div style="margin-top:8px"><span class="badge badge-${status.badge}">${status.label}</span>${blocked ? ' <span class="badge badge-red">Dauerhaft gesperrt</span>' : ''}</div>
         </div>
       </div>
+      ${blocked ? `<div class="info-banner" style="margin-bottom:16px">${icon('alert')}<div><strong>Dauerhafte Sperre aktiv</strong><p>${esc(vehicle.blockedReason || 'Keine Begründung hinterlegt.')} Neue Buchungen und Buchungsanfragen sind gesperrt; bestehende Buchungen bleiben unverändert.</p></div></div>` : ''}
       <div class="detail-stats">
         <div class="detail-stat"><span>${icon('gauge')} Kilometerstand</span><strong>${formatKm(vehicle.mileage)}</strong></div>
         <div class="detail-stat"><span>${icon('shield')} HU/AU</span><strong>${formatDate(vehicle.tuv)}${tuvDays < 0 ? ` · ${Math.abs(tuvDays)} Tage überfällig` : ''}</strong></div>
@@ -746,7 +1042,8 @@ function openVehicleDetails(vehicleId) {
       </div>` : ''}`,
     footer: [
       canManageVehicle ? `<button class="btn btn-ghost" type="button" data-action="edit-vehicle" data-id="${vehicle.id}">${icon('edit')} Bearbeiten</button>` : '',
-      canBookVehicle ? `<button class="btn btn-primary" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${vehicle.status === 'maintenance' ? 'disabled title="Fahrzeug in Wartung"' : ''}>${icon('calendar')} Fahrzeug buchen</button>` : '',
+      canManageVehicle ? `<button class="btn btn-ghost" type="button" data-action="toggle-vehicle-block" data-id="${vehicle.id}">${blocked ? icon('check-circle') : icon('alert')} ${blocked ? 'Entsperren' : 'Sperren'}</button>` : '',
+      canBookVehicle ? `<button class="btn btn-primary" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${vehicle.status === 'maintenance' || blocked ? `disabled title="${blocked ? 'Fahrzeug ist dauerhaft gesperrt' : 'Fahrzeug in Wartung'}"` : ''}>${icon('calendar')} Fahrzeug buchen</button>` : '',
       !canManageVehicle && !canBookVehicle ? `<button class="btn btn-ghost" type="button" data-close-modal>Schließen</button>` : ''
     ].join('')
   });
@@ -1294,12 +1591,18 @@ function openUserModal(userId = null) {
   const defaultRole = existing?.role && roles.some((role) => role.id === existing.role)
     ? existing.role
     : roles.find((role) => role.id === 'manager')?.id || roles[0].id;
-  const user = existing || { name: '', email: '', role: defaultRole, active: true };
+  const user = existing || { name: '', email: '', role: defaultRole, active: true, driverId: null, ownTripsAccess: true };
   const roleOptions = roles.map((role) => `<option value="${esc(role.id)}" ${user.role === role.id ? 'selected' : ''}>${esc(role.name)} · Rang ${formatNumber(role.rank)}</option>`).join('');
+  const driverOptions = [`<option value="">Keine Verknüpfung</option>`]
+    .concat((db.driversForLinking || []).map((driver) => {
+      const linkedElsewhere = driver.linkedUserId && driver.linkedUserId !== user.id;
+      return `<option value="${esc(driver.id)}" ${driver.id === user.driverId ? 'selected' : ''} ${linkedElsewhere ? 'disabled' : ''}>${esc(driver.name)} · ${esc(driver.role || 'Fahrer:in')}${linkedElsewhere ? ' · bereits verknüpft' : ''}</option>`;
+    })).join('');
+  const ownTripsChecked = user.ownTripsAccess !== false;
   showModal({
     title: existing ? 'Benutzer bearbeiten' : 'Benutzer anlegen',
     eyebrow: 'Zugänge',
-    subtitle: existing ? `${user.name} · ${user.email}` : 'Neuen Zugang für die Fuhrparkverwaltung erstellen.',
+    subtitle: existing ? `${user.name} · ${user.email}${user.driverName ? ` · ${user.driverName}` : ''}` : 'Neuen Zugang für die Fuhrparkverwaltung erstellen.',
     body: `
       <form id="userForm" novalidate autocomplete="off">
         ${formAlertMarkup()}
@@ -1321,6 +1624,15 @@ function openUserModal(userId = null) {
             <label for="accountPassword">${existing ? 'Neues Passwort' : 'Passwort'} ${existing ? '<span class="optional">optional</span>' : '<span class="optional">*</span>'}</label>
             <input class="input" id="accountPassword" name="password" type="password" autocomplete="new-password" minlength="10" placeholder="${existing ? 'Leer lassen, um nichts zu ändern' : 'Mindestens 10 Zeichen'}">
           </div>
+          <div class="field field-full">
+            <label for="accountDriver">Fahrer:in verknüpfen <span class="optional">optional</span></label>
+            <select class="select" id="accountDriver" name="driverId">${driverOptions}</select>
+            <p class="field-hint">Ein Fahrerprofil kann höchstens einem Benutzerkonto zugeordnet werden. Die Verknüpfung bleibt bei einer Deaktivierung bestehen.</p>
+          </div>
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" id="accountOwnTripsAccess" name="ownTripsAccess" ${ownTripsChecked ? 'checked' : ''}> Standardzugriff auf „Meine Fahrten“ aktiv</label>
+            <p class="field-hint">Gilt nur für verknüpfte Fahrer:innen. Explizite Benutzer- oder Rollenregeln können den Standard übersteuern oder wieder erlauben.</p>
+          </div>
           ${existing ? `<div class="field field-full"><label class="check-row"><input type="checkbox" name="active" ${user.active ? 'checked' : ''}> Konto aktiv</label></div>` : ''}
         </div>
       </form>`,
@@ -1330,6 +1642,16 @@ function openUserModal(userId = null) {
   });
 
   const form = $('#userForm');
+  const driverSelect = $('#accountDriver');
+  const ownTripsCheckbox = $('#accountOwnTripsAccess');
+  const updateOwnTripsState = () => {
+    if (!ownTripsCheckbox) return;
+    ownTripsCheckbox.disabled = !driverSelect?.value;
+    if (!driverSelect?.value) ownTripsCheckbox.checked = false;
+    else if (!existing && driverSelect.value) ownTripsCheckbox.checked = true;
+  };
+  driverSelect?.addEventListener('change', updateOwnTripsState);
+  updateOwnTripsState();
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearFormError(form);
@@ -1345,11 +1667,14 @@ function openUserModal(userId = null) {
       showFormError(form, 'Das Passwort muss mindestens 10 Zeichen lang sein.');
       return;
     }
+    const driverId = String(data.get('driverId') || '');
     const body = {
       name,
       email,
       role: String(data.get('role') || defaultRole),
-      active: existing ? data.get('active') === 'on' : true
+      active: existing ? data.get('active') === 'on' : true,
+      driverId: driverId || null,
+      ownTripsAccess: Boolean(driverId) && data.get('ownTripsAccess') === 'on'
     };
     if (password) body.password = password;
     const submitButton = modalRoot.querySelector('button[form="userForm"]');
@@ -1605,8 +1930,31 @@ function openRoleModal(roleId = null) {
     toast('Kein Rang verfügbar', 'Unterhalb Ihres Rangs ist kein bearbeitbarer Rollenrang verfügbar.', 'info');
     return;
   }
-  const role = existing || { name: '', permissions: [], rank: Math.max(1, Math.min(899999, maxRank)) };
+  const role = existing || { name: '', permissions: [], rank: Math.max(1, Math.min(899999, maxRank)), bookingRequestPolicy: { allow: [], deny: [] } };
   const currentPermissions = new Set(role.permissions || []);
+  const policy = role.bookingRequestPolicy || { allow: [], deny: [] };
+  const policyRoles = (db.roles || [])
+    .filter((entry) => entry.id !== 'admin' && Number(entry.rank) < Number(currentUser?.roleRank || 0))
+    .sort((a, b) => Number(b.rank) - Number(a.rank) || String(a.name).localeCompare(String(b.name), 'de'));
+  const policyRoleOptions = (selected, name) => policyRoles.map((entry) => `
+    <label class="permission-option">
+      <input type="checkbox" name="${name}" value="${esc(entry.id)}" ${selected.includes(entry.id) ? 'checked' : ''}>
+      <span>${esc(entry.name)} · Rang ${formatNumber(entry.rank)}</span>
+    </label>`).join('');
+  const policyMarkup = policyRoles.length
+    ? `<div class="form-grid">
+        <div class="field">
+          <label>Erlauben</label>
+          <div class="permission-grid">${policyRoleOptions(policy.allow || [], 'policyAllow')}</div>
+          <p class="field-hint">Leere Allow-Liste bedeutet: alle zulässigen unteren Rollen dürfen Anfragen stellen.</p>
+        </div>
+        <div class="field">
+          <label>Verweigern</label>
+          <div class="permission-grid">${policyRoleOptions(policy.deny || [], 'policyDeny')}</div>
+          <p class="field-hint">Verweigern gewinnt immer – auch wenn dieselbe Rolle zusätzlich erlaubt ist.</p>
+        </div>
+      </div>`
+    : `<div class="info-banner">${icon('info')}<div><strong>Keine unteren Rollen verfügbar</strong><p>Die Policy kann erst gepflegt werden, wenn Rollen unterhalb Ihres eigenen Rangs existieren.</p></div></div>`;
   const permissionMarkup = permissionGroups.map((group) => `
     <fieldset class="permission-group">
       <legend>${esc(group.label)}</legend>
@@ -1647,6 +1995,11 @@ function openRoleModal(roleId = null) {
             <div><strong>Ansichtsrechte werden mitgedacht</strong><p>Verwaltungsrechte ergänzen automatisch die notwendigen Ansichtsrechte. Die Administrator-Rolle bleibt immer vollständig und geschützt.</p></div>
           </div>
         </div>
+        <div class="detail-section">
+          <p class="detail-section-title">Buchungsanfragen-Policy</p>
+          <p class="field-hint">Gilt für Personen mit „Buchungsanfragen verwalten“. Nur Rollen strikt unterhalb Ihres Rangs sind zulässig; die eigene Rolle und höhere Ränge bleiben ausgeschlossen.</p>
+          ${policyMarkup}
+        </div>
       </form>`,
     footer: `
       <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
@@ -1661,6 +2014,10 @@ function openRoleModal(roleId = null) {
     const name = String(data.get('name') || '').trim();
     const rank = Number(data.get('rank'));
     const selectedPermissions = data.getAll('permissions').map(String);
+    const bookingRequestPolicy = {
+      allow: data.getAll('policyAllow').map(String),
+      deny: data.getAll('policyDeny').map(String)
+    };
     if (!name) {
       showFormError(form, 'Bitte geben Sie einen Rollennamen an.');
       return;
@@ -1674,7 +2031,7 @@ function openRoleModal(roleId = null) {
     try {
       const state = await apiFetch(existing ? `/api/roles/${encodeURIComponent(existing.id)}` : '/api/roles', {
         method: existing ? 'PATCH' : 'POST',
-        body: { name, permissions: selectedPermissions, rank }
+        body: { name, permissions: selectedPermissions, rank, bookingRequestPolicy }
       });
       applyServerState(state);
       closeModal(false);

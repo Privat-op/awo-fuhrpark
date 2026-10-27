@@ -19,6 +19,8 @@ function mapVehicle(row) {
     acquired: row.acquired,
     color: row.color,
     notes: row.notes,
+    blocked: Boolean(row.blocked),
+    blockedReason: row.blocked_reason || '',
     image: row.image_file ? `/api/vehicles/${encodeURIComponent(row.id)}/image?v=${version}` : ''
   };
 }
@@ -39,7 +41,9 @@ function mapDriver(row) {
     email: row.email,
     license: Array.isArray(license) ? license : ['B'],
     status: row.status,
-    color: row.color
+    color: row.color,
+    userId: row.user_id || null,
+    ownTripsAccess: Number(row.own_trips_access) !== 0
   };
 }
 
@@ -116,7 +120,39 @@ function mapUser(row) {
   };
 }
 
+function mapMinimalVehicle(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    plate: row.plate,
+    type: row.type,
+    color: row.color,
+    status: row.status,
+    blocked: Boolean(row.blocked),
+    blockedReason: row.blocked_reason || ''
+  };
+}
+
+function mapOwnTrip(row, vehicle) {
+  return {
+    id: row.id,
+    vehicleId: row.vehicle_id,
+    vehicleName: vehicle?.name || '',
+    vehiclePlate: vehicle?.plate || '',
+    vehicleType: vehicle?.type || 'Pkw',
+    vehicleColor: vehicle?.color || '#64748b',
+    purpose: row.purpose,
+    start: row.start_at,
+    end: row.end_at,
+    status: row.status,
+    startKm: row.start_km,
+    endKm: row.end_km,
+    notes: row.notes
+  };
+}
+
 const { parsePermissions, parsePermissionOverrides, parseObjectPermissions, resolvePermission } = require('./permissions');
+const { isRequestVisibleToApprover, mapBookingRequest, parseBookingRequestPolicy } = require('./booking-requests');
 
 function getState(db, user, auth = null) {
   const layers = auth || {
@@ -138,6 +174,8 @@ function getState(db, user, auth = null) {
 
   const vehicleById = new Map(vehicleRows.map((row) => [row.id, row]));
   const driverById = new Map(driverRows.map((row) => [row.id, row]));
+  const driverByUserId = new Map(driverRows.filter((row) => row.user_id).map((row) => [row.user_id, row]));
+  const linkedDriverRow = driverByUserId.get(user.id) || null;
   const bookingContext = (row) => ({
     booking: row,
     vehicle: vehicleById.get(row.vehicle_id),
@@ -214,6 +252,9 @@ function getState(db, user, auth = null) {
     maintenance_manage: can('maintenance_manage') || anyObject('maintenance', 'maintenance_manage') || anyObject('vehicle', 'maintenance_manage'),
     costs_view: can('costs_view') || anyObject('cost', 'costs_view') || anyObject('vehicle', 'costs_view'),
     costs_manage: can('costs_manage') || anyObject('cost', 'costs_manage') || anyObject('vehicle', 'costs_manage'),
+    own_trips_view: Boolean(linkedDriverRow) && can('own_trips_view', linkedDriverRow ? { driver: linkedDriverRow } : {}),
+    own_trips_request: Boolean(linkedDriverRow) && can('own_trips_request', linkedDriverRow ? { driver: linkedDriverRow } : {}),
+    booking_requests_manage: isAdmin || can('booking_requests_manage'),
     users_manage: isAdmin || can('users_manage'),
     roles_manage: isAdmin || can('roles_manage'),
     settings_manage: can('settings_manage'),
@@ -227,6 +268,49 @@ function getState(db, user, auth = null) {
   if (moduleAccess.logbook_manage) moduleAccess.logbook_view = true;
   if (moduleAccess.maintenance_manage) moduleAccess.maintenance_view = true;
   if (moduleAccess.costs_manage) moduleAccess.costs_view = true;
+
+  let ownTrips = null;
+  if (moduleAccess.own_trips_view && linkedDriverRow) {
+    const ownBookings = bookingRows
+      .filter((row) => row.driver_id === linkedDriverRow.id && ['planned', 'active', 'completed'].includes(row.status))
+      .sort((a, b) => String(b.start_at).localeCompare(String(a.start_at)) || String(b.id).localeCompare(String(a.id)))
+      .map((row) => mapOwnTrip(row, vehicleById.get(row.vehicle_id)));
+    const ownRequestRows = db.prepare(`
+      SELECT * FROM booking_requests
+      WHERE requested_by = ?
+      ORDER BY created_at DESC, id DESC
+    `).all(user.id);
+    ownTrips = {
+      driver: {
+        id: linkedDriverRow.id,
+        name: linkedDriverRow.name,
+        role: linkedDriverRow.role,
+        color: linkedDriverRow.color
+      },
+      canRequest: moduleAccess.own_trips_request,
+      vehicles: vehicleRows.map(mapMinimalVehicle),
+      bookings: ownBookings,
+      requests: ownRequestRows.map((row) => mapBookingRequest(row, { vehicle: vehicleById.get(row.vehicle_id) }))
+    };
+  }
+
+  let bookingRequests = [];
+  if (moduleAccess.booking_requests_manage) {
+    const requesterById = new Map(
+      db.prepare('SELECT id, name, role FROM users').all().map((row) => [row.id, row])
+    );
+    bookingRequests = db.prepare(`
+      SELECT * FROM booking_requests
+      WHERE status = 'requested'
+      ORDER BY created_at, id
+    `).all()
+      .filter((row) => isRequestVisibleToApprover(db, user, row, requesterById.get(row.requested_by), { isAdmin }))
+      .map((row) => mapBookingRequest(row, {
+        vehicle: vehicleById.get(row.vehicle_id),
+        driver: driverById.get(row.driver_id),
+        requester: requesterById.get(row.requested_by)
+      }));
+  }
 
   const notificationReads = db.prepare('SELECT alert_key FROM notification_reads WHERE user_id = ?').all(user.id).map((row) => row.alert_key);
 
@@ -263,6 +347,8 @@ function getState(db, user, auth = null) {
     bookings: visibleBookingRows.map((row) => mapBooking(row, vehicleById.get(row.vehicle_id), driverById.get(row.driver_id))),
     maintenance: visibleMaintenanceRows.map(mapMaintenance),
     costs: visibleCostRows.map(mapCost),
+    ownTrips,
+    bookingRequests,
     notificationReads
   };
 
@@ -272,7 +358,7 @@ function getState(db, user, auth = null) {
   moduleAccess.roles_manage = canManageRoles;
 
   const roleRows = db.prepare(`
-    SELECT id, name, permissions, object_permissions, is_system, rank, created_at, updated_at
+    SELECT id, name, permissions, object_permissions, booking_request_policy, is_system, rank, created_at, updated_at
     FROM roles ORDER BY rank DESC, is_system DESC, name
   `).all();
   const roleRankById = new Map(roleRows.map((row) => [row.id, Number(row.rank) || 0]));
@@ -285,14 +371,21 @@ function getState(db, user, auth = null) {
     name: row.name,
     permissions: parsePermissions(row.permissions),
     objectPermissions: parseObjectPermissions(row.object_permissions),
+    bookingRequestPolicy: parseBookingRequestPolicy(row.booking_request_policy),
     isSystem: Boolean(row.is_system),
     rank: Number(row.rank) || 0,
     userCount: userCountByRole.get(row.id) || 0
   });
-  const mapStateUser = (row) => ({
-    ...mapUser(row),
-    roleRank: roleRankById.get(row.role) || 0
-  });
+  const mapStateUser = (row) => {
+    const linkedDriver = driverByUserId.get(row.id) || null;
+    return {
+      ...mapUser(row),
+      roleRank: roleRankById.get(row.role) || 0,
+      driverId: linkedDriver?.id || null,
+      driverName: linkedDriver?.name || '',
+      ownTripsAccess: linkedDriver ? Number(linkedDriver.own_trips_access) !== 0 : null
+    };
+  };
 
   if (isAdmin) {
     state.users = db.prepare(`
@@ -313,6 +406,16 @@ function getState(db, user, auth = null) {
         .map(mapStateUser)
         .filter((entry) => entry.id === user.id || entry.roleRank < actorRank);
     }
+  }
+
+  if (canManageUsers) {
+    state.driversForLinking = driverRows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      role: row.role,
+      department: row.department,
+      linkedUserId: row.user_id || null
+    }));
   }
 
   return state;

@@ -9,7 +9,7 @@ let csrfToken = '';
 let permissions = new Set();
 let permissionGroups = [];
 let objectTypes = [];
-let capabilities = { isAdmin: false, manageUsers: false, manageRoles: false, viewCosts: false };
+let capabilities = { isAdmin: false, manageUsers: false, manageRoles: false, manageBookingRequests: false, hasOwnTrips: false, viewCosts: false };
 let ui = {
   route: 'dashboard',
   vehicleQuery: '',
@@ -49,6 +49,11 @@ function roleLabel(roleId) {
 }
 
 function routeAllowed(route) {
+  if (route === 'dashboard') {
+    if (!hasRegularWorkspace() && (Boolean(db?.ownTrips) || can('booking_requests_manage'))) return false;
+    return true;
+  }
+  if (route === 'meine-fahrten') return Boolean(db?.ownTrips);
   const permission = ROUTE_PERMISSIONS[route];
   return !permission || can(permission);
 }
@@ -97,8 +102,16 @@ function canManageRole(role) {
   return roleWithinGrant(role);
 }
 
+function hasRegularWorkspace() {
+  return ['fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'benutzer', 'rollen'].some((route) => routeAllowed(route));
+}
+
 function firstAllowedRoute() {
-  const order = ['dashboard', 'fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'einstellungen'];
+  if (!hasRegularWorkspace()) {
+    if (routeAllowed('meine-fahrten')) return 'meine-fahrten';
+    if (routeAllowed('anfragen')) return 'anfragen';
+  }
+  const order = ['dashboard', 'meine-fahrten', 'anfragen', 'fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'einstellungen'];
   return order.find((route) => routeAllowed(route)) || 'dashboard';
 }
 
@@ -239,6 +252,17 @@ function applyState(state) {
     notificationReads: Array.isArray(state.notificationReads) ? state.notificationReads : [],
     users: Array.isArray(state.users) ? state.users : [],
     roles: Array.isArray(state.roles) ? state.roles : [],
+    driversForLinking: Array.isArray(state.driversForLinking) ? state.driversForLinking : [],
+    bookingRequests: Array.isArray(state.bookingRequests) ? state.bookingRequests : [],
+    ownTrips: state.ownTrips && typeof state.ownTrips === 'object'
+      ? {
+          driver: state.ownTrips.driver || null,
+          canRequest: Boolean(state.ownTrips.canRequest),
+          vehicles: Array.isArray(state.ownTrips.vehicles) ? state.ownTrips.vehicles : [],
+          bookings: Array.isArray(state.ownTrips.bookings) ? state.ownTrips.bookings : [],
+          requests: Array.isArray(state.ownTrips.requests) ? state.ownTrips.requests : []
+        }
+      : null,
     access: state.access && typeof state.access === 'object'
       ? {
           modules: state.access.modules || {},
@@ -298,6 +322,8 @@ async function refreshSession() {
     isAdmin: Boolean(session.capabilities?.isAdmin),
     manageUsers: Boolean(session.capabilities?.manageUsers),
     manageRoles: Boolean(session.capabilities?.manageRoles),
+    manageBookingRequests: Boolean(session.capabilities?.manageBookingRequests),
+    hasOwnTrips: Boolean(session.capabilities?.hasOwnTrips),
     viewCosts: Boolean(session.capabilities?.viewCosts)
   };
 }
@@ -500,9 +526,11 @@ function updateChrome() {
   const navBookingCount = $('#navBookingCount');
   const navVehicleCount = $('#navVehicleCount');
   const navMaintenanceCount = $('#navMaintenanceCount');
+  const navRequestCount = $('#navRequestCount');
   if (navBookingCount) navBookingCount.textContent = todayBookings || '';
   if (navVehicleCount) navVehicleCount.textContent = db.vehicles.length;
   if (navMaintenanceCount) navMaintenanceCount.textContent = getAlerts().length || '';
+  if (navRequestCount) navRequestCount.textContent = db.bookingRequests.length || '';
 
   const alerts = getAlerts();
   const readKeys = getReadNotificationKeys();
@@ -573,7 +601,10 @@ function getRouteFromHash() {
 
 function renderRoute(scrollToTop = true) {
   const requestedRoute = getRouteFromHash();
-  ui.route = routeAllowed(requestedRoute) ? requestedRoute : firstAllowedRoute();
+  const effectiveRequested = requestedRoute === 'dashboard' && !hasRegularWorkspace()
+    ? (routeAllowed('meine-fahrten') ? 'meine-fahrten' : routeAllowed('anfragen') ? 'anfragen' : requestedRoute)
+    : requestedRoute;
+  ui.route = routeAllowed(effectiveRequested) ? effectiveRequested : firstAllowedRoute();
   if (ui.route !== requestedRoute) {
     history.replaceState(null, '', `#/${ui.route}`);
   }
@@ -792,6 +823,52 @@ function deleteCost(costId) {
   });
 }
 
+function approveBookingRequest(requestId) {
+  if (!can('booking_requests_manage')) {
+    toast('Keine Berechtigung', 'Für das Genehmigen von Buchungsanfragen fehlt die Berechtigung.', 'error');
+    return;
+  }
+  const request = db.bookingRequests.find((item) => item.id === requestId);
+  if (!request) return;
+  openConfirm({
+    title: 'Buchungsanfrage genehmigen?',
+    text: `Die Anfrage von <strong>${esc(request.requesterName || 'Fahrer:in')}</strong> für <strong>${esc(request.vehicleName)}</strong> am ${formatDate(request.start)} (${formatTimeRange(request.start, request.end)}) wird verbindlich gebucht. Der Zeitraum wird dabei erneut auf Konflikte geprüft.`,
+    confirmLabel: 'Genehmigen und buchen',
+    danger: false,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/booking-requests/${encodeURIComponent(requestId)}/approve`, { method: 'POST' });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Buchungsanfrage genehmigt', 'Die geplante Buchung wurde angelegt.');
+      } catch (error) {
+        toast('Genehmigung fehlgeschlagen', error.message, 'error');
+      }
+    }
+  });
+}
+
+function cancelOwnBookingRequest(requestId) {
+  const request = db.ownTrips?.requests?.find((item) => item.id === requestId);
+  if (!request) return;
+  openConfirm({
+    title: 'Buchungsanfrage zurückziehen?',
+    text: `Die offene Anfrage für <strong>${esc(request.vehicleName)}</strong> am ${formatDate(request.start)} wird zurückgezogen.`,
+    confirmLabel: 'Anfrage zurückziehen',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/booking-requests/${encodeURIComponent(requestId)}/cancel`, { method: 'POST' });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Anfrage zurückgezogen', 'Die Buchungsanfrage ist nicht mehr offen.');
+      } catch (error) {
+        toast('Anfrage konnte nicht zurückgezogen werden', error.message, 'error');
+      }
+    }
+  });
+}
+
 function triggerBlobDownload(filename, blob) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -862,6 +939,10 @@ function dispatchAction(element) {
   const id = element.dataset.id;
   switch (action) {
     case 'new-booking': openBookingModal(); break;
+    case 'new-booking-request': openBookingRequestModal(); break;
+    case 'approve-booking-request': approveBookingRequest(id); break;
+    case 'reject-booking-request': openRejectBookingRequestModal(id); break;
+    case 'cancel-booking-request': cancelOwnBookingRequest(id); break;
     case 'new-vehicle': openVehicleModal(); break;
     case 'new-driver': openDriverModal(); break;
     case 'new-maintenance': openMaintenanceModal(); break;
@@ -875,6 +956,7 @@ function dispatchAction(element) {
     case 'delete-role': openDeleteRoleConfirm(id); break;
     case 'vehicle-details': openVehicleDetails(id); break;
     case 'edit-vehicle': openVehicleModal(id); break;
+    case 'toggle-vehicle-block': openVehicleBlockModal(id); break;
     case 'book-vehicle': openBookingModal({ vehicleId: id }); break;
     case 'edit-driver': openDriverModal(id); break;
     case 'edit-user': openUserModal(id); break;

@@ -8,7 +8,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>{{PAGE_TITLE}}</title>
   <link rel="icon" href="{{FAVICON}}">
-  <link rel="stylesheet" href="styles.css?v=0.5.2">
+  <link rel="stylesheet" href="styles.css?v=0.6.0-etappe2">
 </head>
 <body>
   <a class="skip-link" href="#view">Zum Inhalt springen</a>
@@ -86,6 +86,13 @@
           <a class="nav-item" href="#/buchungen" data-route="buchungen">
             <svg class="icon"><use href="#i-calendar"></use></svg><span>Buchungen</span>
             <span class="nav-count" id="navBookingCount">0</span>
+          </a>
+          <a class="nav-item" href="#/meine-fahrten" data-route="meine-fahrten" id="navOwnTrips" hidden>
+            <svg class="icon"><use href="#i-route"></use></svg><span>Meine Fahrten</span>
+          </a>
+          <a class="nav-item" href="#/anfragen" data-route="anfragen" id="navBookingRequests" hidden>
+            <svg class="icon"><use href="#i-calendar-check"></use></svg><span>Buchungsanfragen</span>
+            <span class="nav-count nav-count-alert" id="navRequestCount">0</span>
           </a>
           <a class="nav-item" href="#/fahrtenbuch" data-route="fahrtenbuch">
             <svg class="icon"><use href="#i-book"></use></svg><span>Fahrtenbuch</span>
@@ -214,9 +221,9 @@
   <div id="modalRoot"></div>
   <div class="toast-stack" id="toastRoot" role="status" aria-live="polite"></div>
 
-  <script src="data.js?v=0.5.2"></script>
-  <script src="views.js?v=0.5.2"></script>
-  <script src="modals.js?v=0.5.2"></script>
-  <script src="app.js?v=0.5.2"></script>
+  <script src="data.js?v=0.6.0-etappe2"></script>
+  <script src="views.js?v=0.6.0-etappe2"></script>
+  <script src="modals.js?v=0.6.0-etappe2"></script>
+  <script src="app.js?v=0.6.0-etappe2"></script>
 </body>
 </html>
