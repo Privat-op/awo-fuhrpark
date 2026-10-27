@@ -27,6 +27,7 @@ const {
   getUserPermissionOverrides,
   getUserObjectPermissions,
   effectiveGlobalPermissions,
+  driverDefaultPermissions,
   roleName
 } = require('./lib/permissions');
 const apiRouter = require('./routes/api');
@@ -242,12 +243,15 @@ function requireAuth(req, res, next) {
     return res.redirect('/login');
   }
   req.user = user;
+  const linkedDriver = db.prepare('SELECT id, user_id, own_trips_access FROM drivers WHERE user_id = ?').get(user.id) || null;
   req.auth = {
     isAdmin: user.role === 'admin',
     rolePermissions: new Set(getRolePermissions(db, user.role)),
     roleObjectPermissions: getRoleObjectPermissions(db, user.role),
     userPermissionOverrides: getUserPermissionOverrides(db, user.id),
-    userObjectPermissions: getUserObjectPermissions(db, user.id)
+    userObjectPermissions: getUserObjectPermissions(db, user.id),
+    linkedDriverId: linkedDriver?.id || null,
+    driverDefaultPermissions: driverDefaultPermissions(linkedDriver)
   };
   req.permissions = effectiveGlobalPermissions(req.auth);
   req.roleName = roleName(db, user.role);

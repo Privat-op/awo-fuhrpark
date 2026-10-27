@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS roles (
   name TEXT NOT NULL COLLATE NOCASE UNIQUE,
   permissions TEXT NOT NULL DEFAULT '[]',
   object_permissions TEXT NOT NULL DEFAULT '{}',
+  booking_request_policy TEXT NOT NULL DEFAULT '{"allow":[],"deny":[]}',
   is_system INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0, 1)),
   rank INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -59,6 +60,8 @@ CREATE TABLE IF NOT EXISTS drivers (
   license TEXT NOT NULL DEFAULT '["B"]',
   status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'away')),
   color TEXT NOT NULL DEFAULT '#2563eb',
+  user_id TEXT UNIQUE REFERENCES users(id) ON DELETE SET NULL,
+  own_trips_access INTEGER NOT NULL DEFAULT 1 CHECK (own_trips_access IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -81,6 +84,25 @@ CREATE TABLE IF NOT EXISTS bookings (
   CHECK (end_at > start_at),
   CHECK (start_km IS NULL OR start_km >= 0),
   CHECK (end_km IS NULL OR end_km >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS booking_requests (
+  id TEXT PRIMARY KEY,
+  vehicle_id TEXT NOT NULL REFERENCES vehicles(id) ON DELETE RESTRICT,
+  driver_id TEXT NOT NULL REFERENCES drivers(id) ON DELETE RESTRICT,
+  requested_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  purpose TEXT NOT NULL,
+  start_at TEXT NOT NULL,
+  end_at TEXT NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'approved', 'rejected', 'canceled')),
+  decided_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  decided_at TEXT,
+  decision_note TEXT NOT NULL DEFAULT '',
+  booking_id TEXT REFERENCES bookings(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK (end_at > start_at)
 );
 
 CREATE TABLE IF NOT EXISTS maintenance (
@@ -160,6 +182,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_bookings_vehicle_time ON bookings (vehicle_id, start_at, end_at);
 CREATE INDEX IF NOT EXISTS idx_bookings_driver_time ON bookings (driver_id, start_at, end_at);
 CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings (status);
+CREATE INDEX IF NOT EXISTS idx_booking_requests_status ON booking_requests (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_booking_requests_requester ON booking_requests (requested_by, created_at);
+CREATE INDEX IF NOT EXISTS idx_booking_requests_vehicle ON booking_requests (vehicle_id, status);
+CREATE INDEX IF NOT EXISTS idx_booking_requests_driver ON booking_requests (driver_id, status);
 CREATE INDEX IF NOT EXISTS idx_costs_date ON costs (date);
 CREATE INDEX IF NOT EXISTS idx_costs_vehicle ON costs (vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_maintenance_due ON maintenance (due_date);

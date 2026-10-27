@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const { db } = require('../db');
 const { writeAudit } = require('./audit');
 const { HttpError, isoNow } = require('./validation');
+const { cancelOpenBookingRequests } = require('./booking-requests');
 
 function scrubAuditDetails(details) {
   if (!details) return details;
@@ -46,6 +47,19 @@ function anonymizeUser(userId, { actorId = null, reason = 'manual' } = {}) {
 
     db.prepare("DELETE FROM sessions WHERE json_extract(sess, '$.userId') = ?").run(user.id);
     db.prepare('DELETE FROM notification_reads WHERE user_id = ?').run(user.id);
+
+    const linkedDriver = db.prepare('SELECT id FROM drivers WHERE user_id = ?').get(user.id);
+    if (linkedDriver) {
+      db.prepare('UPDATE drivers SET user_id = NULL, updated_at = ? WHERE id = ?').run(now, linkedDriver.id);
+      writeAudit(db, {
+        userId: actorId,
+        action: 'unlink_driver',
+        entityType: 'user',
+        entityId: user.id,
+        details: { driverId: linkedDriver.id, reason }
+      });
+    }
+    cancelOpenBookingRequests(db, user.id, { actorId, reason: `requester_anonymized` });
 
     const auditRows = db.prepare(`
       SELECT id, details FROM audit_logs

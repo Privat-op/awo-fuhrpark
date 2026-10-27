@@ -67,6 +67,18 @@ function initSchema() {
   if (roleColumns.length && !roleColumns.some((column) => column.name === 'rank')) {
     db.exec('ALTER TABLE roles ADD COLUMN rank INTEGER NOT NULL DEFAULT 0');
   }
+  if (roleColumns.length && !roleColumns.some((column) => column.name === 'booking_request_policy')) {
+    db.exec(`ALTER TABLE roles ADD COLUMN booking_request_policy TEXT NOT NULL DEFAULT '{"allow":[],"deny":[]}'`);
+  }
+
+  const driverColumns = db.prepare('PRAGMA table_info(drivers)').all();
+  if (driverColumns.length && !driverColumns.some((column) => column.name === 'user_id')) {
+    db.exec('ALTER TABLE drivers ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL');
+  }
+  if (driverColumns.length && !driverColumns.some((column) => column.name === 'own_trips_access')) {
+    db.exec('ALTER TABLE drivers ADD COLUMN own_trips_access INTEGER NOT NULL DEFAULT 1');
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_user_id ON drivers(user_id) WHERE user_id IS NOT NULL');
 
   const userColumns = db.prepare('PRAGMA table_info(users)').all();
   if (!userColumns.some((column) => column.name === 'anonymized_at')) {

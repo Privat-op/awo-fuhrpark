@@ -219,6 +219,165 @@ function openBookingModal(prefill = {}) {
   });
 }
 
+function openBookingRequestModal(prefill = {}) {
+  if (!db.ownTrips?.canRequest) {
+    toast('Keine Berechtigung', 'Für Buchungsanfragen fehlt die Freigabe „Buchung anfragen“.', 'error');
+    return;
+  }
+  const vehicles = db.ownTrips.vehicles || [];
+  if (!vehicles.length) {
+    toast('Kein Fahrzeug vorhanden', 'Es ist aktuell kein Fahrzeug für Buchungsanfragen hinterlegt.', 'info');
+    return;
+  }
+  const selectedVehicle = prefill.vehicleId
+    ? vehicles.find((vehicle) => vehicle.id === prefill.vehicleId)
+    : vehicles.find((vehicle) => vehicle.status !== 'maintenance') || vehicles[0];
+  const date = prefill.date || todayISO();
+  const startTime = prefill.startTime || '09:00';
+  const endTime = prefill.endTime || '11:00';
+  const vehicleOptions = vehicles.map((vehicle) => {
+    const statusLabel = vehicle.status === 'maintenance' ? ' · In Wartung' : '';
+    return `<option value="${vehicle.id}" ${vehicle.id === selectedVehicle?.id ? 'selected' : ''}>${esc(vehicle.name)} · ${esc(vehicle.plate)}${statusLabel}</option>`;
+  }).join('');
+
+  showModal({
+    title: 'Buchung anfragen',
+    eyebrow: 'Meine Fahrten',
+    subtitle: `Anfrage für ${db.ownTrips.driver.name} – die Genehmigung erfolgt durch die Fuhrparkleitung.`,
+    body: `
+      <form id="bookingRequestForm" novalidate autocomplete="off">
+        ${formAlertMarkup()}
+        <div class="info-banner">
+          ${icon('info')}
+          <div><strong>Keine Reservierung durch die Anfrage</strong><p>Die Anfrage wird nur gespeichert. Erst die Genehmigung legt eine geplante Buchung an und prüft den Zeitraum verbindlich auf Konflikte.</p></div>
+        </div>
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="requestVehicle">Fahrzeug <span class="optional">*</span></label>
+            <select class="select" id="requestVehicle" name="vehicleId" required>${vehicleOptions}</select>
+          </div>
+          <div class="field">
+            <label for="requestDate">Datum <span class="optional">*</span></label>
+            <input class="input" id="requestDate" name="date" type="date" value="${esc(date)}" required>
+          </div>
+          <div class="field">
+            <label for="requestPurpose">Einsatzzweck <span class="optional">*</span></label>
+            <input class="input" id="requestPurpose" name="purpose" type="text" value="${esc(prefill.purpose || '')}" placeholder="z. B. Hausbesuche" maxlength="200" required>
+          </div>
+          <div class="field">
+            <label for="requestStart">Von <span class="optional">*</span></label>
+            <input class="input" id="requestStart" name="startTime" type="time" value="${esc(startTime)}" step="300" required>
+          </div>
+          <div class="field">
+            <label for="requestEnd">Bis <span class="optional">*</span></label>
+            <input class="input" id="requestEnd" name="endTime" type="time" value="${esc(endTime)}" step="300" required>
+          </div>
+          <div class="field field-full">
+            <label for="requestNotes">Notizen <span class="optional">optional</span></label>
+            <textarea class="textarea" id="requestNotes" name="notes" rows="2" maxlength="1000" placeholder="Weitere Informationen zur Fahrt …">${esc(prefill.notes || '')}</textarea>
+          </div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="bookingRequestForm">${icon('calendar-check')} Anfrage senden</button>`
+  });
+
+  const form = $('#bookingRequestForm');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const vehicleId = String(data.get('vehicleId') || '');
+    const bookingDate = String(data.get('date') || '');
+    const from = String(data.get('startTime') || '');
+    const to = String(data.get('endTime') || '');
+    const purpose = String(data.get('purpose') || '').trim();
+    const vehicle = vehicles.find((entry) => entry.id === vehicleId);
+    if (!vehicleId || !bookingDate || !from || !to || !purpose) {
+      showFormError(form, 'Bitte füllen Sie alle Pflichtfelder aus.');
+      return;
+    }
+    if (to <= from) {
+      showFormError(form, 'Das Ende der Anfrage muss nach dem Beginn liegen.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="bookingRequestForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch('/api/booking-requests', {
+        method: 'POST',
+        body: {
+          vehicleId,
+          date: bookingDate,
+          startTime: from,
+          endTime: to,
+          purpose,
+          notes: String(data.get('notes') || '').trim()
+        }
+      });
+      const warning = state.requestWarning;
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast('Buchungsanfrage gesendet', `${vehicle ? vehicle.name : 'Fahrzeug'} · ${formatDate(bookingDate)}, ${from}–${to} Uhr`);
+      if (warning) toast('Hinweis zur Verfügbarkeit', warning, 'info');
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function openRejectBookingRequestModal(requestId) {
+  if (!can('booking_requests_manage')) {
+    toast('Keine Berechtigung', 'Für das Ablehnen von Buchungsanfragen fehlt die Berechtigung.', 'error');
+    return;
+  }
+  const request = db.bookingRequests?.find((item) => item.id === requestId);
+  if (!request) return;
+  showModal({
+    title: 'Buchungsanfrage ablehnen',
+    eyebrow: 'Entscheidung',
+    subtitle: `${request.requesterName || 'Fahrer:in'} · ${request.vehicleName} · ${formatDate(request.start)}`,
+    body: `
+      <form id="rejectBookingRequestForm" novalidate>
+        ${formAlertMarkup()}
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="rejectDecisionNote">Begründung <span class="optional">optional</span></label>
+            <textarea class="textarea" id="rejectDecisionNote" name="decisionNote" rows="3" maxlength="500" placeholder="Hinweis für die anfragende Person …"></textarea>
+          </div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-danger" type="submit" form="rejectBookingRequestForm">${icon('x')} Anfrage ablehnen</button>`
+  });
+  const form = $('#rejectBookingRequestForm');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const submitButton = modalRoot.querySelector('button[form="rejectBookingRequestForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch(`/api/booking-requests/${encodeURIComponent(requestId)}/reject`, {
+        method: 'POST',
+        body: { decisionNote: String(new FormData(form).get('decisionNote') || '').trim() }
+      });
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast('Buchungsanfrage abgelehnt', 'Die anfragende Person sieht die Entscheidung in „Meine Fahrten“.');
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
 function openBookingDetails(bookingId) {
   const booking = db.bookings.find((item) => item.id === bookingId);
   if (!booking) return;
@@ -1294,12 +1453,18 @@ function openUserModal(userId = null) {
   const defaultRole = existing?.role && roles.some((role) => role.id === existing.role)
     ? existing.role
     : roles.find((role) => role.id === 'manager')?.id || roles[0].id;
-  const user = existing || { name: '', email: '', role: defaultRole, active: true };
+  const user = existing || { name: '', email: '', role: defaultRole, active: true, driverId: null, ownTripsAccess: true };
   const roleOptions = roles.map((role) => `<option value="${esc(role.id)}" ${user.role === role.id ? 'selected' : ''}>${esc(role.name)} · Rang ${formatNumber(role.rank)}</option>`).join('');
+  const driverOptions = [`<option value="">Keine Verknüpfung</option>`]
+    .concat((db.driversForLinking || []).map((driver) => {
+      const linkedElsewhere = driver.linkedUserId && driver.linkedUserId !== user.id;
+      return `<option value="${esc(driver.id)}" ${driver.id === user.driverId ? 'selected' : ''} ${linkedElsewhere ? 'disabled' : ''}>${esc(driver.name)} · ${esc(driver.role || 'Fahrer:in')}${linkedElsewhere ? ' · bereits verknüpft' : ''}</option>`;
+    })).join('');
+  const ownTripsChecked = user.ownTripsAccess !== false;
   showModal({
     title: existing ? 'Benutzer bearbeiten' : 'Benutzer anlegen',
     eyebrow: 'Zugänge',
-    subtitle: existing ? `${user.name} · ${user.email}` : 'Neuen Zugang für die Fuhrparkverwaltung erstellen.',
+    subtitle: existing ? `${user.name} · ${user.email}${user.driverName ? ` · ${user.driverName}` : ''}` : 'Neuen Zugang für die Fuhrparkverwaltung erstellen.',
     body: `
       <form id="userForm" novalidate autocomplete="off">
         ${formAlertMarkup()}
@@ -1321,6 +1486,15 @@ function openUserModal(userId = null) {
             <label for="accountPassword">${existing ? 'Neues Passwort' : 'Passwort'} ${existing ? '<span class="optional">optional</span>' : '<span class="optional">*</span>'}</label>
             <input class="input" id="accountPassword" name="password" type="password" autocomplete="new-password" minlength="10" placeholder="${existing ? 'Leer lassen, um nichts zu ändern' : 'Mindestens 10 Zeichen'}">
           </div>
+          <div class="field field-full">
+            <label for="accountDriver">Fahrer:in verknüpfen <span class="optional">optional</span></label>
+            <select class="select" id="accountDriver" name="driverId">${driverOptions}</select>
+            <p class="field-hint">Ein Fahrerprofil kann höchstens einem Benutzerkonto zugeordnet werden. Die Verknüpfung bleibt bei einer Deaktivierung bestehen.</p>
+          </div>
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" id="accountOwnTripsAccess" name="ownTripsAccess" ${ownTripsChecked ? 'checked' : ''}> Standardzugriff auf „Meine Fahrten“ aktiv</label>
+            <p class="field-hint">Gilt nur für verknüpfte Fahrer:innen. Explizite Benutzer- oder Rollenregeln können den Standard übersteuern oder wieder erlauben.</p>
+          </div>
           ${existing ? `<div class="field field-full"><label class="check-row"><input type="checkbox" name="active" ${user.active ? 'checked' : ''}> Konto aktiv</label></div>` : ''}
         </div>
       </form>`,
@@ -1330,6 +1504,16 @@ function openUserModal(userId = null) {
   });
 
   const form = $('#userForm');
+  const driverSelect = $('#accountDriver');
+  const ownTripsCheckbox = $('#accountOwnTripsAccess');
+  const updateOwnTripsState = () => {
+    if (!ownTripsCheckbox) return;
+    ownTripsCheckbox.disabled = !driverSelect?.value;
+    if (!driverSelect?.value) ownTripsCheckbox.checked = false;
+    else if (!existing && driverSelect.value) ownTripsCheckbox.checked = true;
+  };
+  driverSelect?.addEventListener('change', updateOwnTripsState);
+  updateOwnTripsState();
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearFormError(form);
@@ -1345,11 +1529,14 @@ function openUserModal(userId = null) {
       showFormError(form, 'Das Passwort muss mindestens 10 Zeichen lang sein.');
       return;
     }
+    const driverId = String(data.get('driverId') || '');
     const body = {
       name,
       email,
       role: String(data.get('role') || defaultRole),
-      active: existing ? data.get('active') === 'on' : true
+      active: existing ? data.get('active') === 'on' : true,
+      driverId: driverId || null,
+      ownTripsAccess: Boolean(driverId) && data.get('ownTripsAccess') === 'on'
     };
     if (password) body.password = password;
     const submitButton = modalRoot.querySelector('button[form="userForm"]');
@@ -1605,8 +1792,31 @@ function openRoleModal(roleId = null) {
     toast('Kein Rang verfügbar', 'Unterhalb Ihres Rangs ist kein bearbeitbarer Rollenrang verfügbar.', 'info');
     return;
   }
-  const role = existing || { name: '', permissions: [], rank: Math.max(1, Math.min(899999, maxRank)) };
+  const role = existing || { name: '', permissions: [], rank: Math.max(1, Math.min(899999, maxRank)), bookingRequestPolicy: { allow: [], deny: [] } };
   const currentPermissions = new Set(role.permissions || []);
+  const policy = role.bookingRequestPolicy || { allow: [], deny: [] };
+  const policyRoles = (db.roles || [])
+    .filter((entry) => entry.id !== 'admin' && Number(entry.rank) < Number(currentUser?.roleRank || 0))
+    .sort((a, b) => Number(b.rank) - Number(a.rank) || String(a.name).localeCompare(String(b.name), 'de'));
+  const policyRoleOptions = (selected, name) => policyRoles.map((entry) => `
+    <label class="permission-option">
+      <input type="checkbox" name="${name}" value="${esc(entry.id)}" ${selected.includes(entry.id) ? 'checked' : ''}>
+      <span>${esc(entry.name)} · Rang ${formatNumber(entry.rank)}</span>
+    </label>`).join('');
+  const policyMarkup = policyRoles.length
+    ? `<div class="form-grid">
+        <div class="field">
+          <label>Erlauben</label>
+          <div class="permission-grid">${policyRoleOptions(policy.allow || [], 'policyAllow')}</div>
+          <p class="field-hint">Leere Allow-Liste bedeutet: alle zulässigen unteren Rollen dürfen Anfragen stellen.</p>
+        </div>
+        <div class="field">
+          <label>Verweigern</label>
+          <div class="permission-grid">${policyRoleOptions(policy.deny || [], 'policyDeny')}</div>
+          <p class="field-hint">Verweigern gewinnt immer – auch wenn dieselbe Rolle zusätzlich erlaubt ist.</p>
+        </div>
+      </div>`
+    : `<div class="info-banner">${icon('info')}<div><strong>Keine unteren Rollen verfügbar</strong><p>Die Policy kann erst gepflegt werden, wenn Rollen unterhalb Ihres eigenen Rangs existieren.</p></div></div>`;
   const permissionMarkup = permissionGroups.map((group) => `
     <fieldset class="permission-group">
       <legend>${esc(group.label)}</legend>
@@ -1647,6 +1857,11 @@ function openRoleModal(roleId = null) {
             <div><strong>Ansichtsrechte werden mitgedacht</strong><p>Verwaltungsrechte ergänzen automatisch die notwendigen Ansichtsrechte. Die Administrator-Rolle bleibt immer vollständig und geschützt.</p></div>
           </div>
         </div>
+        <div class="detail-section">
+          <p class="detail-section-title">Buchungsanfragen-Policy</p>
+          <p class="field-hint">Gilt für Personen mit „Buchungsanfragen verwalten“. Nur Rollen strikt unterhalb Ihres Rangs sind zulässig; die eigene Rolle und höhere Ränge bleiben ausgeschlossen.</p>
+          ${policyMarkup}
+        </div>
       </form>`,
     footer: `
       <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
@@ -1661,6 +1876,10 @@ function openRoleModal(roleId = null) {
     const name = String(data.get('name') || '').trim();
     const rank = Number(data.get('rank'));
     const selectedPermissions = data.getAll('permissions').map(String);
+    const bookingRequestPolicy = {
+      allow: data.getAll('policyAllow').map(String),
+      deny: data.getAll('policyDeny').map(String)
+    };
     if (!name) {
       showFormError(form, 'Bitte geben Sie einen Rollennamen an.');
       return;
@@ -1674,7 +1893,7 @@ function openRoleModal(roleId = null) {
     try {
       const state = await apiFetch(existing ? `/api/roles/${encodeURIComponent(existing.id)}` : '/api/roles', {
         method: existing ? 'PATCH' : 'POST',
-        body: { name, permissions: selectedPermissions, rank }
+        body: { name, permissions: selectedPermissions, rank, bookingRequestPolicy }
       });
       applyServerState(state);
       closeModal(false);

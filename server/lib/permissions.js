@@ -17,7 +17,16 @@ const PERMISSION_GROUPS = [
     permissions: [
       { key: 'bookings_view', label: 'Ansehen' },
       { key: 'bookings_create', label: 'Buchen' },
-      { key: 'bookings_manage', label: 'Starten, beenden und stornieren' }
+      { key: 'bookings_manage', label: 'Starten, beenden und stornieren' },
+      { key: 'booking_requests_manage', label: 'Buchungsanfragen verwalten' }
+    ]
+  },
+  {
+    key: 'own_trips',
+    label: 'Meine Fahrten',
+    permissions: [
+      { key: 'own_trips_view', label: 'Eigene Fahrten ansehen' },
+      { key: 'own_trips_request', label: 'Buchung anfragen' }
     ]
   },
   {
@@ -79,12 +88,13 @@ const IMPLICATIONS = {
   maintenance_manage: ['maintenance_view'],
   costs_view: ['vehicles_view'],
   costs_manage: ['costs_view'],
-  drivers_manage: ['drivers_view']
+  drivers_manage: ['drivers_view'],
+  own_trips_request: ['own_trips_view']
 };
 
 const DEFAULT_MANAGER_PERMISSIONS = [
   'vehicles_view', 'vehicles_manage',
-  'bookings_view', 'bookings_create', 'bookings_manage',
+  'bookings_view', 'bookings_create', 'bookings_manage', 'booking_requests_manage',
   'logbook_view', 'logbook_manage', 'logbook_export',
   'maintenance_view', 'maintenance_manage',
   'costs_view', 'costs_manage',
@@ -93,7 +103,7 @@ const DEFAULT_MANAGER_PERMISSIONS = [
   'settings_manage', 'export_data'
 ];
 
-const ROLE_SCHEMA_VERSION = 1;
+const ROLE_SCHEMA_VERSION = 2;
 const RANK_ADMIN = 1000000;
 const RANK_MANAGER = 900000;
 const RANK_CUSTOM_BASE = 100000;
@@ -120,7 +130,8 @@ const OBJECT_TYPES = [
     permissions: [
       'drivers_view', 'drivers_manage',
       'bookings_view', 'bookings_create', 'bookings_manage',
-      'logbook_view', 'logbook_manage'
+      'logbook_view', 'logbook_manage',
+      'own_trips_view', 'own_trips_request'
     ]
   },
   {
@@ -166,7 +177,8 @@ const OBJECT_IMPLICATIONS = {
     bookings_view: ['drivers_view'],
     bookings_create: ['bookings_view'],
     bookings_manage: ['bookings_view'],
-    logbook_manage: ['logbook_view']
+    logbook_manage: ['logbook_view'],
+    own_trips_request: ['own_trips_view']
   },
   booking: {
     bookings_manage: ['bookings_view'],
@@ -197,7 +209,8 @@ const OBJECT_PREREQUISITES = {
     bookings_view: ['drivers_view'],
     bookings_create: ['bookings_view'],
     bookings_manage: ['bookings_view'],
-    logbook_manage: ['logbook_view']
+    logbook_manage: ['logbook_view'],
+    own_trips_request: ['own_trips_view']
   },
   booking: {
     bookings_manage: ['bookings_view'],
@@ -358,25 +371,38 @@ function ensureRoles(db) {
     .run(JSON.stringify(ALL_PERMISSIONS), RANK_ADMIN);
 
   if (schemaVersion < ROLE_SCHEMA_VERSION) {
-    db.prepare('UPDATE roles SET rank = ? WHERE id = ? AND (rank IS NULL OR rank = 0)')
-      .run(RANK_MANAGER, 'manager');
+    if (schemaVersion < 1) {
+      db.prepare('UPDATE roles SET rank = ? WHERE id = ? AND (rank IS NULL OR rank = 0)')
+        .run(RANK_MANAGER, 'manager');
 
-    const customRoles = db.prepare(`
-      SELECT id FROM roles
-      WHERE id NOT IN ('admin', 'manager') AND (rank IS NULL OR rank = 0)
-      ORDER BY created_at, id
-    `).all();
-    const setCustomRank = db.prepare('UPDATE roles SET rank = ? WHERE id = ?');
-    customRoles.forEach((role, index) => setCustomRank.run(RANK_CUSTOM_BASE + index, role.id));
+      const customRoles = db.prepare(`
+        SELECT id FROM roles
+        WHERE id NOT IN ('admin', 'manager') AND (rank IS NULL OR rank = 0)
+        ORDER BY created_at, id
+      `).all();
+      const setCustomRank = db.prepare('UPDATE roles SET rank = ? WHERE id = ?');
+      customRoles.forEach((role, index) => setCustomRank.run(RANK_CUSTOM_BASE + index, role.id));
 
-    const manager = db.prepare('SELECT permissions FROM roles WHERE id = ?').get('manager');
-    if (manager) {
-      const permissions = new Set(parsePermissions(manager.permissions));
-      permissions.add('users_manage');
-      permissions.add('roles_manage');
-      db.prepare('UPDATE roles SET permissions = ? WHERE id = ?')
-        .run(JSON.stringify(normalizePermissions([...permissions])), 'manager');
+      const manager = db.prepare('SELECT permissions FROM roles WHERE id = ?').get('manager');
+      if (manager) {
+        const permissions = new Set(parsePermissions(manager.permissions));
+        permissions.add('users_manage');
+        permissions.add('roles_manage');
+        db.prepare('UPDATE roles SET permissions = ? WHERE id = ?')
+          .run(JSON.stringify(normalizePermissions([...permissions])), 'manager');
+      }
     }
+
+    if (schemaVersion < 2) {
+      const manager = db.prepare('SELECT permissions FROM roles WHERE id = ?').get('manager');
+      if (manager) {
+        const permissions = new Set(parsePermissions(manager.permissions));
+        permissions.add('booking_requests_manage');
+        db.prepare('UPDATE roles SET permissions = ? WHERE id = ?')
+          .run(JSON.stringify(normalizePermissions([...permissions])), 'manager');
+      }
+    }
+
     db.pragma(`user_version = ${ROLE_SCHEMA_VERSION}`);
   }
 }
@@ -494,6 +520,11 @@ function resolvePermission(layers = {}, permission, context = {}) {
     ? layers.rolePermissions
     : new Set(layers.rolePermissions || []);
   if (rolePermissions.has(permission)) return checkPrerequisites(layers, permission, context);
+
+  const driverDefaults = layers.driverDefaultPermissions instanceof Set
+    ? layers.driverDefaultPermissions
+    : new Set(layers.driverDefaultPermissions || []);
+  if (driverDefaults.has(permission)) return checkPrerequisites(layers, permission, context);
   return false;
 }
 
@@ -504,6 +535,15 @@ function effectivePermission(basePermissions, objectPermissions, permission, con
     userPermissionOverrides: { allow: [], deny: [] },
     userObjectPermissions: {}
   }, permission, context);
+}
+
+function driverDefaultPermissions(driver) {
+  const defaults = new Set();
+  if (!driver || !driver.user_id) return defaults;
+  if (Number(driver.own_trips_access) !== 1) return defaults;
+  defaults.add('own_trips_view');
+  defaults.add('own_trips_request');
+  return defaults;
 }
 
 function effectiveGlobalPermissions(layers) {
@@ -561,6 +601,7 @@ module.exports = {
   getUserObjectPermissions,
   effectivePermission,
   effectiveGlobalPermissions,
+  driverDefaultPermissions,
   resolvePermission,
   hasEffectivePermission,
   requirePermission,

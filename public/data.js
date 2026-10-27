@@ -22,6 +22,13 @@ const BOOKING_STATUS = {
   canceled: { label: 'Storniert', badge: 'red' }
 };
 
+const BOOKING_REQUEST_STATUS = {
+  requested: { label: 'Offen', badge: 'amber' },
+  approved: { label: 'Genehmigt', badge: 'green' },
+  rejected: { label: 'Abgelehnt', badge: 'red' },
+  canceled: { label: 'Zurückgezogen', badge: 'gray' }
+};
+
 const CATEGORY_META = {
   'Kraftstoff': { color: '#e2001a', icon: 'fuel' },
   'Laden': { color: '#0f8f8a', icon: 'zap' },
@@ -229,7 +236,9 @@ function sortByDateDesc(items, field = 'start') {
 const PAGES = [
   { route: 'dashboard', title: 'Dashboard', description: 'Überblick über Flotte, Buchungen und Hinweise', icon: 'grid' },
   { route: 'fahrzeuge', title: 'Fahrzeuge', description: 'Flotte, Standorte und Fahrzeugdetails', icon: 'car' },
+  { route: 'meine-fahrten', title: 'Meine Fahrten', description: 'Eigene Buchungen und Buchungsanfragen', icon: 'route' },
   { route: 'buchungen', title: 'Buchungen', description: 'Fahrten planen und verwalten', icon: 'calendar' },
+  { route: 'anfragen', title: 'Buchungsanfragen', description: 'Offene Anfragen prüfen und entscheiden', icon: 'calendar-check' },
   { route: 'fahrtenbuch', title: 'Fahrtenbuch', description: 'Gefahrene Strecken und Kilometer', icon: 'book' },
   { route: 'wartung', title: 'Wartung & TÜV', description: 'Wartungsplan und Hauptuntersuchungen', icon: 'wrench' },
   { route: 'kosten', title: 'Kosten', description: 'Betriebskosten und Auswertungen', icon: 'receipt' },
@@ -240,8 +249,10 @@ const PAGES = [
 ];
 
 const ROUTE_PERMISSIONS = {
+  'meine-fahrten': 'own_trips_view',
   fahrzeuge: 'vehicles_view',
   buchungen: 'bookings_view',
+  anfragen: 'booking_requests_manage',
   fahrtenbuch: 'logbook_view',
   wartung: 'maintenance_view',
   kosten: 'costs_view',
