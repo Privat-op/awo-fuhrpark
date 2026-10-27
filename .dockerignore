@@ -6,5 +6,7 @@ data
 .gitignore
 *.log
 coverage
+superadmin.json
+awo-superadmin.json
 README.md
 Caddyfile.example

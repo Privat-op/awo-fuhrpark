@@ -11,7 +11,7 @@ const session = require('express-session');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 
-const { db, initSchema, DATA_DIR } = require('./db');
+const { db, initSchema, DATA_DIR, UPLOAD_DIR, PROJECT_ROOT } = require('./db');
 const { bootstrap } = require('./bootstrap');
 const SQLiteSessionStore = require('./lib/session-store');
 const { randomToken, safeEqual, ensureCsrfToken, csrfProtection } = require('./lib/security');
@@ -21,6 +21,7 @@ const { migrateAuditSchema } = require('./lib/audit-migration');
 const { getBranding } = require('./lib/branding');
 const { uploadPath } = require('./lib/files');
 const { startAutoAnonymizer } = require('./lib/anonymize');
+const { migrateSuperadminSchema, ensureSuperadmin } = require('./lib/superadmin');
 const {
   ensureRoles,
   getRolePermissions,
@@ -108,7 +109,13 @@ function wantsJson(req) {
 initSchema();
 ensureRoles(db);
 migrateAuditSchema(db);
+migrateSuperadminSchema(db);
 bootstrap(db);
+try {
+  ensureSuperadmin(db, { projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR });
+} catch (error) {
+  console.warn('Warnung: Superadmin-Bootstrap konnte nicht abgeschlossen werden; der Superadmin-Login bleibt gesperrt. Das System läuft weiter.');
+}
 try {
   startAutoAnonymizer();
 } catch (error) {
@@ -248,6 +255,7 @@ function requireAuth(req, res, next) {
   const linkedDriver = db.prepare('SELECT id, user_id, own_trips_access FROM drivers WHERE user_id = ?').get(user.id) || null;
   req.auth = {
     isAdmin: user.role === 'admin',
+    isSuperadmin: user.role === 'superadmin',
     rolePermissions: new Set(getRolePermissions(db, user.role)),
     roleObjectPermissions: getRoleObjectPermissions(db, user.role),
     userPermissionOverrides: getUserPermissionOverrides(db, user.id),

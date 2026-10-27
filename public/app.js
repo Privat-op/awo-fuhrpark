@@ -9,7 +9,7 @@ let csrfToken = '';
 let permissions = new Set();
 let permissionGroups = [];
 let objectTypes = [];
-let capabilities = { isAdmin: false, manageUsers: false, manageRoles: false, manageBookingRequests: false, hasOwnTrips: false, viewCosts: false };
+let capabilities = { isAdmin: false, isSuperadmin: false, manageUsers: false, manageRoles: false, manageBookingRequests: false, manageAdmins: false, canChangePassword: true, hasOwnTrips: false, viewCosts: false };
 let ui = {
   route: 'dashboard',
   vehicleQuery: '',
@@ -34,21 +34,25 @@ let ui = {
 };
 let auditRequestSeq = 0;
 
-const ROLE_LABELS = { admin: 'Administrator', manager: 'Fuhrparkleitung' };
+const ROLE_LABELS = { admin: 'Administrator', manager: 'Fuhrparkleitung', superadmin: 'Superadmin' };
+
+function privileged() {
+  return Boolean(capabilities.isAdmin || capabilities.isSuperadmin);
+}
 
 function can(permission) {
   if (!permission) return true;
-  if (capabilities.isAdmin || permissions.has(permission)) return true;
+  if (privileged() || permissions.has(permission)) return true;
   return Boolean(db?.access?.modules?.[permission]);
 }
 
 function canBase(permission) {
   if (!permission) return true;
-  return Boolean(capabilities.isAdmin || permissions.has(permission));
+  return Boolean(privileged() || permissions.has(permission));
 }
 
 function canOn(type, id, permission) {
-  if (capabilities.isAdmin) return true;
+  if (privileged()) return true;
   return Boolean(db?.access?.objects?.[type]?.[id]?.[permission]);
 }
 
@@ -77,7 +81,7 @@ function roleRankOf(roleIdOrRole) {
 }
 
 function roleWithinGrant(role) {
-  if (!role || capabilities.isAdmin) return true;
+  if (!role || privileged()) return true;
   if ((role.permissions || []).some((permission) => !permissions.has(permission))) return false;
   for (const entries of Object.values(role.objectPermissions || {})) {
     for (const rule of Object.values(entries || {})) {
@@ -88,7 +92,7 @@ function roleWithinGrant(role) {
 }
 
 function userWithinGrant(user) {
-  if (!user || capabilities.isAdmin) return true;
+  if (!user || privileged()) return true;
   if ((user.permissionOverrides?.allow || []).some((permission) => !permissions.has(permission))) return false;
   for (const entries of Object.values(user.objectPermissions || {})) {
     for (const rule of Object.values(entries || {})) {
@@ -100,7 +104,8 @@ function userWithinGrant(user) {
 
 function canManageUser(user) {
   if (!user || !can('users_manage') || user.id === currentUser?.id) return false;
-  if (user.role === 'admin') return false;
+  if (user.id === 'superadmin' || user.role === 'superadmin') return false;
+  if (user.role === 'admin' && !capabilities.isSuperadmin) return false;
   const targetRank = Number(user.roleRank ?? roleRankOf(user.role));
   if (targetRank >= Number(currentUser?.roleRank || 0)) return false;
   const role = db?.roles?.find((entry) => entry.id === user.role);
@@ -108,7 +113,7 @@ function canManageUser(user) {
 }
 
 function canManageRole(role) {
-  if (!role || !can('roles_manage') || role.id === 'admin') return false;
+  if (!role || !can('roles_manage') || role.id === 'admin' || role.id === 'superadmin') return false;
   if (Number(role.rank) >= Number(currentUser?.roleRank || 0)) return false;
   return roleWithinGrant(role);
 }
@@ -332,9 +337,12 @@ async function refreshSession() {
   objectTypes = Array.isArray(session.objectTypes) ? session.objectTypes : [];
   capabilities = {
     isAdmin: Boolean(session.capabilities?.isAdmin),
+    isSuperadmin: Boolean(session.capabilities?.isSuperadmin),
     manageUsers: Boolean(session.capabilities?.manageUsers),
     manageRoles: Boolean(session.capabilities?.manageRoles),
     manageBookingRequests: Boolean(session.capabilities?.manageBookingRequests),
+    manageAdmins: Boolean(session.capabilities?.manageAdmins),
+    canChangePassword: session.capabilities?.canChangePassword !== false,
     hasOwnTrips: Boolean(session.capabilities?.hasOwnTrips),
     viewCosts: Boolean(session.capabilities?.viewCosts)
   };

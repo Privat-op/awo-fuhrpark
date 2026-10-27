@@ -454,14 +454,14 @@ function rolePermissionsWithin(db, roleId, allowedPermissions) {
 }
 
 function getRolePermissions(db, roleId) {
-  if (roleId === 'admin') return [...ALL_PERMISSIONS];
+  if (roleId === 'admin' || roleId === 'superadmin') return [...ALL_PERMISSIONS];
   const role = db.prepare('SELECT permissions FROM roles WHERE id = ?').get(roleId);
   if (!role) return [];
   return parsePermissions(role.permissions);
 }
 
 function getRoleObjectPermissions(db, roleId) {
-  if (roleId === 'admin') return {};
+  if (roleId === 'admin' || roleId === 'superadmin') return {};
   const role = db.prepare('SELECT object_permissions FROM roles WHERE id = ?').get(roleId);
   if (!role) return {};
   return parseObjectPermissions(role.object_permissions);
@@ -524,7 +524,7 @@ function checkPrerequisites(layers, permission, context) {
 }
 
 function resolvePermission(layers = {}, permission, context = {}) {
-  if (layers.isAdmin) return true;
+  if (layers.isAdmin || layers.isSuperadmin) return true;
   if (!ALL_PERMISSIONS.includes(permission)) return false;
   const refs = getContextRefs(context);
 
@@ -587,7 +587,7 @@ function requirePermission(permission) {
 }
 
 function hasEffectivePermission(req, permission, context = {}) {
-  if (req.user?.role === 'admin' || req.auth?.isAdmin) return true;
+  if (req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.auth?.isAdmin || req.auth?.isSuperadmin) return true;
   const layers = req.auth || {
     rolePermissions: req.permissions || new Set(),
     roleObjectPermissions: req.objectPermissions || {},

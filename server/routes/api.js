@@ -45,6 +45,7 @@ const {
   rolePermissionsWithin,
   publicObjectTypes
 } = require('../lib/permissions');
+const { SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID } = require('../lib/superadmin');
 
 const router = express.Router();
 
@@ -88,8 +89,16 @@ function getCost(id) {
 
 const ADMIN_ROLE_ID = 'admin';
 
+function isSuperadminActor(req) {
+  return req.user?.role === SUPERADMIN_ROLE_ID;
+}
+
+function isPrivilegedActor(req) {
+  return req.user?.role === ADMIN_ROLE_ID || isSuperadminActor(req);
+}
+
 function requireAdmin(req, _res, next) {
-  if (req.user.role !== 'admin') {
+  if (!isPrivilegedActor(req)) {
     return next(new HttpError(403, 'Diese Aktion ist Administrator:innen vorbehalten.'));
   }
   return next();
@@ -112,15 +121,18 @@ function actorRank(req) {
 }
 
 function assertRoleGrantable(req, roleId) {
-  if (roleId === ADMIN_ROLE_ID) {
-    throw new HttpError(403, 'Die Administrator-Rolle kann nicht über die Benutzerverwaltung vergeben werden.');
+  if (roleId === SUPERADMIN_ROLE_ID) {
+    throw new HttpError(403, 'Die Superadmin-Rolle kann nicht über die Benutzerverwaltung vergeben werden.');
+  }
+  if (roleId === ADMIN_ROLE_ID && !isSuperadminActor(req)) {
+    throw new HttpError(403, 'Administratorkonten können nur durch den Superadmin angelegt oder verwaltet werden.');
   }
   const role = db.prepare('SELECT id, name, rank FROM roles WHERE id = ?').get(roleId);
   if (!role) throw new HttpError(400, 'Die ausgewählte Rolle existiert nicht.');
   if ((Number(role.rank) || 0) >= actorRank(req)) {
     throw new HttpError(403, 'Rollen können nur unterhalb des eigenen Rangs vergeben werden.');
   }
-  if (req.user.role !== 'admin' && !rolePermissionsWithin(db, roleId, req.permissions)) {
+  if (!isPrivilegedActor(req) && !rolePermissionsWithin(db, roleId, req.permissions)) {
     throw new HttpError(403, 'Diese Rolle enthält Rechte, die Ihre eigene Rolle nicht vergeben darf.');
   }
   return role;
@@ -130,26 +142,32 @@ function assertRoleManageable(req, role) {
   if (role.id === ADMIN_ROLE_ID) {
     throw new HttpError(409, 'Die Administrator-Rolle ist geschützt und kann nicht bearbeitet werden.');
   }
+  if (role.id === SUPERADMIN_ROLE_ID) {
+    throw new HttpError(409, 'Die Superadmin-Rolle ist systemgeschützt und kann ausschließlich über die Superadmin-Datei verwaltet werden.');
+  }
   if ((Number(role.rank) || 0) >= actorRank(req)) {
     throw new HttpError(403, 'Rollen können nur unterhalb des eigenen Rangs verwaltet werden.');
   }
-  if (req.user.role !== 'admin' && !rolePermissionsWithin(db, role.id, req.permissions)) {
+  if (!isPrivilegedActor(req) && !rolePermissionsWithin(db, role.id, req.permissions)) {
     throw new HttpError(403, 'Diese Rolle enthält Rechte, die Ihre eigene Rolle nicht verwalten darf.');
   }
 }
 
 function assertUserManageable(req, user) {
+  if (user.id === SUPERADMIN_USER_ID || user.role === SUPERADMIN_ROLE_ID) {
+    throw new HttpError(403, 'Das Superadmin-Konto ist systemgeschützt und kann nicht über die Benutzerverwaltung bearbeitet werden.');
+  }
   if (user.id === req.user.id) {
     throw new HttpError(400, 'Das eigene Konto kann nicht über die Benutzerverwaltung bearbeitet werden.');
   }
-  if (user.role === ADMIN_ROLE_ID) {
+  if (user.role === ADMIN_ROLE_ID && !isSuperadminActor(req)) {
     throw new HttpError(403, 'Administratorkonten können nur durch den Superadmin verwaltet werden.');
   }
   const targetRank = getRoleRank(db, user.role);
   if (targetRank >= actorRank(req)) {
     throw new HttpError(403, 'Benutzerkonten können nur unterhalb des eigenen Rangs verwaltet werden.');
   }
-  if (req.user.role !== 'admin') {
+  if (!isPrivilegedActor(req)) {
     if (!rolePermissionsWithin(db, user.role, req.permissions)) {
       throw new HttpError(403, 'Diese Rolle enthält Rechte, die Ihre eigene Rolle nicht verwalten darf.');
     }
@@ -169,7 +187,7 @@ function assertUserManageable(req, user) {
 }
 
 function assertGrantCeiling(req, permissions, objectPermissions = null) {
-  if (req.user.role === 'admin') return;
+  if (isPrivilegedActor(req)) return;
   for (const permission of permissions || []) {
     if (!req.permissions.has(permission)) {
       throw new HttpError(403, 'Es können nur Rechte der eigenen Rolle weitergegeben werden.');
@@ -272,23 +290,29 @@ function mapSessionUser(user) {
    ========================================================= */
 router.get('/session', (req, res) => {
   const isAdmin = req.user.role === 'admin';
+  const isSuperadmin = req.user.role === SUPERADMIN_ROLE_ID;
+  const isPrivileged = isAdmin || isSuperadmin;
   res.json({
     user: {
       ...mapSessionUser(req.user),
       roleName: req.roleName,
       roleRank: getRoleRank(db, req.user.role),
-      isAdmin
+      isAdmin,
+      isSuperadmin
     },
     csrfToken: req.session.csrfToken,
     permissions: [...req.permissions],
     permissionGroups: PERMISSION_GROUPS,
     objectTypes: publicObjectTypes(),
     capabilities: {
-      manageUsers: isAdmin || req.permissions.has('users_manage'),
-      manageRoles: isAdmin || req.permissions.has('roles_manage'),
-      manageBookingRequests: isAdmin || req.permissions.has('booking_requests_manage'),
+      manageUsers: isPrivileged || req.permissions.has('users_manage'),
+      manageRoles: isPrivileged || req.permissions.has('roles_manage'),
+      manageBookingRequests: isPrivileged || req.permissions.has('booking_requests_manage'),
+      manageAdmins: isSuperadmin,
       hasOwnTrips: Boolean(req.auth?.linkedDriverId),
       isAdmin,
+      isSuperadmin,
+      canChangePassword: !isSuperadmin,
       viewCosts: req.permissions.has('costs_view')
     }
   });
@@ -378,6 +402,9 @@ router.post('/auth/logout', (req, res) => {
 
 router.post('/auth/password', async (req, res, next) => {
   try {
+    if (isSuperadminActor(req)) {
+      throw new HttpError(403, 'Das Superadmin-Passwort kann ausschließlich über die Superadmin-Datei und einen Neustart geändert werden.');
+    }
     const currentPassword = String(req.body?.currentPassword || '');
     const newPassword = passwordValue(req.body?.newPassword);
     const valid = await bcrypt.compare(currentPassword, req.user.password_hash);
@@ -1274,6 +1301,9 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
     const email = emailValue(body.email, 'E-Mail');
     const name = requiredString(body.name, 'Name', { max: 120 });
     const role = assertRoleGrantable(req, requiredString(body.role, 'Rolle', { max: 120 })).id;
+    if (existing.role === ADMIN_ROLE_ID && role !== ADMIN_ROLE_ID) {
+      throw new HttpError(409, 'Bestehende Administratorkonten können nicht herabgestuft werden.');
+    }
     const active = booleanValue(body.active, Boolean(existing.active));
     assertLastActiveAdminChange(existing, role, active);
     const duplicate = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?').get(email, existing.id);
@@ -1385,6 +1415,9 @@ router.post('/users/:id/anonymize', requirePermission('users_manage'), (req, res
     const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
     if (!existing) throw new HttpError(404, 'Benutzerkonto wurde nicht gefunden.');
     assertUserManageable(req, existing);
+    if (existing.role === ADMIN_ROLE_ID) {
+      throw new HttpError(409, 'Administratorkonten können nicht anonymisiert werden.');
+    }
     anonymizeUser(req.params.id, { actorId: req.user.id, reason: 'manual' });
     sendState(req, res);
   } catch (error) {

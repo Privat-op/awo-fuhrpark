@@ -15,7 +15,8 @@ FROM node:22.18.0-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     TZ=Europe/Berlin \
     PORT=3000 \
-    DATA_DIR=/app/data
+    DATA_DIR=/app/data \
+    SUPERADMIN_FILE=/run/secrets/awo-superadmin.json
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates tzdata \
