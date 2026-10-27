@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 function mapVehicle(row) {
   const version = encodeURIComponent(row.updated_at || '');
@@ -365,6 +365,7 @@ function getState(db, user, auth = null) {
     SELECT id, name, permissions, object_permissions, booking_request_policy, is_system, rank, created_at, updated_at
     FROM roles ORDER BY rank DESC, is_system DESC, name
   `).all();
+  const visibleRoleRows = roleRows.filter((row) => row.id !== SUPERADMIN_ROLE_ID);
   const roleRankById = new Map(roleRows.map((row) => [row.id, Number(row.rank) || 0]));
   const userCountByRole = new Map(
     db.prepare('SELECT role, COUNT(*) AS count FROM users WHERE id <> ? AND role <> ? GROUP BY role')
@@ -397,10 +398,10 @@ function getState(db, user, auth = null) {
       SELECT id, email, name, role, permission_overrides, object_permissions, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
       FROM users WHERE id <> ? AND role <> ? ORDER BY created_at, name
     `).all(SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID).map(mapStateUser);
-    state.roles = roleRows.map(mapRoleState);
+    state.roles = visibleRoleRows.map(mapRoleState);
   } else if (canManageUsers || canManageRoles) {
     const actorRank = roleRankById.get(user.role) || 0;
-    state.roles = roleRows
+    state.roles = visibleRoleRows
       .filter((role) => role.id === user.role || (Number(role.rank) || 0) < actorRank)
       .map(mapRoleState);
     if (canManageUsers) {
@@ -435,3 +436,4 @@ module.exports = {
   mapCost,
   mapUser
 };
+

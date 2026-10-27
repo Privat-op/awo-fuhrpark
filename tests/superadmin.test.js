@@ -300,14 +300,12 @@ test('Bootstrap: Datei legt aktiven Superadmin an, Migration ist idempotent, Log
   assert.equal(superState.status, 200);
   assert.equal(superState.data.users.some((entry) => entry.id === 'superadmin'), false);
   assert.equal(superState.data.users.some((entry) => /superadmin-one/.test(entry.email)), false);
-  assert.ok(superState.data.roles.some((entry) => entry.id === 'superadmin' && entry.rank === 2000000 && entry.isSystem));
-  const superRoleState = superState.data.roles.find((entry) => entry.id === 'superadmin');
-  assert.equal(superRoleState.userCount, 0, 'Superadmin darf in Rollenzählungen nicht als Benutzer auftauchen');
+  assert.equal(superState.data.roles.some((entry) => entry.id === 'superadmin'), false, 'Superadmin-Rolle darf nicht im State erscheinen');
 
   const adminState = await apiGet('admin', '/api/state');
   assert.equal(adminState.status, 200);
   assert.equal(adminState.data.users.some((entry) => entry.id === 'superadmin'), false);
-  assert.ok(adminState.data.roles.some((entry) => entry.id === 'superadmin' && entry.isSystem));
+  assert.equal(adminState.data.roles.some((entry) => entry.id === 'superadmin'), false, 'Admin darf Superadmin-Rolle nicht sehen');
 
   const created = auditRows('superadmin_created');
   assert.equal(created.length, 1);
@@ -555,7 +553,7 @@ test('Audit zeigt Superadmin mit Sonderrolle nur für berechtigte All-/Admin-Sic
   assert.equal(exported.users.some((entry) => entry.id === 'superadmin'), false);
   assert.equal(exported.users.some((entry) => entry.email === SUPER_ONE.email), false);
   assert.doesNotMatch(JSON.stringify(exported.users), /\$2[aby]\$|SUPER_ONE/);
-  assert.ok(exported.roles.some((entry) => entry.id === 'superadmin' && entry.rank === 2000000));
+  assert.equal(exported.roles.some((entry) => entry.id === 'superadmin'), false, 'Export darf Superadmin-Rolle nicht enthalten');
 
   const superadminAudits = db.prepare(`
     SELECT * FROM audit_logs
