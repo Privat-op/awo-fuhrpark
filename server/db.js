@@ -64,6 +64,9 @@ function initSchema() {
   if (roleColumns.length && !roleColumns.some((column) => column.name === 'object_permissions')) {
     db.exec("ALTER TABLE roles ADD COLUMN object_permissions TEXT NOT NULL DEFAULT '{}'");
   }
+  if (roleColumns.length && !roleColumns.some((column) => column.name === 'rank')) {
+    db.exec('ALTER TABLE roles ADD COLUMN rank INTEGER NOT NULL DEFAULT 0');
+  }
 
   const userColumns = db.prepare('PRAGMA table_info(users)').all();
   if (!userColumns.some((column) => column.name === 'anonymized_at')) {

@@ -1233,12 +1233,16 @@ function openPasswordModal() {
    Benutzerverwaltung
    ========================================================= */
 function openAnonymizeUserConfirm(userId) {
-  if (!capabilities.isAdmin) {
-    toast('Keine Berechtigung', 'Nur Administratoren dürfen Benutzerkonten anonymisieren.', 'error');
+  if (!can('users_manage')) {
+    toast('Keine Berechtigung', 'Für das Anonymisieren fehlt die Berechtigung „Benutzer verwalten“.', 'error');
     return;
   }
   const user = db.users?.find((entry) => entry.id === userId);
   if (!user) return;
+  if (!canManageUser(user)) {
+    toast('Nicht bearbeitbar', 'Dieses Konto liegt nicht in Ihrem verwaltbaren Rangbereich.', 'error');
+    return;
+  }
   if (user.active) {
     toast('Konto ist aktiv', 'Ein Konto muss zuerst deaktiviert werden.', 'info');
     return;
@@ -1266,8 +1270,8 @@ function openAnonymizeUserConfirm(userId) {
 }
 
 function openUserModal(userId = null) {
-  if (!capabilities.isAdmin) {
-    toast('Keine Berechtigung', 'Nur Administratoren dürfen Benutzer verwalten.', 'error');
+  if (!can('users_manage')) {
+    toast('Keine Berechtigung', 'Für die Benutzerverwaltung fehlt die Berechtigung „Benutzer verwalten“.', 'error');
     return;
   }
   const existing = userId ? db.users.find((user) => user.id === userId) : null;
@@ -1275,13 +1279,23 @@ function openUserModal(userId = null) {
     toast('Konto anonymisiert', 'Anonymisierte Konten können nicht mehr bearbeitet werden.', 'info');
     return;
   }
-  const roles = db.roles?.length ? db.roles : [
-    { id: 'admin', name: 'Administrator' },
-    { id: 'manager', name: 'Fuhrparkleitung' }
-  ];
-  const defaultRole = roles.find((role) => role.id === 'manager')?.id || roles[0]?.id || 'manager';
+  if (existing && !canManageUser(existing)) {
+    toast('Nicht bearbeitbar', 'Dieses Konto liegt nicht in Ihrem verwaltbaren Rangbereich.', 'error');
+    return;
+  }
+  const actorRank = Number(currentUser?.roleRank || 0);
+  const roles = (db.roles || []).filter((role) =>
+    Number(role.rank) < actorRank && roleWithinGrant(role)
+  );
+  if (!roles.length) {
+    toast('Keine vergebbare Rolle', 'Es existiert keine Rolle unterhalb Ihres Rangs, die Sie vergeben dürfen.', 'error');
+    return;
+  }
+  const defaultRole = existing?.role && roles.some((role) => role.id === existing.role)
+    ? existing.role
+    : roles.find((role) => role.id === 'manager')?.id || roles[0].id;
   const user = existing || { name: '', email: '', role: defaultRole, active: true };
-  const roleOptions = roles.map((role) => `<option value="${esc(role.id)}" ${user.role === role.id ? 'selected' : ''}>${esc(role.name)}</option>`).join('');
+  const roleOptions = roles.map((role) => `<option value="${esc(role.id)}" ${user.role === role.id ? 'selected' : ''}>${esc(role.name)} · Rang ${formatNumber(role.rank)}</option>`).join('');
   showModal({
     title: existing ? 'Benutzer bearbeiten' : 'Benutzer anlegen',
     eyebrow: 'Zugänge',
@@ -1301,7 +1315,7 @@ function openUserModal(userId = null) {
           <div class="field">
             <label for="accountRole">Rolle</label>
             <select class="select" id="accountRole" name="role">${roleOptions}</select>
-            <p class="field-hint">Berechtigungen werden unter „Rollen &amp; Rechte“ verwaltet.</p>
+            <p class="field-hint">Nur Rollen unterhalb Ihres Rangs und innerhalb Ihres Grant Ceilings sind auswählbar.</p>
           </div>
           <div class="field">
             <label for="accountPassword">${existing ? 'Neues Passwort' : 'Passwort'} ${existing ? '<span class="optional">optional</span>' : '<span class="optional">*</span>'}</label>
@@ -1348,7 +1362,7 @@ function openUserModal(userId = null) {
       await refreshSession();
       applyServerState(state);
       closeModal(false);
-      if (ui.route === 'benutzer' && !capabilities.isAdmin) {
+      if (ui.route === 'benutzer' && !can('users_manage')) {
         location.hash = '#/dashboard';
       } else {
         renderCurrentView();
@@ -1366,8 +1380,8 @@ function openUserModal(userId = null) {
    Benutzer-Ausnahmen
    ========================================================= */
 function openUserPermissionModal(userId) {
-  if (!capabilities.isAdmin) {
-    toast('Keine Berechtigung', 'Nur Administratoren dürfen Benutzer-Ausnahmen verwalten.', 'error');
+  if (!can('users_manage')) {
+    toast('Keine Berechtigung', 'Für Benutzer-Ausnahmen fehlt die Berechtigung „Benutzer verwalten“.', 'error');
     return;
   }
   const user = db.users?.find((entry) => entry.id === userId);
@@ -1377,6 +1391,10 @@ function openUserPermissionModal(userId) {
   }
   if (user.anonymizedAt) {
     toast('Konto anonymisiert', 'Anonymisierte Konten können nicht mehr bearbeitet werden.', 'info');
+    return;
+  }
+  if (!canManageUser(user)) {
+    toast('Nicht bearbeitbar', 'Dieses Konto liegt nicht in Ihrem verwaltbaren Rangbereich.', 'error');
     return;
   }
   if (user.role === 'admin') {
@@ -1419,9 +1437,10 @@ function openUserPermissionModal(userId) {
       <legend>${esc(group.label)}</legend>
       ${group.permissions.map((permission) => {
         const value = currentGlobal.allow.has(permission.key) ? 'allow' : currentGlobal.deny.has(permission.key) ? 'deny' : 'standard';
+        const grantable = capabilities.isAdmin || permissions.has(permission.key);
         return `<label class="object-permission">
           <span>${esc(permission.label)}</span>
-          <select class="select select-sm" data-user-permission="${permission.key}">
+          <select class="select select-sm" data-user-permission="${permission.key}" ${grantable ? '' : 'disabled title="Recht der eigenen Rolle nicht vorhanden"'}>
             <option value="standard" ${value === 'standard' ? 'selected' : ''}>Standard</option>
             <option value="allow" ${value === 'allow' ? 'selected' : ''}>Erlauben</option>
             <option value="deny" ${value === 'deny' ? 'selected' : ''}>Verweigern</option>
@@ -1447,9 +1466,10 @@ function openUserPermissionModal(userId) {
             <div class="object-rule-grid">
               ${type.permissions.map((permission) => {
                 const value = rule.allow.includes(permission) ? 'allow' : rule.deny.includes(permission) ? 'deny' : 'standard';
+                const grantable = capabilities.isAdmin || permissions.has(permission);
                 return `<label class="object-permission">
                   <span>${esc(permissionLabels.get(permission) || permission)}</span>
-                  <select class="select select-sm" data-user-object-type="${type.key}" data-user-object-id="${item.id}" data-user-permission-key="${permission}">
+                  <select class="select select-sm" data-user-object-type="${type.key}" data-user-object-id="${item.id}" data-user-permission-key="${permission}" ${grantable ? '' : 'disabled title="Recht der eigenen Rolle nicht vorhanden"'}>
                     <option value="standard" ${value === 'standard' ? 'selected' : ''}>Standard</option>
                     <option value="allow" ${value === 'allow' ? 'selected' : ''}>Erlauben</option>
                     <option value="deny" ${value === 'deny' ? 'selected' : ''}>Verweigern</option>
@@ -1483,7 +1503,7 @@ function openUserPermissionModal(userId) {
         ${formAlertMarkup()}
         <div class="info-banner">
           ${icon('shield')}
-          <div><strong>Persönliche Regel hat Vorrang</strong><p>Benutzer-Ausnahmen überschreiben die Rollenrechte und die Objekt-Ausnahmen der Rolle. Innerhalb der persönlichen Regeln gilt: Objekt vor global, Erlauben/Verweigern vor Standard. Bei Konflikten gewinnt die Verweigerung.</p></div>
+          <div><strong>Persönliche Regel hat Vorrang</strong><p>Benutzer-Ausnahmen überschreiben die Rollenrechte und die Objekt-Ausnahmen der Rolle. Innerhalb der persönlichen Regeln gilt: Objekt vor global, Erlauben/Verweigern vor Standard. Bei Konflikten gewinnt die Verweigerung. Ausgegraute Rechte gehören nicht zum Grant Ceiling Ihrer eigenen Rolle.</p></div>
         </div>
         <div class="detail-section">
           <p class="detail-section-title">Modul-Ausnahmen</p>
@@ -1558,8 +1578,8 @@ function openUserPermissionModal(userId) {
    Rollen & Rechte
    ========================================================= */
 function openRoleModal(roleId = null) {
-  if (!capabilities.isAdmin) {
-    toast('Keine Berechtigung', 'Nur Administratoren dürfen Rollen verwalten.', 'error');
+  if (!can('roles_manage')) {
+    toast('Keine Berechtigung', 'Für die Rollenverwaltung fehlt die Berechtigung „Rollen verwalten“.', 'error');
     return;
   }
   const existing = roleId ? db.roles?.find((role) => role.id === roleId) : null;
@@ -1571,21 +1591,33 @@ function openRoleModal(roleId = null) {
     toast('Geschützte Rolle', 'Die Administrator-Rolle kann nicht bearbeitet werden.', 'info');
     return;
   }
+  if (existing && !canManageRole(existing)) {
+    toast('Nicht bearbeitbar', 'Diese Rolle liegt nicht in Ihrem verwaltbaren Rangbereich oder enthält Rechte außerhalb Ihres Grant Ceilings.', 'error');
+    return;
+  }
   if (!permissionGroups.length) {
     toast('Berechtigungen nicht geladen', 'Bitte laden Sie die Seite neu.', 'error');
     return;
   }
 
-  const role = existing || { name: '', permissions: [] };
+  const maxRank = Number(currentUser?.roleRank || 0) - 1;
+  if (maxRank < 1) {
+    toast('Kein Rang verfügbar', 'Unterhalb Ihres Rangs ist kein bearbeitbarer Rollenrang verfügbar.', 'info');
+    return;
+  }
+  const role = existing || { name: '', permissions: [], rank: Math.max(1, Math.min(899999, maxRank)) };
   const currentPermissions = new Set(role.permissions || []);
   const permissionMarkup = permissionGroups.map((group) => `
     <fieldset class="permission-group">
       <legend>${esc(group.label)}</legend>
-      ${group.permissions.map((permission) => `
+      ${group.permissions.map((permission) => {
+        const grantable = capabilities.isAdmin || permissions.has(permission.key);
+        return `
         <label class="permission-option">
-          <input type="checkbox" name="permissions" value="${esc(permission.key)}" ${currentPermissions.has(permission.key) ? 'checked' : ''}>
+          <input type="checkbox" name="permissions" value="${esc(permission.key)}" ${currentPermissions.has(permission.key) ? 'checked' : ''} ${grantable ? '' : 'disabled title="Recht der eigenen Rolle nicht vorhanden"'}>
           <span>${esc(permission.label)}</span>
-        </label>`).join('')}
+        </label>`;
+      }).join('')}
     </fieldset>`).join('');
 
   showModal({
@@ -1600,6 +1632,15 @@ function openRoleModal(roleId = null) {
           <div class="field field-full">
             <label for="roleName">Rollenname <span class="optional">*</span></label>
             <input class="input" id="roleName" name="name" type="text" value="${esc(role.name)}" required maxlength="120" placeholder="z. B. Buchungsteam">
+          </div>
+          <div class="field">
+            <label for="roleRank">Rang <span class="optional">*</span></label>
+            <input class="input" id="roleRank" name="rank" type="number" min="1" max="${maxRank}" step="1" value="${esc(String(role.rank ?? 1))}" required>
+            <p class="field-hint">Muss unterhalb Ihres eigenen Rangs (${formatNumber(currentUser?.roleRank || 0)}) liegen. Höher = mehr Rechte.</p>
+          </div>
+          <div class="info-banner">
+            ${icon('shield')}
+            <div><strong>Rang und Grant Ceiling</strong><p>Die neue Rolle muss strikt unter Ihrem Rang liegen. Ausgegraute Rechte gehören nicht zum Grant Ceiling Ihrer eigenen Rolle und können nicht vergeben werden.</p></div>
           </div>
         </div>
         <div class="detail-section">
@@ -1622,9 +1663,14 @@ function openRoleModal(roleId = null) {
     clearFormError(form);
     const data = new FormData(form);
     const name = String(data.get('name') || '').trim();
+    const rank = Number(data.get('rank'));
     const selectedPermissions = data.getAll('permissions').map(String);
     if (!name) {
       showFormError(form, 'Bitte geben Sie einen Rollennamen an.');
+      return;
+    }
+    if (!Number.isInteger(rank) || rank < 1 || rank > maxRank) {
+      showFormError(form, `Der Rang muss eine ganze Zahl zwischen 1 und ${maxRank} sein.`);
       return;
     }
     const submitButton = modalRoot.querySelector('button[form="roleForm"]');
@@ -1632,7 +1678,7 @@ function openRoleModal(roleId = null) {
     try {
       const state = await apiFetch(existing ? `/api/roles/${encodeURIComponent(existing.id)}` : '/api/roles', {
         method: existing ? 'PATCH' : 'POST',
-        body: { name, permissions: selectedPermissions }
+        body: { name, permissions: selectedPermissions, rank }
       });
       applyServerState(state);
       closeModal(false);
@@ -1647,8 +1693,8 @@ function openRoleModal(roleId = null) {
 }
 
 function openRoleObjectModal(roleId) {
-  if (!capabilities.isAdmin) {
-    toast('Keine Berechtigung', 'Nur Administratoren dürfen Objekt-Ausnahmen verwalten.', 'error');
+  if (!can('roles_manage')) {
+    toast('Keine Berechtigung', 'Für Objekt-Ausnahmen fehlt die Berechtigung „Rollen verwalten“.', 'error');
     return;
   }
   const role = db.roles?.find((entry) => entry.id === roleId);
@@ -1658,6 +1704,10 @@ function openRoleObjectModal(roleId) {
   }
   if (role.id === 'admin') {
     toast('Geschützte Rolle', 'Die Administrator-Rolle kann nicht bearbeitet werden.', 'info');
+    return;
+  }
+  if (!canManageRole(role)) {
+    toast('Nicht bearbeitbar', 'Diese Rolle liegt nicht in Ihrem verwaltbaren Rangbereich oder enthält Rechte außerhalb Ihres Grant Ceilings.', 'error');
     return;
   }
   if (!objectTypes.length) {
@@ -1707,9 +1757,10 @@ function openRoleObjectModal(roleId) {
             <div class="object-rule-grid">
               ${type.permissions.map((permission) => {
                 const value = rule.allow.includes(permission) ? 'allow' : rule.deny.includes(permission) ? 'deny' : 'standard';
+                const grantable = capabilities.isAdmin || permissions.has(permission);
                 return `<label class="object-permission">
                   <span>${esc(permissionLabels.get(permission) || permission)}</span>
-                  <select class="select select-sm" data-object-type="${type.key}" data-object-id="${item.id}" data-permission="${permission}">
+                  <select class="select select-sm" data-object-type="${type.key}" data-object-id="${item.id}" data-permission="${permission}" ${grantable ? '' : 'disabled title="Recht der eigenen Rolle nicht vorhanden"'}>
                     <option value="standard" ${value === 'standard' ? 'selected' : ''}>Standard</option>
                     <option value="allow" ${value === 'allow' ? 'selected' : ''}>Erlauben</option>
                     <option value="deny" ${value === 'deny' ? 'selected' : ''}>Verweigern</option>
@@ -1743,7 +1794,7 @@ function openRoleObjectModal(roleId) {
         ${formAlertMarkup()}
         <div class="info-banner">
           ${icon('shield')}
-          <div><strong>Objekt-Regel hat Vorrang</strong><p>„Erlauben“ überschreibt ein fehlendes Rollenrecht für genau dieses Objekt. „Verweigern“ entzieht das Recht für dieses Objekt. Bei Konflikten gewinnt die Verweigerung. „Standard“ bedeutet: Es gilt das Rollenrecht.</p></div>
+          <div><strong>Objekt-Regel hat Vorrang</strong><p>„Erlauben“ überschreibt ein fehlendes Rollenrecht für genau dieses Objekt. „Verweigern“ entzieht das Recht für dieses Objekt. Bei Konflikten gewinnt die Verweigerung. „Standard“ bedeutet: Es gilt das Rollenrecht. Ausgegraute Rechte gehören nicht zum Grant Ceiling Ihrer eigenen Rolle.</p></div>
         </div>
         <div class="object-type-list">${objectSections}</div>
       </form>`,
@@ -1802,12 +1853,16 @@ function openRoleObjectModal(roleId) {
 }
 
 function openDeleteRoleConfirm(roleId) {
-  if (!capabilities.isAdmin) {
-    toast('Keine Berechtigung', 'Nur Administratoren dürfen Rollen löschen.', 'error');
+  if (!can('roles_manage')) {
+    toast('Keine Berechtigung', 'Für das Löschen von Rollen fehlt die Berechtigung „Rollen verwalten“.', 'error');
     return;
   }
   const role = db.roles?.find((entry) => entry.id === roleId);
   if (!role) return;
+  if (!canManageRole(role)) {
+    toast('Nicht bearbeitbar', 'Diese Rolle liegt nicht in Ihrem verwaltbaren Rangbereich oder enthält Rechte außerhalb Ihres Grant Ceilings.', 'error');
+    return;
+  }
   if (role.isSystem) {
     toast('Systemrolle', 'Systemrollen können nicht gelöscht werden.', 'info');
     return;

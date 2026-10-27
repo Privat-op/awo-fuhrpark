@@ -9,7 +9,7 @@ let csrfToken = '';
 let permissions = new Set();
 let permissionGroups = [];
 let objectTypes = [];
-let capabilities = { isAdmin: false, manageUsers: false, viewCosts: false };
+let capabilities = { isAdmin: false, manageUsers: false, manageRoles: false, viewCosts: false };
 let ui = {
   route: 'dashboard',
   vehicleQuery: '',
@@ -49,9 +49,52 @@ function roleLabel(roleId) {
 }
 
 function routeAllowed(route) {
-  if (route === 'benutzer' || route === 'rollen') return Boolean(capabilities.isAdmin);
   const permission = ROUTE_PERMISSIONS[route];
   return !permission || can(permission);
+}
+
+function roleRankOf(roleIdOrRole) {
+  const role = typeof roleIdOrRole === 'string'
+    ? db?.roles?.find((entry) => entry.id === roleIdOrRole)
+    : roleIdOrRole;
+  return Number(role?.rank) || 0;
+}
+
+function roleWithinGrant(role) {
+  if (!role || capabilities.isAdmin) return true;
+  if ((role.permissions || []).some((permission) => !permissions.has(permission))) return false;
+  for (const entries of Object.values(role.objectPermissions || {})) {
+    for (const rule of Object.values(entries || {})) {
+      if ((rule.allow || []).some((permission) => !permissions.has(permission))) return false;
+    }
+  }
+  return true;
+}
+
+function userWithinGrant(user) {
+  if (!user || capabilities.isAdmin) return true;
+  if ((user.permissionOverrides?.allow || []).some((permission) => !permissions.has(permission))) return false;
+  for (const entries of Object.values(user.objectPermissions || {})) {
+    for (const rule of Object.values(entries || {})) {
+      if ((rule.allow || []).some((permission) => !permissions.has(permission))) return false;
+    }
+  }
+  return true;
+}
+
+function canManageUser(user) {
+  if (!user || !can('users_manage') || user.id === currentUser?.id) return false;
+  if (user.role === 'admin') return false;
+  const targetRank = Number(user.roleRank ?? roleRankOf(user.role));
+  if (targetRank >= Number(currentUser?.roleRank || 0)) return false;
+  const role = db?.roles?.find((entry) => entry.id === user.role);
+  return Boolean(role) && roleWithinGrant(role) && userWithinGrant(user);
+}
+
+function canManageRole(role) {
+  if (!role || !can('roles_manage') || role.id === 'admin') return false;
+  if (Number(role.rank) >= Number(currentUser?.roleRank || 0)) return false;
+  return roleWithinGrant(role);
 }
 
 function firstAllowedRoute() {
@@ -254,6 +297,7 @@ async function refreshSession() {
   capabilities = {
     isAdmin: Boolean(session.capabilities?.isAdmin),
     manageUsers: Boolean(session.capabilities?.manageUsers),
+    manageRoles: Boolean(session.capabilities?.manageRoles),
     viewCosts: Boolean(session.capabilities?.viewCosts)
   };
 }

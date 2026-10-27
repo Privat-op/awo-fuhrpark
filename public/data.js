@@ -246,6 +246,6 @@ const ROUTE_PERMISSIONS = {
   wartung: 'maintenance_view',
   kosten: 'costs_view',
   fahrer: 'drivers_view',
-  benutzer: 'admin',
-  rollen: 'admin'
+  benutzer: 'users_manage',
+  rollen: 'roles_manage'
 };

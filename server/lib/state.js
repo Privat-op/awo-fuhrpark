@@ -214,6 +214,8 @@ function getState(db, user, auth = null) {
     maintenance_manage: can('maintenance_manage') || anyObject('maintenance', 'maintenance_manage') || anyObject('vehicle', 'maintenance_manage'),
     costs_view: can('costs_view') || anyObject('cost', 'costs_view') || anyObject('vehicle', 'costs_view'),
     costs_manage: can('costs_manage') || anyObject('cost', 'costs_manage') || anyObject('vehicle', 'costs_manage'),
+    users_manage: isAdmin || can('users_manage'),
+    roles_manage: isAdmin || can('roles_manage'),
     settings_manage: can('settings_manage'),
     branding_manage: can('branding_manage'),
     export_data: can('export_data')
@@ -264,23 +266,53 @@ function getState(db, user, auth = null) {
     notificationReads
   };
 
+  const canManageUsers = isAdmin || can('users_manage');
+  const canManageRoles = isAdmin || can('roles_manage');
+  moduleAccess.users_manage = canManageUsers;
+  moduleAccess.roles_manage = canManageRoles;
+
+  const roleRows = db.prepare(`
+    SELECT id, name, permissions, object_permissions, is_system, rank, created_at, updated_at
+    FROM roles ORDER BY rank DESC, is_system DESC, name
+  `).all();
+  const roleRankById = new Map(roleRows.map((row) => [row.id, Number(row.rank) || 0]));
+  const userCountByRole = new Map(
+    db.prepare('SELECT role, COUNT(*) AS count FROM users GROUP BY role').all()
+      .map((row) => [row.role, Number(row.count) || 0])
+  );
+  const mapRoleState = (row) => ({
+    id: row.id,
+    name: row.name,
+    permissions: parsePermissions(row.permissions),
+    objectPermissions: parseObjectPermissions(row.object_permissions),
+    isSystem: Boolean(row.is_system),
+    rank: Number(row.rank) || 0,
+    userCount: userCountByRole.get(row.id) || 0
+  });
+  const mapStateUser = (row) => ({
+    ...mapUser(row),
+    roleRank: roleRankById.get(row.role) || 0
+  });
+
   if (isAdmin) {
     state.users = db.prepare(`
       SELECT id, email, name, role, permission_overrides, object_permissions, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
       FROM users ORDER BY created_at, name
-    `).all().map(mapUser);
-    const roleRows = db.prepare(`
-      SELECT id, name, permissions, object_permissions, is_system, created_at, updated_at
-      FROM roles ORDER BY is_system DESC, name
-    `).all();
-    state.roles = roleRows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      permissions: parsePermissions(row.permissions),
-      objectPermissions: parseObjectPermissions(row.object_permissions),
-      isSystem: Boolean(row.is_system),
-      userCount: state.users.filter((entry) => entry.role === row.id).length
-    }));
+    `).all().map(mapStateUser);
+    state.roles = roleRows.map(mapRoleState);
+  } else if (canManageUsers || canManageRoles) {
+    const actorRank = roleRankById.get(user.role) || 0;
+    state.roles = roleRows
+      .filter((role) => role.id === user.role || (Number(role.rank) || 0) < actorRank)
+      .map(mapRoleState);
+    if (canManageUsers) {
+      state.users = db.prepare(`
+        SELECT id, email, name, role, permission_overrides, object_permissions, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
+        FROM users ORDER BY created_at, name
+      `).all()
+        .map(mapStateUser)
+        .filter((entry) => entry.id === user.id || entry.roleRank < actorRank);
+    }
   }
 
   return state;

@@ -57,6 +57,8 @@ const PERMISSION_GROUPS = [
     key: 'administration',
     label: 'Verwaltung',
     permissions: [
+      { key: 'users_manage', label: 'Benutzer verwalten' },
+      { key: 'roles_manage', label: 'Rollen verwalten' },
       { key: 'settings_manage', label: 'Organisation bearbeiten' },
       { key: 'branding_manage', label: 'Erscheinungsbild verwalten' },
       { key: 'export_data', label: 'Datenexport' }
@@ -87,8 +89,14 @@ const DEFAULT_MANAGER_PERMISSIONS = [
   'maintenance_view', 'maintenance_manage',
   'costs_view', 'costs_manage',
   'drivers_view', 'drivers_manage',
+  'users_manage', 'roles_manage',
   'settings_manage', 'export_data'
 ];
+
+const ROLE_SCHEMA_VERSION = 1;
+const RANK_ADMIN = 1000000;
+const RANK_MANAGER = 900000;
+const RANK_CUSTOM_BASE = 100000;
 
 const OBJECT_TYPES = [
   {
@@ -337,15 +345,62 @@ function normalizeObjectPermissions(db, input) {
 
 function ensureRoles(db) {
   const now = new Date().toISOString();
+  const schemaVersion = Number(db.pragma('user_version', { simple: true })) || 0;
   const insert = db.prepare(`
-    INSERT INTO roles (id, name, permissions, object_permissions, is_system, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO roles (id, name, permissions, object_permissions, is_system, rank, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO NOTHING
   `);
-  insert.run('admin', 'Administrator', JSON.stringify(ALL_PERMISSIONS), '{}', 1, now, now);
-  insert.run('manager', 'Fuhrparkleitung', JSON.stringify(normalizePermissions(DEFAULT_MANAGER_PERMISSIONS)), '{}', 1, now, now);
-  db.prepare("UPDATE roles SET permissions = ?, object_permissions = '{}' WHERE id = 'admin'")
-    .run(JSON.stringify(ALL_PERMISSIONS));
+  insert.run('admin', 'Administrator', JSON.stringify(ALL_PERMISSIONS), '{}', 1, RANK_ADMIN, now, now);
+  insert.run('manager', 'Fuhrparkleitung', JSON.stringify(normalizePermissions(DEFAULT_MANAGER_PERMISSIONS)), '{}', 1, RANK_MANAGER, now, now);
+
+  db.prepare("UPDATE roles SET permissions = ?, object_permissions = '{}', rank = ? WHERE id = 'admin'")
+    .run(JSON.stringify(ALL_PERMISSIONS), RANK_ADMIN);
+
+  if (schemaVersion < ROLE_SCHEMA_VERSION) {
+    db.prepare('UPDATE roles SET rank = ? WHERE id = ? AND (rank IS NULL OR rank = 0)')
+      .run(RANK_MANAGER, 'manager');
+
+    const customRoles = db.prepare(`
+      SELECT id FROM roles
+      WHERE id NOT IN ('admin', 'manager') AND (rank IS NULL OR rank = 0)
+      ORDER BY created_at, id
+    `).all();
+    const setCustomRank = db.prepare('UPDATE roles SET rank = ? WHERE id = ?');
+    customRoles.forEach((role, index) => setCustomRank.run(RANK_CUSTOM_BASE + index, role.id));
+
+    const manager = db.prepare('SELECT permissions FROM roles WHERE id = ?').get('manager');
+    if (manager) {
+      const permissions = new Set(parsePermissions(manager.permissions));
+      permissions.add('users_manage');
+      permissions.add('roles_manage');
+      db.prepare('UPDATE roles SET permissions = ? WHERE id = ?')
+        .run(JSON.stringify(normalizePermissions([...permissions])), 'manager');
+    }
+    db.pragma(`user_version = ${ROLE_SCHEMA_VERSION}`);
+  }
+}
+
+function getRoleRank(db, roleId) {
+  const role = db.prepare('SELECT rank FROM roles WHERE id = ?').get(roleId);
+  return Number(role?.rank) || 0;
+}
+
+function rolePermissionsWithin(db, roleId, allowedPermissions) {
+  const allowed = allowedPermissions instanceof Set
+    ? allowedPermissions
+    : new Set(allowedPermissions || []);
+  const role = db.prepare('SELECT permissions, object_permissions FROM roles WHERE id = ?').get(roleId);
+  if (!role) return false;
+  const permissions = parsePermissions(role.permissions);
+  if (permissions.some((permission) => !allowed.has(permission))) return false;
+  const objectPermissions = parseObjectPermissions(role.object_permissions);
+  for (const entries of Object.values(objectPermissions)) {
+    for (const rule of Object.values(entries)) {
+      if ((rule.allow || []).some((permission) => !allowed.has(permission))) return false;
+    }
+  }
+  return true;
 }
 
 function getRolePermissions(db, roleId) {
@@ -498,6 +553,8 @@ module.exports = {
   parseObjectPermissions,
   normalizeObjectPermissions,
   ensureRoles,
+  getRoleRank,
+  rolePermissionsWithin,
   getRolePermissions,
   getRoleObjectPermissions,
   getUserPermissionOverrides,

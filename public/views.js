@@ -1265,9 +1265,11 @@ function renderSettings() {
   const roleDisplay = currentUser?.roleName || roleLabel(currentUser?.role);
   const canEditSettings = can('settings_manage');
   const disabled = canEditSettings ? '' : 'disabled';
-  const adminLink = capabilities.isAdmin
-    ? `<a class="link-arrow" href="#/benutzer">Benutzer verwalten ${icon('arrow-right')}</a>`
-    : '';
+  const managementLinks = [
+    can('users_manage') ? `<a class="link-arrow" href="#/benutzer">Benutzer verwalten ${icon('arrow-right')}</a>` : '',
+    can('roles_manage') ? `<a class="link-arrow" href="#/rollen">Rollen verwalten ${icon('arrow-right')}</a>` : ''
+  ].filter(Boolean).join(' ');
+  const adminLink = managementLinks;
   return `
     ${pageHead('Organisation', 'Einstellungen', 'Organisation, Konto und Datenexport verwalten.', '')}
     <div class="settings-grid">
@@ -1328,7 +1330,7 @@ function renderSettings() {
             </div>
             <div class="version-box">
               <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-              <span class="version-badge">Server-MVP 0.5.2</span>
+              <span class="version-badge">Server-MVP 0.6.0 · Etappe 1</span>
             </div>
           </div>
         </section>
@@ -1398,7 +1400,7 @@ function renderSettings() {
    Benutzerverwaltung
    ========================================================= */
 function renderUsers() {
-  if (!capabilities.isAdmin) return emptyState('shield', 'Keine Berechtigung', 'Die Benutzerverwaltung ist Administratoren vorbehalten.');
+  if (!can('users_manage')) return emptyState('shield', 'Keine Berechtigung', 'Für die Benutzerverwaltung fehlt die Berechtigung „Benutzer verwalten“.');
   const users = db.users || [];
   const admins = users.filter((user) => user.role === 'admin' && user.active).length;
   const active = users.filter((user) => user.active).length;
@@ -1410,7 +1412,8 @@ function renderUsers() {
     const isAnonymized = Boolean(user.anonymizedAt);
     const overrideCount = (user.permissionOverrides?.allow?.length || 0) + (user.permissionOverrides?.deny?.length || 0)
       + Object.values(user.objectPermissions || {}).reduce((sum, entries) => sum + Object.keys(entries || {}).length, 0);
-    const canEditOverrides = !isAnonymized && user.role !== 'admin';
+    const manageable = canManageUser(user);
+    const canEditOverrides = !isAnonymized && manageable;
     const meta = isAnonymized
       ? `Anonymisiert${user.anonymizedAt ? ` am ${formatDate(user.anonymizedAt)}` : ''}`
       : !user.active
@@ -1418,9 +1421,11 @@ function renderUsers() {
         : user.createdAt ? `Angelegt am ${formatDate(user.createdAt)}` : '';
     const actions = isAnonymized
       ? `<span class="table-action" title="Anonymisiert" aria-label="Anonymisiert" style="pointer-events:none;color:var(--muted)">${icon('user-x')}</span>`
-      : `${canEditOverrides ? `<button class="table-action" type="button" title="Benutzer-Ausnahmen bearbeiten" aria-label="Benutzer-Ausnahmen bearbeiten" data-action="edit-user-permissions" data-id="${user.id}">${icon('filter')}</button>` : ''}
-         <button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button>
-         ${!user.active ? `<button class="table-action danger" type="button" title="Benutzerkonto anonymisieren" aria-label="Benutzerkonto anonymisieren" data-action="anonymize-user" data-id="${user.id}">${icon('user-x')}</button>` : ''}`;
+      : manageable
+        ? `${canEditOverrides ? `<button class="table-action" type="button" title="Benutzer-Ausnahmen bearbeiten" aria-label="Benutzer-Ausnahmen bearbeiten" data-action="edit-user-permissions" data-id="${user.id}">${icon('filter')}</button>` : ''}
+           <button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button>
+           ${!user.active ? `<button class="table-action danger" type="button" title="Benutzerkonto anonymisieren" aria-label="Benutzerkonto anonymisieren" data-action="anonymize-user" data-id="${user.id}">${icon('user-x')}</button>` : ''}`
+        : `<span class="table-action" title="Nur eigene oder niedrigere Ränge bearbeitbar" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`;
     return `
       <tr>
         <td>
@@ -1432,6 +1437,7 @@ function renderUsers() {
         <td><span class="table-main">${esc(user.email)}</span></td>
         <td>
           <span class="badge badge-${user.role === 'admin' ? 'red' : 'blue'}">${esc(roleLabel(user.role))}</span>
+          <span class="table-sub">Rang ${formatNumber(user.roleRank || roleRankOf(user.role))}</span>
           ${overrideCount ? `<span class="badge badge-violet no-dot">${overrideCount} Ausnahmen</span>` : ''}
         </td>
         <td>${isAnonymized ? '<span class="badge badge-gray">Anonymisiert</span>' : user.active ? '<span class="badge badge-green">Aktiv</span>' : '<span class="badge badge-gray">Deaktiviert</span>'}</td>
@@ -1440,13 +1446,13 @@ function renderUsers() {
       </tr>`;
   }).join('');
   return `
-    ${pageHead('Organisation', 'Benutzer', 'Zugänge, Rollen und persönliche Ausnahmen der Fuhrparkverwaltung verwalten.',
-      `<a class="btn btn-ghost" href="#/rollen">${icon('shield')} Rollen &amp; Rechte</a>
+    ${pageHead('Organisation', 'Benutzer', 'Zugänge, Rollen und persönliche Ausnahmen innerhalb des eigenen Rangbereichs verwalten.',
+      `${can('roles_manage') ? `<a class="btn btn-ghost" href="#/rollen">${icon('shield')} Rollen &amp; Rechte</a>` : ''}
        <button class="btn btn-primary" type="button" data-action="new-user">${icon('plus')} Benutzer anlegen</button>`)}
     <div class="summary-chips" style="margin-bottom:18px">
       <span class="summary-chip"><strong>${users.length}</strong> Zugänge</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${active}</strong> aktiv</span>
-      <span class="summary-chip"><span class="dot" style="--dot:var(--awo)"></span><strong>${admins}</strong> Administrator:in</span>
+      ${capabilities.isAdmin ? `<span class="summary-chip"><span class="dot" style="--dot:var(--awo)"></span><strong>${admins}</strong> Administrator:in</span>` : ''}
       <span class="summary-chip"><span class="dot" style="--dot:#aeb5c0"></span><strong>${deactivated}</strong> deaktiviert</span>
       <span class="summary-chip"><span class="dot" style="--dot:#94a3b8"></span><strong>${anonymized}</strong> anonymisiert</span>
       <span class="summary-chip">${icon('shield')} ${db.roles?.length || 0} Rollen</span>
@@ -1465,7 +1471,7 @@ function renderUsers() {
       </div>
     </section>
 
-    <form class="card settings-card mt-18" id="userPolicyForm">
+    ${capabilities.isAdmin ? `<form class="card settings-card mt-18" id="userPolicyForm">
       <div class="card-head bordered">
         <div><h3 class="card-title">Automatische Anonymisierung</h3><p class="card-sub">Gilt global für deaktivierte Benutzerkonten.</p></div>
         <span class="badge badge-${autoAnonymizeDays ? 'green' : 'gray'} no-dot">${autoAnonymizeDays ? `Aktiv · ${autoAnonymizeDays} Tage` : 'Deaktiviert'}</span>
@@ -1490,14 +1496,25 @@ function renderUsers() {
         <span class="text-muted">${deactivated ? `${deactivated} deaktivierte ${deactivated === 1 ? 'Konto ist' : 'Konten sind'} aktuell nicht anonymisiert.` : 'Keine deaktivierten Konten vorhanden.'}</span>
         <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Frist speichern</button>
       </div>
-    </form>`;
+    </form>` : `<section class="card settings-card mt-18">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Automatische Anonymisierung</h3><p class="card-sub">Gilt global für deaktivierte Benutzerkonten.</p></div>
+        <span class="badge badge-gray no-dot">Nur Administrator:innen</span>
+      </div>
+      <div class="card-body">
+        <div class="info-banner">
+          ${icon('shield')}
+          <div><strong>Administrator:innen vorbehalten</strong><p>Die globale Frist für die automatische Anonymisierung wird zentral durch Administrator:innen verwaltet. Die Benutzerverwaltung bleibt davon unberührt.</p></div>
+        </div>
+      </div>
+    </section>`}`;
 }
 
 /* =========================================================
    Rollen & Rechte
    ========================================================= */
 function renderRoles() {
-  if (!capabilities.isAdmin) return emptyState('shield', 'Keine Berechtigung', 'Die Rollenverwaltung ist Administratoren vorbehalten.');
+  if (!can('roles_manage')) return emptyState('shield', 'Keine Berechtigung', 'Für die Rollenverwaltung fehlt die Berechtigung „Rollen verwalten“.');
   const roles = db.roles || [];
   const customCount = roles.filter((role) => !role.isSystem).length;
   const assigned = roles.reduce((sum, role) => sum + Number(role.userCount || 0), 0);
@@ -1509,6 +1526,7 @@ function renderRoles() {
 
   const rows = roles.map((role) => {
     const protectedRole = role.id === 'admin';
+    const manageable = canManageRole(role);
     const objectOverrideCount = Object.values(role.objectPermissions || {})
       .reduce((sum, entries) => sum + Object.keys(entries || {}).length, 0);
     const typeBadge = protectedRole
@@ -1516,21 +1534,22 @@ function renderRoles() {
       : role.isSystem
         ? '<span class="badge badge-gray no-dot">Systemrolle</span>'
         : '<span class="badge badge-blue no-dot">Eigene Rolle</span>';
-    const actions = protectedRole
-      ? `<span class="table-action" title="Die Administrator-Rolle ist geschützt" aria-label="Geschützt" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`
-      : [
+    const actions = manageable
+      ? [
           `<button class="table-action" type="button" title="Rolle bearbeiten" aria-label="Rolle bearbeiten" data-action="edit-role" data-id="${role.id}">${icon('edit')}</button>`,
           `<button class="table-action" type="button" title="Objekt-Ausnahmen bearbeiten" aria-label="Objekt-Ausnahmen bearbeiten" data-action="edit-role-objects" data-id="${role.id}">${icon('filter')}</button>`,
           !role.isSystem && !role.userCount
             ? `<button class="table-action danger" type="button" title="Rolle löschen" aria-label="Rolle löschen" data-action="delete-role" data-id="${role.id}">${icon('trash')}</button>`
             : ''
-        ].join('');
+        ].join('')
+      : `<span class="table-action" title="${protectedRole ? 'Die Administrator-Rolle ist geschützt' : 'Nur Rollen unterhalb des eigenen Rangs und innerhalb des Grant Ceilings bearbeitbar'}" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`;
     return `
       <tr>
         <td>
           <span class="table-main">${esc(role.name)}</span>
           <span class="table-sub">${protectedRole ? 'Voller Zugriff auf alle Funktionen' : role.isSystem ? 'Standardrolle der Fuhrparkleitung' : 'Individuell konfigurierbare Rolle'}</span>
         </td>
+        <td><span class="table-main">${formatNumber(role.rank || 0)}</span><span class="table-sub">Höher = mehr Rechte</span></td>
         <td><span class="table-main">${role.userCount || 0}</span><span class="table-sub">${role.userCount === 1 ? 'Benutzer:in' : 'Benutzer:innen'}</span></td>
         <td>
           <div class="role-permissions">
@@ -1544,7 +1563,7 @@ function renderRoles() {
   }).join('');
 
   return `
-    ${pageHead('Organisation', 'Rollen & Rechte', 'Modulrechte und feine Objekt-Ausnahmen für Fahrzeuge, Fahrer:innen, Buchungen, Kosten und Wartung.',
+    ${pageHead('Organisation', 'Rollen & Rechte', 'Rangfolge, Modulrechte und feine Objekt-Ausnahmen innerhalb des eigenen Grant Ceilings verwalten.',
       `<button class="btn btn-primary" type="button" data-action="new-role">${icon('plus')} Rolle anlegen</button>`)}
     <div class="summary-chips" style="margin-bottom:18px">
       <span class="summary-chip"><strong>${roles.length}</strong> Rollen</span>
@@ -1557,18 +1576,14 @@ function renderRoles() {
         <span class="badge badge-gray no-dot">${roles.length} gesamt</span>
       </div>
       ${roles.length ? `<div class="table-wrap is-scroll"><table class="data-table">
-        <thead><tr><th>Rolle</th><th>Benutzer:innen</th><th>Berechtigungen</th><th>Typ</th><th class="num">Aktion</th></tr></thead>
+        <thead><tr><th>Rolle</th><th>Rang</th><th>Benutzer:innen</th><th>Berechtigungen</th><th>Typ</th><th class="num">Aktion</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : emptyState('shield', 'Noch keine Rollen', 'Legen Sie die erste eigene Rolle an.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-role">Rolle anlegen</button>')}
       <div class="card-footer">
         <span class="text-muted">Verwaltungsrechte schließen die zugehörigen Ansichtsrechte automatisch ein.</span>
         <span class="text-muted">Objekt-Ausnahmen haben Vorrang vor den Modulrechten.</span>
       </div>
-    </section>
-    <div class="info-banner" style="margin-top:18px">
-      ${icon('shield')}
-      <div><strong>Rollen wirken sofort</strong><p>Änderungen an einer Rolle gelten beim nächsten Seitenaufruf für alle zugewiesenen Benutzer:innen. Eine Rolle kann erst gelöscht werden, wenn ihr keine Konten mehr zugewiesen sind.</p></div>
-    </div>`;
+    </section>`;
 }
 
 /* =========================================================

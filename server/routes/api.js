@@ -30,9 +30,13 @@ const {
   PERMISSION_GROUPS,
   normalizePermissions,
   normalizePermissionOverrides,
+  parsePermissionOverrides,
+  parseObjectPermissions,
   normalizeObjectPermissions,
   requirePermission,
   hasEffectivePermission,
+  getRoleRank,
+  rolePermissionsWithin,
   publicObjectTypes
 } = require('../lib/permissions');
 
@@ -56,12 +60,6 @@ function assertCan(req, permission, context = {}) {
   }
 }
 
-function assertRoleExists(roleId) {
-  const role = db.prepare('SELECT id FROM roles WHERE id = ?').get(roleId);
-  if (!role) throw new HttpError(400, 'Die ausgewählte Rolle existiert nicht.');
-  return roleId;
-}
-
 function getVehicle(id) {
   return db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
 }
@@ -74,9 +72,116 @@ function getCost(id) {
   return db.prepare('SELECT * FROM costs WHERE id = ?').get(id);
 }
 
+const ADMIN_ROLE_ID = 'admin';
+
 function requireAdmin(req, _res, next) {
-  if (req.user.role !== 'admin') return next(new HttpError(403, 'Nur Administratoren dürfen Benutzer verwalten.'));
+  if (req.user.role !== 'admin') {
+    return next(new HttpError(403, 'Diese Aktion ist Administrator:innen vorbehalten.'));
+  }
   return next();
+}
+
+function assertLastActiveAdminChange(existing, nextRole, nextActive) {
+  if (existing.role !== ADMIN_ROLE_ID || !existing.active) return;
+  if (nextRole === ADMIN_ROLE_ID && nextActive) return;
+  const otherAdmins = db.prepare(`
+    SELECT COUNT(*) AS count FROM users
+    WHERE role = ? AND active = 1 AND id <> ?
+  `).get(ADMIN_ROLE_ID, existing.id).count;
+  if (otherAdmins === 0) {
+    throw new HttpError(400, 'Mindestens ein aktives Administratorkonto muss bestehen bleiben.');
+  }
+}
+
+function actorRank(req) {
+  return getRoleRank(db, req.user.role);
+}
+
+function assertRoleGrantable(req, roleId) {
+  if (roleId === ADMIN_ROLE_ID) {
+    throw new HttpError(403, 'Die Administrator-Rolle kann nicht über die Benutzerverwaltung vergeben werden.');
+  }
+  const role = db.prepare('SELECT id, name, rank FROM roles WHERE id = ?').get(roleId);
+  if (!role) throw new HttpError(400, 'Die ausgewählte Rolle existiert nicht.');
+  if ((Number(role.rank) || 0) >= actorRank(req)) {
+    throw new HttpError(403, 'Rollen können nur unterhalb des eigenen Rangs vergeben werden.');
+  }
+  if (req.user.role !== 'admin' && !rolePermissionsWithin(db, roleId, req.permissions)) {
+    throw new HttpError(403, 'Diese Rolle enthält Rechte, die Ihre eigene Rolle nicht vergeben darf.');
+  }
+  return role;
+}
+
+function assertRoleManageable(req, role) {
+  if (role.id === ADMIN_ROLE_ID) {
+    throw new HttpError(409, 'Die Administrator-Rolle ist geschützt und kann nicht bearbeitet werden.');
+  }
+  if ((Number(role.rank) || 0) >= actorRank(req)) {
+    throw new HttpError(403, 'Rollen können nur unterhalb des eigenen Rangs verwaltet werden.');
+  }
+  if (req.user.role !== 'admin' && !rolePermissionsWithin(db, role.id, req.permissions)) {
+    throw new HttpError(403, 'Diese Rolle enthält Rechte, die Ihre eigene Rolle nicht verwalten darf.');
+  }
+}
+
+function assertUserManageable(req, user) {
+  if (user.id === req.user.id) {
+    throw new HttpError(400, 'Das eigene Konto kann nicht über die Benutzerverwaltung bearbeitet werden.');
+  }
+  if (user.role === ADMIN_ROLE_ID) {
+    throw new HttpError(403, 'Administratorkonten können nur durch den Superadmin verwaltet werden.');
+  }
+  const targetRank = getRoleRank(db, user.role);
+  if (targetRank >= actorRank(req)) {
+    throw new HttpError(403, 'Benutzerkonten können nur unterhalb des eigenen Rangs verwaltet werden.');
+  }
+  if (req.user.role !== 'admin') {
+    if (!rolePermissionsWithin(db, user.role, req.permissions)) {
+      throw new HttpError(403, 'Diese Rolle enthält Rechte, die Ihre eigene Rolle nicht verwalten darf.');
+    }
+    const overrides = parsePermissionOverrides(user.permission_overrides);
+    const objectPermissions = parseObjectPermissions(user.object_permissions);
+    if ((overrides.allow || []).some((permission) => !req.permissions.has(permission))) {
+      throw new HttpError(403, 'Dieses Konto besitzt Rechte, die Ihre eigene Rolle nicht verwalten darf.');
+    }
+    for (const entries of Object.values(objectPermissions)) {
+      for (const rule of Object.values(entries || {})) {
+        if ((rule.allow || []).some((permission) => !req.permissions.has(permission))) {
+          throw new HttpError(403, 'Dieses Konto besitzt Rechte, die Ihre eigene Rolle nicht verwalten darf.');
+        }
+      }
+    }
+  }
+}
+
+function assertGrantCeiling(req, permissions, objectPermissions = null) {
+  if (req.user.role === 'admin') return;
+  for (const permission of permissions || []) {
+    if (!req.permissions.has(permission)) {
+      throw new HttpError(403, 'Es können nur Rechte der eigenen Rolle weitergegeben werden.');
+    }
+  }
+  for (const entries of Object.values(objectPermissions || {})) {
+    for (const rule of Object.values(entries || {})) {
+      for (const permission of rule.allow || []) {
+        if (!req.permissions.has(permission)) {
+          throw new HttpError(403, 'Es können nur Rechte der eigenen Rolle weitergegeben werden.');
+        }
+      }
+    }
+  }
+}
+
+function defaultRoleRank(req) {
+  return Math.max(1, Math.min(899999, actorRank(req) - 1));
+}
+
+function rankBelowActor(req, value) {
+  const rank = intValue(value, 'Rang', { min: 1, max: Number.MAX_SAFE_INTEGER, required: true });
+  if (rank >= actorRank(req)) {
+    throw new HttpError(403, 'Der Rang muss strikt unterhalb des eigenen Rangs liegen.');
+  }
+  return rank;
 }
 
 function audit(req, action, entityType, entityId, details = null) {
@@ -136,15 +241,22 @@ function mapSessionUser(user) {
    Session & Benachrichtigungen
    ========================================================= */
 router.get('/session', (req, res) => {
+  const isAdmin = req.user.role === 'admin';
   res.json({
-    user: { ...mapSessionUser(req.user), roleName: req.roleName, isAdmin: req.user.role === 'admin' },
+    user: {
+      ...mapSessionUser(req.user),
+      roleName: req.roleName,
+      roleRank: getRoleRank(db, req.user.role),
+      isAdmin
+    },
     csrfToken: req.session.csrfToken,
     permissions: [...req.permissions],
     permissionGroups: PERMISSION_GROUPS,
     objectTypes: publicObjectTypes(),
     capabilities: {
-      manageUsers: req.user.role === 'admin',
-      isAdmin: req.user.role === 'admin',
+      manageUsers: isAdmin || req.permissions.has('users_manage'),
+      manageRoles: isAdmin || req.permissions.has('roles_manage'),
+      isAdmin,
       viewCosts: req.permissions.has('costs_view')
     }
   });
@@ -769,21 +881,25 @@ router.patch('/branding', requirePermission('branding_manage'), async (req, res,
 });
 
 /* =========================================================
-   Rollen und Rechte (nur Admin)
+   Rollen und Rechte (delegierbar, Rang- und Grant-Ceiling-gebunden)
    ========================================================= */
-router.post('/roles', requireAdmin, (req, res, next) => {
+router.post('/roles', requirePermission('roles_manage'), (req, res, next) => {
   try {
     const name = requiredString(req.body?.name, 'Rollenname', { max: 120 });
     const permissions = normalizePermissions(req.body?.permissions);
+    const rank = rankBelowActor(req, req.body?.rank ?? defaultRoleRank(req));
+    assertGrantCeiling(req, permissions);
     const duplicate = db.prepare('SELECT id FROM roles WHERE name = ? COLLATE NOCASE').get(name);
     if (duplicate) throw new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.');
     const id = `role-${crypto.randomUUID()}`;
     const now = isoNow();
-    db.prepare(`
-      INSERT INTO roles (id, name, permissions, object_permissions, is_system, created_at, updated_at)
-      VALUES (?, ?, ?, '{}', 0, ?, ?)
-    `).run(id, name, JSON.stringify(permissions), now, now);
-    audit(req, 'create', 'role', id, { name, permissions });
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO roles (id, name, permissions, object_permissions, is_system, rank, created_at, updated_at)
+        VALUES (?, ?, ?, '{}', 0, ?, ?, ?)
+      `).run(id, name, JSON.stringify(permissions), rank, now, now);
+      audit(req, 'create', 'role', id, { name, permissions, rank });
+    })();
     sendState(req, res, 201);
   } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.'));
@@ -791,18 +907,24 @@ router.post('/roles', requireAdmin, (req, res, next) => {
   }
 });
 
-router.patch('/roles/:id', requireAdmin, (req, res, next) => {
+router.patch('/roles/:id', requirePermission('roles_manage'), (req, res, next) => {
   try {
     const existing = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
     if (!existing) throw new HttpError(404, 'Rolle wurde nicht gefunden.');
-    if (existing.id === 'admin') throw new HttpError(409, 'Die Administrator-Rolle ist geschützt und kann nicht bearbeitet werden.');
+    assertRoleManageable(req, existing);
     const name = requiredString(req.body?.name, 'Rollenname', { max: 120 });
     const permissions = normalizePermissions(req.body?.permissions);
+    const rank = req.body?.rank === undefined
+      ? Number(existing.rank) || 0
+      : rankBelowActor(req, req.body.rank);
+    assertGrantCeiling(req, permissions);
     const duplicate = db.prepare('SELECT id FROM roles WHERE name = ? COLLATE NOCASE AND id <> ?').get(name, existing.id);
     if (duplicate) throw new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.');
-    db.prepare('UPDATE roles SET name = ?, permissions = ?, updated_at = ? WHERE id = ?')
-      .run(name, JSON.stringify(permissions), isoNow(), existing.id);
-    audit(req, 'update', 'role', existing.id, { name, permissions });
+    db.transaction(() => {
+      db.prepare('UPDATE roles SET name = ?, permissions = ?, rank = ?, updated_at = ? WHERE id = ?')
+        .run(name, JSON.stringify(permissions), rank, isoNow(), existing.id);
+      audit(req, 'update', 'role', existing.id, { name, permissions, rank });
+    })();
     sendState(req, res);
   } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.'));
@@ -810,30 +932,36 @@ router.patch('/roles/:id', requireAdmin, (req, res, next) => {
   }
 });
 
-router.patch('/roles/:id/object-permissions', requireAdmin, (req, res, next) => {
+router.patch('/roles/:id/object-permissions', requirePermission('roles_manage'), (req, res, next) => {
   try {
     const existing = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
     if (!existing) throw new HttpError(404, 'Rolle wurde nicht gefunden.');
-    if (existing.id === 'admin') throw new HttpError(409, 'Die Administrator-Rolle ist geschützt und kann nicht bearbeitet werden.');
+    assertRoleManageable(req, existing);
     const objectPermissions = normalizeObjectPermissions(db, req.body?.objectPermissions);
-    db.prepare('UPDATE roles SET object_permissions = ?, updated_at = ? WHERE id = ?')
-      .run(JSON.stringify(objectPermissions), isoNow(), existing.id);
-    audit(req, 'update', 'role_object_permissions', existing.id, { objectPermissions });
+    assertGrantCeiling(req, [], objectPermissions);
+    db.transaction(() => {
+      db.prepare('UPDATE roles SET object_permissions = ?, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify(objectPermissions), isoNow(), existing.id);
+      audit(req, 'update', 'role_object_permissions', existing.id, { objectPermissions });
+    })();
     sendState(req, res);
   } catch (error) {
     next(error);
   }
 });
 
-router.delete('/roles/:id', requireAdmin, (req, res, next) => {
+router.delete('/roles/:id', requirePermission('roles_manage'), (req, res, next) => {
   try {
     const existing = db.prepare('SELECT * FROM roles WHERE id = ?').get(req.params.id);
     if (!existing) throw new HttpError(404, 'Rolle wurde nicht gefunden.');
+    assertRoleManageable(req, existing);
     if (existing.is_system) throw new HttpError(409, 'Systemrollen können nicht gelöscht werden.');
-    const assigned = db.prepare('SELECT COUNT(*) AS count FROM users WHERE role = ?').get(existing.id).count;
-    if (assigned > 0) throw new HttpError(409, 'Diese Rolle ist noch Benutzern zugewiesen und kann nicht gelöscht werden.');
-    db.prepare('DELETE FROM roles WHERE id = ?').run(existing.id);
-    audit(req, 'delete', 'role', existing.id, { name: existing.name });
+    db.transaction(() => {
+      const assigned = db.prepare('SELECT COUNT(*) AS count FROM users WHERE role = ?').get(existing.id).count;
+      if (assigned > 0) throw new HttpError(409, 'Diese Rolle ist noch Benutzern zugewiesen und kann nicht gelöscht werden.');
+      db.prepare('DELETE FROM roles WHERE id = ?').run(existing.id);
+      audit(req, 'delete', 'role', existing.id, { name: existing.name, rank: existing.rank });
+    })();
     sendState(req, res);
   } catch (error) {
     next(error);
@@ -841,7 +969,7 @@ router.delete('/roles/:id', requireAdmin, (req, res, next) => {
 });
 
 /* =========================================================
-   Benutzer (nur Admin)
+   Benutzer (delegierbar, Rang- und Grant-Ceiling-gebunden)
    ========================================================= */
 function passwordValue(value) {
   const password = String(value || '');
@@ -851,22 +979,24 @@ function passwordValue(value) {
   return password;
 }
 
-router.post('/users', requireAdmin, (req, res, next) => {
+router.post('/users', requirePermission('users_manage'), (req, res, next) => {
   try {
     const body = req.body || {};
     const email = emailValue(body.email, 'E-Mail');
     const name = requiredString(body.name, 'Name', { max: 120 });
-    const role = assertRoleExists(requiredString(body.role, 'Rolle', { max: 120 }));
+    const role = assertRoleGrantable(req, requiredString(body.role, 'Rolle', { max: 120 })).id;
     const password = passwordValue(body.password);
     const duplicate = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email);
     if (duplicate) throw new HttpError(409, 'Für diese E-Mail-Adresse existiert bereits ein Konto.');
     const id = crypto.randomUUID();
     const now = isoNow();
-    db.prepare(`
-      INSERT INTO users (id, email, name, password_hash, role, active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, email, name, bcrypt.hashSync(password, 12), role, 1, now, now);
-    audit(req, 'create', 'user', id, { email, role });
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO users (id, email, name, password_hash, role, active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, email, name, bcrypt.hashSync(password, 12), role, 1, now, now);
+      audit(req, 'create', 'user', id, { email, role, roleRank: getRoleRank(db, role) });
+    })();
     sendState(req, res, 201);
   } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Diese E-Mail-Adresse ist bereits vergeben.'));
@@ -874,22 +1004,18 @@ router.post('/users', requireAdmin, (req, res, next) => {
   }
 });
 
-router.patch('/users/:id', requireAdmin, (req, res, next) => {
+router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) => {
   try {
     const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
     if (!existing) throw new HttpError(404, 'Benutzerkonto wurde nicht gefunden.');
     if (existing.anonymized_at) throw new HttpError(409, 'Anonymisierte Konten können nicht mehr bearbeitet werden.');
+    assertUserManageable(req, existing);
     const body = req.body || {};
     const email = emailValue(body.email, 'E-Mail');
     const name = requiredString(body.name, 'Name', { max: 120 });
-    const role = assertRoleExists(requiredString(body.role, 'Rolle', { max: 120 }));
+    const role = assertRoleGrantable(req, requiredString(body.role, 'Rolle', { max: 120 })).id;
     const active = booleanValue(body.active, Boolean(existing.active));
-    if (existing.id === req.user.id && !active) throw new HttpError(400, 'Das eigene Konto kann nicht deaktiviert werden.');
-    if (existing.id === req.user.id && role !== existing.role) throw new HttpError(400, 'Die eigene Rolle kann nicht geändert werden.');
-    if (existing.role === 'admin' && existing.active && (role !== 'admin' || !active)) {
-      const otherAdmins = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND active = 1 AND id <> ?").get(existing.id).count;
-      if (otherAdmins === 0) throw new HttpError(400, 'Mindestens ein aktives Administratorkonto muss bestehen bleiben.');
-    }
+    assertLastActiveAdminChange(existing, role, active);
     const duplicate = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?').get(email, existing.id);
     if (duplicate) throw new HttpError(409, 'Für diese E-Mail-Adresse existiert bereits ein Konto.');
     const password = body.password ? passwordValue(body.password) : null;
@@ -897,22 +1023,24 @@ router.patch('/users/:id', requireAdmin, (req, res, next) => {
     let deactivatedAt = existing.deactivated_at;
     if (active) deactivatedAt = null;
     else if (existing.active || !deactivatedAt) deactivatedAt = now;
-    if (password) {
-      db.prepare(`
-        UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, password_hash = ?, updated_at = ? WHERE id = ?
-      `).run(email, name, role, active ? 1 : 0, deactivatedAt, bcrypt.hashSync(password, 12), now, existing.id);
-    } else {
-      db.prepare(`
-        UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, updated_at = ? WHERE id = ?
-      `).run(email, name, role, active ? 1 : 0, deactivatedAt, now, existing.id);
-    }
-    if (role === 'admin') {
-      db.prepare("UPDATE users SET permission_overrides = '{}', object_permissions = '{}' WHERE id = ?").run(existing.id);
-    }
-    if (password || !active) {
-      db.prepare("DELETE FROM sessions WHERE sid <> ? AND json_extract(sess, '$.userId') = ?").run(req.sessionID, existing.id);
-    }
-    audit(req, 'update', 'user', existing.id, { email, role, active, passwordChanged: Boolean(password) });
+    db.transaction(() => {
+      if (password) {
+        db.prepare(`
+          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, password_hash = ?, updated_at = ? WHERE id = ?
+        `).run(email, name, role, active ? 1 : 0, deactivatedAt, bcrypt.hashSync(password, 12), now, existing.id);
+      } else {
+        db.prepare(`
+          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, updated_at = ? WHERE id = ?
+        `).run(email, name, role, active ? 1 : 0, deactivatedAt, now, existing.id);
+      }
+      if (role === 'admin') {
+        db.prepare("UPDATE users SET permission_overrides = '{}', object_permissions = '{}' WHERE id = ?").run(existing.id);
+      }
+      if (password || !active) {
+        db.prepare("DELETE FROM sessions WHERE sid <> ? AND json_extract(sess, '$.userId') = ?").run(req.sessionID, existing.id);
+      }
+      audit(req, 'update', 'user', existing.id, { email, role, roleRank: getRoleRank(db, role), active, passwordChanged: Boolean(password) });
+    })();
     sendState(req, res);
   } catch (error) {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Diese E-Mail-Adresse ist bereits vergeben.'));
@@ -920,25 +1048,32 @@ router.patch('/users/:id', requireAdmin, (req, res, next) => {
   }
 });
 
-router.patch('/users/:id/permissions', requireAdmin, (req, res, next) => {
+router.patch('/users/:id/permissions', requirePermission('users_manage'), (req, res, next) => {
   try {
     const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
     if (!existing) throw new HttpError(404, 'Benutzerkonto wurde nicht gefunden.');
     if (existing.anonymized_at) throw new HttpError(409, 'Anonymisierte Konten können nicht mehr bearbeitet werden.');
+    assertUserManageable(req, existing);
     if (existing.role === 'admin') throw new HttpError(409, 'Die Administrator-Rolle hat immer vollständigen Zugriff.');
     const permissionOverrides = normalizePermissionOverrides(req.body?.permissionOverrides);
     const objectPermissions = normalizeObjectPermissions(db, req.body?.objectPermissions);
-    db.prepare('UPDATE users SET permission_overrides = ?, object_permissions = ?, updated_at = ? WHERE id = ?')
-      .run(JSON.stringify(permissionOverrides), JSON.stringify(objectPermissions), isoNow(), existing.id);
-    audit(req, 'update', 'user_permissions', existing.id, { permissionOverrides, objectPermissions });
+    assertGrantCeiling(req, permissionOverrides.allow, objectPermissions);
+    db.transaction(() => {
+      db.prepare('UPDATE users SET permission_overrides = ?, object_permissions = ?, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify(permissionOverrides), JSON.stringify(objectPermissions), isoNow(), existing.id);
+      audit(req, 'update', 'user_permissions', existing.id, { permissionOverrides, objectPermissions });
+    })();
     sendState(req, res);
   } catch (error) {
     next(error);
   }
 });
 
-router.post('/users/:id/anonymize', requireAdmin, (req, res, next) => {
+router.post('/users/:id/anonymize', requirePermission('users_manage'), (req, res, next) => {
   try {
+    const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!existing) throw new HttpError(404, 'Benutzerkonto wurde nicht gefunden.');
+    assertUserManageable(req, existing);
     anonymizeUser(req.params.id, { actorId: req.user.id, reason: 'manual' });
     sendState(req, res);
   } catch (error) {
@@ -953,8 +1088,10 @@ router.patch('/user-policy', requireAdmin, (req, res, next) => {
       max: 3650,
       required: true
     });
-    db.prepare('UPDATE settings SET auto_anonymize_days = ?, updated_at = ? WHERE id = 1').run(days, isoNow());
-    audit(req, 'update', 'user_policy', '1', { autoAnonymizeDays: days });
+    db.transaction(() => {
+      db.prepare('UPDATE settings SET auto_anonymize_days = ?, updated_at = ? WHERE id = 1').run(days, isoNow());
+      audit(req, 'update', 'user_policy', '1', { autoAnonymizeDays: days });
+    })();
     runAutoAnonymization();
     sendState(req, res);
   } catch (error) {

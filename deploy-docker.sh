@@ -23,9 +23,11 @@ fi
 
 HOST_PORT="$(awk -F= '/^APP_PORT=/{print $2}' .env 2>/dev/null | tail -n 1)"
 HOST_PORT="${HOST_PORT:-3000}"
+VERSION="$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' package.json | head -n 1 | tr -d '\r')"
+VERSION="${VERSION:-0.0.0}"
 
-echo "Baue Image awo-fuhrpark:0.5.2 ..."
-docker build -t awo-fuhrpark:0.5.2 .
+echo "Baue Image awo-fuhrpark:${VERSION} ..."
+docker build -t "awo-fuhrpark:${VERSION}" .
 
 echo "Erstelle persistentes Daten-Volume ..."
 docker volume create awo_fuhrpark_data >/dev/null
@@ -46,7 +48,7 @@ docker run -d \
   -e DATA_DIR=/app/data \
   -p "${HOST_PORT}:3000" \
   -v awo_fuhrpark_data:/app/data \
-  awo-fuhrpark:0.5.2 >/dev/null
+  "awo-fuhrpark:${VERSION}" >/dev/null
 
 echo "Warte auf Anwendung ..."
 for _ in $(seq 1 40); do

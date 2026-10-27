@@ -7,7 +7,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Zentrale Anmeldung mit Sessions, CSRF-Schutz und Rate-Limits
 - Rollen: **Administrator** und **Fuhrparkleitung** sowie frei anlegbare Rollen
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
-- Benutzerverwaltung inklusive Rollen, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
+- Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
 - Automatische Anonymisierung deaktivierter Konten nach einer global einstellbaren Frist
 - Fahrzeuge mit Bild-Upload, Standort, Kilometerstand, HU/AU und Service
 - Buchungen mit serverseitiger Konfliktprüfung für Fahrzeug und Fahrer:in
@@ -100,11 +100,23 @@ Danach den Container neu starten. Der Server sollte nicht ungeschützt direkt au
 
 | Rolle | Rechte |
 | --- | --- |
-| Administrator | Alle Fuhrparkfunktionen, Einstellungen und Benutzerverwaltung; immer vollständig und geschützt |
-| Fuhrparkleitung | Standardrolle mit allen Fuhrparkfunktionen und Einstellungen, ohne Benutzerverwaltung; Rechte und Objekt-Ausnahmen können angepasst werden |
-| Eigene Rollen | Frei anlegbare Rollen mit individuellen Modul- und Objekt-Ausnahmen |
+| Administrator | Alle Fuhrparkfunktionen, Einstellungen sowie Benutzer- und Rollenverwaltung; immer vollständig, systemgeschützt und nicht über die Benutzerverwaltung vergebbar |
+| Fuhrparkleitung | Standardrolle mit allen Fuhrparkfunktionen, Einstellungen und den delegierten Rechten `users_manage`/`roles_manage`; Rechte, Rang und Objekt-Ausnahmen können angepasst werden |
+| Eigene Rollen | Frei anlegbare Rollen mit individuellem Rang, Modulrechten und Objekt-Ausnahmen |
 
-Nur Administratoren können Konten anlegen, Rollen ändern, Benutzer-Ausnahmen pflegen, Konten deaktivieren und Passwörter zurücksetzen. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
+Konten mit `users_manage` können Benutzer anlegen, bearbeiten, deaktivieren, anonymisieren und Benutzer-Ausnahmen pflegen. Konten mit `roles_manage` verwalten Rollen, Ränge und Objekt-Ausnahmen. Beide Rechte sind getrennt vergebbar. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
+
+### Delegierte Verwaltung und Rangfolge
+
+- Jede Rolle hat einen ganzzahligen Rang; höher bedeutet mächtiger. Gleichstände (Ties) sind erlaubt, aber Rollen und Konten gleichen Rangs können sich gegenseitig nicht verwalten.
+- Administrator (Rang 1.000.000) und Fuhrparkleitung (Rang 900.000) sind vorbelegt. Bestehende eigene Rollen starten bei 100.000 + Index, also unterhalb der Fuhrparkleitung.
+- Nicht-Administratoren sehen nur die eigene sowie strikt niedrigere Ränge. Die eigene Rolle und das eigene Konto sind nicht über die Verwaltung bearbeitbar; das eigene Passwort bleibt unter **Einstellungen** änderbar.
+- Neue Rollen und Rangänderungen müssen strikt unterhalb des eigenen Rangs liegen. Die Untergrenze für neu vergebene Ränge ist **1**; Rang 0 ist kein gültiger neuer Rollenrang. Rollen mit zugewiesenen Konten oder Systemrollen können nicht gelöscht werden.
+- **Grant Ceiling:** Nicht-Administratoren können nur Rechte weitergeben, die sie selbst effektiv global besitzen. Rollen mit Admin-only-Rechten (z. B. `branding_manage`) bleiben für sie gesperrt. Objektbezogene Sonderrechte zählen nicht als Grundlage für die Weitergabe.
+- Die Weitergabe von `users_manage` und `roles_manage` an strikt niedrigere Rollen ist erlaubt; jede Delegationsstufe bleibt an Rang und Grant Ceiling gebunden.
+- Der Widerruf ist **isoliert**: Entzieht eine übergeordnete Rolle ihre Verwaltungsrechte, bleiben bereits an untere Rollen vergebene Rechte bestehen. Der obere Rang kann sie bei Bedarf direkt bei den unteren Rollen entziehen; eine automatische Kaskade gibt es nicht.
+- Administratorkonten und die Administrator-Rolle sind geschützt. Administratoren können keine anderen Administratoren bearbeiten oder deaktivieren; diese Übergangssperre gilt ab Etappe 1. Die Verwaltung von Administratorkonten ist bis zur Superadmin-Etappe vollständig gesperrt. Mindestens ein aktives Administratorkonto bleibt geschützt.
+- Änderungen an Rollen und Konten werden transaktional ausgeführt und auditiert.
 
 ### Fahrtenbuch-Rechte
 
@@ -138,9 +150,11 @@ Die Einstellungen gelten serverseitig für Datenanzeige und Aktionen. Ein Benutz
 
 ### Benutzer-Ausnahmen
 
-Unter **Benutzer → Benutzer-Ausnahmen** können Administrator:innen persönliche Modul- und Objekt-Ausnahmen pflegen. Diese haben Vorrang vor den Rollenrechten. Beim Wechsel in die Administrator-Rolle oder bei der Anonymisierung werden persönliche Ausnahmen entfernt.
+Unter **Benutzer → Benutzer-Ausnahmen** können Personen mit `users_manage` persönliche Modul- und Objekt-Ausnahmen pflegen, soweit Rang und Grant Ceiling dies zulassen. Diese haben Vorrang vor den Rollenrechten. Beim Wechsel in die Administrator-Rolle oder bei der Anonymisierung werden persönliche Ausnahmen entfernt.
 
 ## Benutzerkonten und Anonymisierung
+
+Die Verknüpfung von Fahrer:innen mit Benutzerkonten ist **Etappe 2** vorbehalten und in Etappe 1 nicht enthalten.
 
 Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Deaktivierte Konten können anschließend anonymisiert werden:
 
@@ -151,7 +165,7 @@ Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Deakti
 - E-Mail-Adressen in zugehörigen Audit-Einträgen werden bereinigt.
 - Das Konto bleibt deaktiviert und kann nicht reaktiviert werden.
 
-Unter **Benutzer → Automatische Anonymisierung** lässt sich eine globale Frist in Tagen einstellen. `0` deaktiviert die Automatik. Die Prüfung läuft beim Serverstart, nach dem Speichern der Frist und anschließend regelmäßig. Nur Konten, die bereits deaktiviert und älter als die Frist sind, werden erfasst.
+Unter **Benutzer → Automatische Anonymisierung** lässt sich eine globale Frist in Tagen einstellen. `0` deaktiviert die Automatik. Die Prüfung läuft beim Serverstart, nach dem Speichern der Frist und anschließend regelmäßig. Nur Konten, die bereits deaktiviert und älter als die Frist sind, werden erfasst. Diese globale Richtlinie bleibt in Etappe 1 Administrator:innen vorbehalten (`PATCH /api/user-policy`); delegierte Benutzerverwaltung umfasst sie nicht.
 
 ## Erscheinungsbild
 
