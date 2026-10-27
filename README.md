@@ -124,22 +124,55 @@ Danach den Container neu starten. Der Server sollte nicht ungeschützt direkt au
 
 | Rolle | Rechte |
 | --- | --- |
+| Superadmin | Sonderrolle mit Rang 2.000.000, systemgeschützt, ausschließlich über die Superadmin-Datei konfiguriert; nicht über UI/API anlegbar, zuweisbar, änderbar oder löschbar |
 | Administrator | Alle Fuhrparkfunktionen, Einstellungen sowie Benutzer- und Rollenverwaltung; immer vollständig, systemgeschützt und nicht über die Benutzerverwaltung vergebbar |
 | Fuhrparkleitung | Standardrolle mit allen Fuhrparkfunktionen, Einstellungen, den delegierten Rechten `users_manage`/`roles_manage` sowie `audit_view` (ohne `audit_view_all`); Rechte, Rang und Objekt-Ausnahmen können angepasst werden |
 | Eigene Rollen | Frei anlegbare Rollen mit individuellem Rang, Modulrechten und Objekt-Ausnahmen |
 
-Konten mit `users_manage` können Benutzer anlegen, bearbeiten, deaktivieren, anonymisieren, Benutzer-Ausnahmen pflegen und Fahrer-Konten verknüpfen. Konten mit `roles_manage` verwalten Rollen, Ränge, Objekt-Ausnahmen und die Buchungsanfrage-Policy. Beide Rechte sind getrennt vergebbar. Die Fuhrparkleitung erhält zusätzlich `booking_requests_manage`. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
+Konten mit `users_manage` können Benutzer anlegen, bearbeiten, deaktivieren, anonymisieren, Benutzer-Ausnahmen pflegen und Fahrer-Konten verknüpfen. Konten mit `roles_manage` verwalten Rollen, Ränge, Objekt-Ausnahmen und die Buchungsanfrage-Policy. Beide Rechte sind getrennt vergebbar. Die Fuhrparkleitung erhält zusätzlich `booking_requests_manage`. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern – ausgenommen der Superadmin, dessen Passwort ausschließlich aus der Datei stammt.
+
+### Superadmin
+
+Der Superadmin ist die oberste Verwaltungsinstanz. Er kann Administratorkonten anlegen, bearbeiten, deaktivieren und Passwörter zurücksetzen, aber niemals sich selbst, einen zweiten Superadmin oder die Superadmin-Rolle verwalten. Bestehende Administratorkonten können nicht herabgestuft, gelöscht oder anonymisiert werden; mindestens ein aktives Administratorkonto bleibt geschützt. Der Superadmin zählt nicht als „letzter aktiver Admin“.
+
+- **Datei:** Pfad über `SUPERADMIN_FILE`. Docker-Default ist `/run/secrets/awo-superadmin.json`, außerhalb von Docker `/etc/awo-fuhrpark/superadmin.json`. Die Datei muss außerhalb von Repository, persistentem Daten-Volume und Backup liegen und sollte `root:root` mit `0600` gehören.
+- **Format:** JSON mit den Pflichtfeldern `email`, `name` und `passwordHash`. `passwordHash` ist ein bcrypt-Hash mit Cost 12; Klartextpasswörter werden nicht unterstützt. Der Hash wird offline erzeugt und niemals in Logs, Audit, Chat oder Dokumentation ausgegeben.
+- **Bootstrap:** Beim Start wird nach Schema-/Rollenmigration ein Konto mit fester ID `superadmin`, der Rolle `superadmin` und `active=1` idempotent angelegt oder aktualisiert. Fehlt die Datei oder ist sie ungültig, wird nur gewarnt, ein vorhandenes Konto wird `active=0` gesetzt und der Superadmin-Login ist gesperrt; das System läuft normal weiter. Es gibt keinen Fallback auf einen alten Hash und keine Löschung oder Anonymisierung.
+- **Rotation/Recovery:** Datei ersetzen und Dienst bzw. Container neu starten. Änderungen an E-Mail oder Hash sowie eine Reaktivierung invalidieren alle Superadmin-Sessions. Jede Änderung wird als `superadmin_update` ohne Secret auditiert; eine Sperrung als `superadmin_disabled`.
+- **Schutz:** Keine UI-/API-Route zum Anlegen, Ändern oder Löschen des Superadmins. Das Konto ist in Benutzerliste und Datenexport vollständig ausgeblendet; die Rolle erscheint im Rollenbaum systemgeschützt mit Schloss. Superadmin-Ereignisse bleiben für berechtigte `audit_view_all`- und Administrator-Konten im Audit sichtbar.
+- **MFA/Passkey:** perspektivisch verpflichtend vorgemerkt, in dieser Etappe nicht enthalten.
+
+Beispiel für die Dateistruktur (Werte ersetzen; kein echter Hash im Repository):
+
+```json
+{
+  "email": "superadmin@example.org",
+  "name": "Superadmin",
+  "passwordHash": "<bcrypt-Hash mit Cost 12>"
+}
+```
+
+Für Docker die Datei read-only unter dem Default-Pfad einbinden, zum Beispiel:
+
+```yaml
+services:
+  app:
+    volumes:
+      - /etc/awo-fuhrpark/superadmin.json:/run/secrets/awo-superadmin.json:ro
+```
+
+Das Verzeichnis muss für den Anwendungsbenutzer lesbar sein, ohne dass Klartext oder Hashes in Logs gelangen. Bei unsicheren Datei-/Verzeichnisrechten oder einem Pfad innerhalb von Repository/Volume warnt der Start, bricht aber nicht ab. Der Container läuft als Benutzer `node`; die Datei muss daher entweder für diesen Benutzer lesbar sein oder der Betrieb muss die Eigentümer-/Gruppenrechte entsprechend kontrolliert setzen.
 
 ### Delegierte Verwaltung und Rangfolge
 
 - Jede Rolle hat einen ganzzahligen Rang; höher bedeutet mächtiger. Gleichstände (Ties) sind erlaubt, aber Rollen und Konten gleichen Rangs können sich gegenseitig nicht verwalten.
-- Administrator (Rang 1.000.000) und Fuhrparkleitung (Rang 900.000) sind vorbelegt. Bestehende eigene Rollen starten bei 100.000 + Index, also unterhalb der Fuhrparkleitung.
+- Superadmin (Rang 2.000.000, ausschließlich datei-verwaltet), Administrator (Rang 1.000.000) und Fuhrparkleitung (Rang 900.000) sind vorbelegt. Bestehende eigene Rollen starten bei 100.000 + Index, also unterhalb der Fuhrparkleitung.
 - Nicht-Administratoren sehen nur die eigene sowie strikt niedrigere Ränge. Die eigene Rolle und das eigene Konto sind nicht über die Verwaltung bearbeitbar; das eigene Passwort bleibt unter **Einstellungen** änderbar.
 - Neue Rollen und Rangänderungen müssen strikt unterhalb des eigenen Rangs liegen. Die Untergrenze für neu vergebene Ränge ist **1**; Rang 0 ist kein gültiger neuer Rollenrang. Rollen mit zugewiesenen Konten oder Systemrollen können nicht gelöscht werden.
 - **Grant Ceiling:** Nicht-Administratoren können nur Rechte weitergeben, die sie selbst effektiv global besitzen. Rollen mit Admin-only-Rechten (z. B. `branding_manage`) bleiben für sie gesperrt. Objektbezogene Sonderrechte zählen nicht als Grundlage für die Weitergabe.
 - Die Weitergabe von `users_manage` und `roles_manage` an strikt niedrigere Rollen ist erlaubt; jede Delegationsstufe bleibt an Rang und Grant Ceiling gebunden.
 - Der Widerruf ist **isoliert**: Entzieht eine übergeordnete Rolle ihre Verwaltungsrechte, bleiben bereits an untere Rollen vergebene Rechte bestehen. Der obere Rang kann sie bei Bedarf direkt bei den unteren Rollen entziehen; eine automatische Kaskade gibt es nicht.
-- Administratorkonten und die Administrator-Rolle sind geschützt. Administratoren können keine anderen Administratoren bearbeiten oder deaktivieren; diese Übergangssperre gilt ab Etappe 1. Die Verwaltung von Administratorkonten ist bis zur Superadmin-Etappe vollständig gesperrt. Mindestens ein aktives Administratorkonto bleibt geschützt.
+- Administratorkonten und die Administrator-Rolle sind geschützt. Administratoren können keine anderen Administratoren bearbeiten, deaktivieren oder zu Administratoren befördern. Nur der Superadmin verwaltet Administratorkonten; eine Herabstufung, Löschung oder Anonymisierung bestehender Administratorkonten ist ausgeschlossen. Mindestens ein aktives Administratorkonto bleibt geschützt.
 - Änderungen an Rollen und Konten werden transaktional ausgeführt und auditiert.
 
 ### Fahrtenbuch-Rechte
@@ -217,7 +250,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Audit-Migration verwendet `user_version = 3`, ergänzt die Snapshot-Spalten und Indizes idempotent und befüllt bestehende Einträge aus dem aktuellen Benutzer-/Rollenstand nach.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 4`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Benutzerkonten und Anonymisierung
 

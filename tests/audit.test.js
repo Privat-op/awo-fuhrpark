@@ -399,7 +399,7 @@ after(async () => {
   }
 });
 
-test('Migration setzt Version 3, backfillt Snapshots und vergibt Manager-Default nur einmalig', async () => {
+test('Migration setzt Version 4, backfillt Snapshots und vergibt Manager-Default nur einmalig', async () => {
   const migrationDir = fs.mkdtempSync(path.join(os.tmpdir(), 'awo-audit-migration-'));
   const migrationDb = path.join(migrationDir, 'legacy.sqlite');
   try {
@@ -457,9 +457,11 @@ test('Migration setzt Version 3, backfillt Snapshots und vergibt Manager-Default
       const { db, initSchema } = require('./server/db');
       const { ensureRoles } = require('./server/lib/permissions');
       const { migrateAuditSchema } = require('./server/lib/audit-migration');
+      const { migrateSuperadminSchema } = require('./server/lib/superadmin');
       initSchema();
       ensureRoles(db);
       const changed = migrateAuditSchema(db);
+      migrateSuperadminSchema(db);
       const version = Number(db.pragma('user_version', { simple: true }));
       const row = db.prepare("SELECT * FROM audit_logs WHERE action = 'legacy_action'").get();
       const managerBefore = db.prepare("SELECT permissions FROM roles WHERE id = 'manager'").get();
@@ -471,14 +473,20 @@ test('Migration setzt Version 3, backfillt Snapshots und vergibt Manager-Default
         .run(JSON.stringify(managerPermissions.filter((permission) => permission !== 'audit_view')));
       ensureRoles(db);
       migrateAuditSchema(db);
+      migrateSuperadminSchema(db);
       const managerAfter = JSON.parse(db.prepare("SELECT permissions FROM roles WHERE id = 'manager'").get().permissions);
       const userCount = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+      const superadminRole = db.prepare("SELECT * FROM roles WHERE id = 'superadmin'").get();
+      const superadminRoleCount = db.prepare("SELECT COUNT(*) AS count FROM roles WHERE id = 'superadmin'").get().count;
       console.log(JSON.stringify({
         changed, version, row, userColumns, auditColumns, auditIndexes,
         managerHadAuditView: managerPermissions.includes('audit_view'),
         managerHadAuditViewAll: managerPermissions.includes('audit_view_all'),
         managerKeptRemoval: !managerAfter.includes('audit_view'),
-        userCount
+        userCount,
+        superadminRoleCount,
+        superadminRank: superadminRole?.rank,
+        superadminSystem: superadminRole?.is_system
       }));
       db.close();
     `;
@@ -495,7 +503,10 @@ test('Migration setzt Version 3, backfillt Snapshots und vergibt Manager-Default
     });
     const result = JSON.parse(output.trim().split(/\r?\n/).at(-1));
     assert.equal(result.changed, false);
-    assert.equal(result.version, 3);
+    assert.equal(result.version, 4);
+    assert.equal(result.superadminRoleCount, 1);
+    assert.equal(result.superadminRank, 2000000);
+    assert.equal(result.superadminSystem, 1);
     assert.equal(result.row.actor_role_id, 'manager');
     assert.equal(result.row.actor_role_name, 'Fuhrparkleitung');
     assert.equal(result.row.actor_rank, 900000);
@@ -744,7 +755,7 @@ test('Meta-Audit: Lesezugriff wird ohne Inhalte protokolliert, nur für All/Admi
 test('Manager erhält audit_view per Default, audit_view_all ist innerhalb Grant Ceiling delegierbar', async () => {
   assert.ok(sessions.manager.permissions.includes('audit_view'));
   assert.equal(sessions.manager.permissions.includes('audit_view_all'), false);
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 3);
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 4);
 
   const denied = await apiJson('manager', 'POST', '/api/roles', {
     name: 'Audit-Delegation vor Grant',

@@ -10,3 +10,6 @@ data/
 .DS_Store
 Thumbs.db
 coverage/
+# Superadmin-Secrets niemals committen
+awo-superadmin.json
+superadmin.json

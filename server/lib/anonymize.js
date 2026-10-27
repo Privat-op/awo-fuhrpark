@@ -6,6 +6,7 @@ const { db } = require('../db');
 const { writeAudit } = require('./audit');
 const { HttpError, isoNow } = require('./validation');
 const { cancelOpenBookingRequests } = require('./booking-requests');
+const { SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID } = require('./superadmin');
 
 function scrubAuditDetails(details) {
   if (!details) return details;
@@ -31,6 +32,12 @@ function anonymizeUser(userId, { actorId = null, reason = 'manual' } = {}) {
   return db.transaction(() => {
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
     if (!user) throw new HttpError(404, 'Benutzerkonto wurde nicht gefunden.');
+    if (user.id === SUPERADMIN_USER_ID || user.role === SUPERADMIN_ROLE_ID) {
+      throw new HttpError(409, 'Das Superadmin-Konto kann nicht anonymisiert werden.');
+    }
+    if (user.role === 'admin') {
+      throw new HttpError(409, 'Administratorkonten können nicht anonymisiert werden.');
+    }
     if (user.active) throw new HttpError(409, 'Nur deaktivierte Konten können anonymisiert werden.');
     if (user.anonymized_at) throw new HttpError(409, 'Dieses Konto wurde bereits anonymisiert.');
 
@@ -92,10 +99,12 @@ function getAutoAnonymizeCandidates() {
   return db.prepare(`
     SELECT id FROM users
     WHERE active = 0
+      AND id <> ?
+      AND role NOT IN (?, 'admin')
       AND anonymized_at IS NULL
       AND deactivated_at IS NOT NULL
       AND deactivated_at <= ?
-  `).all(cutoff);
+  `).all(SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID, cutoff);
 }
 
 function runAutoAnonymization() {

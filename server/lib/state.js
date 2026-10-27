@@ -153,16 +153,20 @@ function mapOwnTrip(row, vehicle) {
 
 const { parsePermissions, parsePermissionOverrides, parseObjectPermissions, resolvePermission } = require('./permissions');
 const { isRequestVisibleToApprover, mapBookingRequest, parseBookingRequestPolicy } = require('./booking-requests');
+const { SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID } = require('./superadmin');
 
 function getState(db, user, auth = null) {
   const layers = auth || {
     isAdmin: user.role === 'admin',
+    isSuperadmin: user.role === 'superadmin',
     rolePermissions: new Set(),
     roleObjectPermissions: {},
     userPermissionOverrides: { allow: [], deny: [] },
     userObjectPermissions: {}
   };
   const isAdmin = Boolean(layers.isAdmin);
+  const isSuperadmin = Boolean(layers.isSuperadmin);
+  const isPrivileged = isAdmin || isSuperadmin;
   const can = (permission, context = {}) => resolvePermission(layers, permission, context);
   const settingsRow = db.prepare('SELECT * FROM settings WHERE id = 1').get();
 
@@ -254,9 +258,9 @@ function getState(db, user, auth = null) {
     costs_manage: can('costs_manage') || anyObject('cost', 'costs_manage') || anyObject('vehicle', 'costs_manage'),
     own_trips_view: Boolean(linkedDriverRow) && can('own_trips_view', linkedDriverRow ? { driver: linkedDriverRow } : {}),
     own_trips_request: Boolean(linkedDriverRow) && can('own_trips_request', linkedDriverRow ? { driver: linkedDriverRow } : {}),
-    booking_requests_manage: isAdmin || can('booking_requests_manage'),
-    users_manage: isAdmin || can('users_manage'),
-    roles_manage: isAdmin || can('roles_manage'),
+    booking_requests_manage: isPrivileged || can('booking_requests_manage'),
+    users_manage: isPrivileged || can('users_manage'),
+    roles_manage: isPrivileged || can('roles_manage'),
     settings_manage: can('settings_manage'),
     branding_manage: can('branding_manage'),
     export_data: can('export_data')
@@ -352,8 +356,8 @@ function getState(db, user, auth = null) {
     notificationReads
   };
 
-  const canManageUsers = isAdmin || can('users_manage');
-  const canManageRoles = isAdmin || can('roles_manage');
+  const canManageUsers = isPrivileged || can('users_manage');
+  const canManageRoles = isPrivileged || can('roles_manage');
   moduleAccess.users_manage = canManageUsers;
   moduleAccess.roles_manage = canManageRoles;
 
@@ -363,7 +367,8 @@ function getState(db, user, auth = null) {
   `).all();
   const roleRankById = new Map(roleRows.map((row) => [row.id, Number(row.rank) || 0]));
   const userCountByRole = new Map(
-    db.prepare('SELECT role, COUNT(*) AS count FROM users GROUP BY role').all()
+    db.prepare('SELECT role, COUNT(*) AS count FROM users WHERE id <> ? AND role <> ? GROUP BY role')
+      .all(SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID)
       .map((row) => [row.role, Number(row.count) || 0])
   );
   const mapRoleState = (row) => ({
@@ -387,11 +392,11 @@ function getState(db, user, auth = null) {
     };
   };
 
-  if (isAdmin) {
+  if (isPrivileged) {
     state.users = db.prepare(`
       SELECT id, email, name, role, permission_overrides, object_permissions, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
-      FROM users ORDER BY created_at, name
-    `).all().map(mapStateUser);
+      FROM users WHERE id <> ? AND role <> ? ORDER BY created_at, name
+    `).all(SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID).map(mapStateUser);
     state.roles = roleRows.map(mapRoleState);
   } else if (canManageUsers || canManageRoles) {
     const actorRank = roleRankById.get(user.role) || 0;
@@ -401,8 +406,8 @@ function getState(db, user, auth = null) {
     if (canManageUsers) {
       state.users = db.prepare(`
         SELECT id, email, name, role, permission_overrides, object_permissions, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
-        FROM users ORDER BY created_at, name
-      `).all()
+        FROM users WHERE id <> ? AND role <> ? ORDER BY created_at, name
+      `).all(SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID)
         .map(mapStateUser)
         .filter((entry) => entry.id === user.id || entry.roleRank < actorRank);
     }

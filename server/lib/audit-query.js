@@ -31,6 +31,9 @@ const ACTION_LABELS = {
   login: 'Anmeldung',
   login_failed: 'Fehlgeschlagene Anmeldung',
   logout: 'Abmeldung',
+  superadmin_created: 'Superadmin angelegt',
+  superadmin_update: 'Superadmin aktualisiert',
+  superadmin_disabled: 'Superadmin gesperrt',
   export: 'Export',
   start: 'Gestartet',
   complete: 'Abgeschlossen',
@@ -96,7 +99,7 @@ function integerParam(value, fallback, min, max) {
 }
 
 function resolveAuditScope(db, req) {
-  if (req.user?.role === 'admin' || req.auth?.isAdmin) {
+  if (req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.auth?.isAdmin || req.auth?.isSuperadmin) {
     return { key: 'all', rank: null };
   }
   if (hasEffectivePermission(req, 'audit_view_all')) {

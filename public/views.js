@@ -1357,7 +1357,9 @@ function renderSettings() {
               </div>
             </div>
             <div class="setting-actions">
-              <button class="btn btn-ghost btn-sm" type="button" data-action="change-password">${icon('shield')} Passwort ändern</button>
+              ${capabilities.isSuperadmin
+                ? `<span class="text-muted">${icon('lock')} Passwort ausschließlich über die Superadmin-Datei und Neustart änderbar.</span>`
+                : `<button class="btn btn-ghost btn-sm" type="button" data-action="change-password">${icon('shield')} Passwort ändern</button>`}
               ${adminLink}
             </div>
           </div>
@@ -1422,7 +1424,7 @@ function renderUsers() {
     const overrideCount = (user.permissionOverrides?.allow?.length || 0) + (user.permissionOverrides?.deny?.length || 0)
       + Object.values(user.objectPermissions || {}).reduce((sum, entries) => sum + Object.keys(entries || {}).length, 0);
     const manageable = canManageUser(user);
-    const canEditOverrides = !isAnonymized && manageable;
+    const canEditOverrides = !isAnonymized && manageable && user.role !== 'admin';
     const meta = isAnonymized
       ? `Anonymisiert${user.anonymizedAt ? ` am ${formatDate(user.anonymizedAt)}` : ''}`
       : !user.active
@@ -1462,7 +1464,7 @@ function renderUsers() {
     <div class="summary-chips" style="margin-bottom:18px">
       <span class="summary-chip"><strong>${users.length}</strong> Zugänge</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${active}</strong> aktiv</span>
-      ${capabilities.isAdmin ? `<span class="summary-chip"><span class="dot" style="--dot:var(--awo)"></span><strong>${admins}</strong> Administrator:in</span>` : ''}
+      ${privileged() ? `<span class="summary-chip"><span class="dot" style="--dot:var(--awo)"></span><strong>${admins}</strong> Administrator:in</span>` : ''}
       <span class="summary-chip"><span class="dot" style="--dot:#aeb5c0"></span><strong>${deactivated}</strong> deaktiviert</span>
       <span class="summary-chip"><span class="dot" style="--dot:#94a3b8"></span><strong>${anonymized}</strong> anonymisiert</span>
       <span class="summary-chip">${icon('shield')} ${db.roles?.length || 0} Rollen</span>
@@ -1481,7 +1483,7 @@ function renderUsers() {
       </div>
     </section>
 
-    ${capabilities.isAdmin ? `<form class="card settings-card mt-18" id="userPolicyForm">
+    ${privileged() ? `<form class="card settings-card mt-18" id="userPolicyForm">
       <div class="card-head bordered">
         <div><h3 class="card-title">Automatische Anonymisierung</h3><p class="card-sub">Gilt global für deaktivierte Benutzerkonten.</p></div>
         <span class="badge badge-${autoAnonymizeDays ? 'green' : 'gray'} no-dot">${autoAnonymizeDays ? `Aktiv · ${autoAnonymizeDays} Tage` : 'Deaktiviert'}</span>
@@ -1535,16 +1537,19 @@ function renderRoles() {
   }).join('');
 
   const rows = roles.map((role) => {
-    const protectedRole = role.id === 'admin';
+    const superadminRole = role.id === 'superadmin';
+    const protectedRole = role.id === 'admin' || superadminRole;
     const manageable = canManageRole(role);
     const objectOverrideCount = Object.values(role.objectPermissions || {})
       .reduce((sum, entries) => sum + Object.keys(entries || {}).length, 0);
     const policyCount = (role.bookingRequestPolicy?.allow?.length || 0) + (role.bookingRequestPolicy?.deny?.length || 0);
-    const typeBadge = protectedRole
-      ? '<span class="badge badge-red no-dot">Geschützt</span>'
-      : role.isSystem
-        ? '<span class="badge badge-gray no-dot">Systemrolle</span>'
-        : '<span class="badge badge-blue no-dot">Eigene Rolle</span>';
+    const typeBadge = superadminRole
+      ? `<span class="badge badge-red no-dot">${icon('lock', 'icon-xs')} Datei-verwaltet</span>`
+      : protectedRole
+        ? '<span class="badge badge-red no-dot">Geschützt</span>'
+        : role.isSystem
+          ? '<span class="badge badge-gray no-dot">Systemrolle</span>'
+          : '<span class="badge badge-blue no-dot">Eigene Rolle</span>';
     const actions = manageable
       ? [
           `<button class="table-action" type="button" title="Rolle bearbeiten" aria-label="Rolle bearbeiten" data-action="edit-role" data-id="${role.id}">${icon('edit')}</button>`,
@@ -1553,12 +1558,12 @@ function renderRoles() {
             ? `<button class="table-action danger" type="button" title="Rolle löschen" aria-label="Rolle löschen" data-action="delete-role" data-id="${role.id}">${icon('trash')}</button>`
             : ''
         ].join('')
-      : `<span class="table-action" title="${protectedRole ? 'Die Administrator-Rolle ist geschützt' : 'Nur Rollen unterhalb des eigenen Rangs und innerhalb des Grant Ceilings bearbeitbar'}" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`;
+      : `<span class="table-action" title="${superadminRole ? 'Die Superadmin-Rolle ist systemgeschützt und ausschließlich datei-verwaltet' : protectedRole ? 'Die Administrator-Rolle ist geschützt' : 'Nur Rollen unterhalb des eigenen Rangs und innerhalb des Grant Ceilings bearbeitbar'}" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${superadminRole ? icon('lock') : icon('shield')}</span>`;
     return `
       <tr>
         <td>
           <span class="table-main">${esc(role.name)}</span>
-          <span class="table-sub">${protectedRole ? 'Voller Zugriff auf alle Funktionen' : role.isSystem ? 'Standardrolle der Fuhrparkleitung' : 'Individuell konfigurierbare Rolle'}</span>
+          <span class="table-sub">${superadminRole ? 'Sonderrolle · ausschließlich über SUPERADMIN_FILE' : protectedRole ? 'Voller Zugriff auf alle Funktionen' : role.isSystem ? 'Standardrolle der Fuhrparkleitung' : 'Individuell konfigurierbare Rolle'}</span>
         </td>
         <td><span class="table-main">${formatNumber(role.rank || 0)}</span><span class="table-sub">Höher = mehr Rechte</span></td>
         <td><span class="table-main">${role.userCount || 0}</span><span class="table-sub">${role.userCount === 1 ? 'Benutzer:in' : 'Benutzer:innen'}</span></td>
@@ -1582,6 +1587,10 @@ function renderRoles() {
       <span class="summary-chip"><span class="dot" style="--dot:var(--blue)"></span><strong>${customCount}</strong> eigene Rollen</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${assigned}</strong> Zuweisungen</span>
     </div>
+    ${privileged() ? `<div class="info-banner" style="margin-bottom:18px">
+      ${icon('lock')}
+      <div><strong>Superadmin ist datei-verwaltet</strong><p>Rolle und Konto des Superadmins sind systemgeschützt. Anlage, Passwortwechsel und Rotation erfolgen ausschließlich über die Superadmin-Datei und einen Neustart; es gibt keine UI- oder API-Route dafür. Das Konto erscheint nicht in der Benutzerliste.</p></div>
+    </div>` : ''}
     <section class="card">
       <div class="card-head bordered">
         <div><h3 class="card-title">Rollenübersicht</h3><p class="card-sub">Modulrechte steuern und pro Objekt übersteuern</p></div>

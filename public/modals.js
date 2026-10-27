@@ -1468,6 +1468,10 @@ function openDriverModal(driverId = null) {
    Konto
    ========================================================= */
 function openPasswordModal() {
+  if (capabilities.isSuperadmin || capabilities.canChangePassword === false) {
+    toast('Superadmin-Passwort', 'Das Superadmin-Passwort wird ausschließlich über die Superadmin-Datei und einen Neustart geändert.', 'info');
+    return;
+  }
   showModal({
     title: 'Passwort ändern',
     eyebrow: 'Konto',
@@ -1582,7 +1586,10 @@ function openUserModal(userId = null) {
   }
   const actorRank = Number(currentUser?.roleRank || 0);
   const roles = (db.roles || []).filter((role) =>
-    Number(role.rank) < actorRank && roleWithinGrant(role)
+    role.id !== 'superadmin'
+    && (role.id !== 'admin' || capabilities.isSuperadmin)
+    && Number(role.rank) < actorRank
+    && roleWithinGrant(role)
   );
   if (!roles.length) {
     toast('Keine vergebbare Rolle', 'Es existiert keine Rolle unterhalb Ihres Rangs, die Sie vergeben dürfen.', 'error');
@@ -1592,6 +1599,7 @@ function openUserModal(userId = null) {
     ? existing.role
     : roles.find((role) => role.id === 'manager')?.id || roles[0].id;
   const user = existing || { name: '', email: '', role: defaultRole, active: true, driverId: null, ownTripsAccess: true };
+  const roleLocked = existing?.role === 'admin';
   const roleOptions = roles.map((role) => `<option value="${esc(role.id)}" ${user.role === role.id ? 'selected' : ''}>${esc(role.name)} · Rang ${formatNumber(role.rank)}</option>`).join('');
   const driverOptions = [`<option value="">Keine Verknüpfung</option>`]
     .concat((db.driversForLinking || []).map((driver) => {
@@ -1617,8 +1625,8 @@ function openUserModal(userId = null) {
           </div>
           <div class="field">
             <label for="accountRole">Rolle</label>
-            <select class="select" id="accountRole" name="role">${roleOptions}</select>
-            <p class="field-hint">Nur Rollen unterhalb Ihres Rangs und innerhalb Ihres Grant Ceilings sind auswählbar.</p>
+            <select class="select" id="accountRole" name="role" ${roleLocked ? 'disabled' : ''}>${roleOptions}</select>
+            <p class="field-hint">${roleLocked ? 'Administratorkonten behalten die Administrator-Rolle; eine Herabstufung ist nicht möglich.' : 'Nur Rollen unterhalb Ihres Rangs und innerhalb Ihres Grant Ceilings sind auswählbar. Die Superadmin-Rolle ist nicht vergebbar.'}</p>
           </div>
           <div class="field">
             <label for="accountPassword">${existing ? 'Neues Passwort' : 'Passwort'} ${existing ? '<span class="optional">optional</span>' : '<span class="optional">*</span>'}</label>
@@ -1762,7 +1770,7 @@ function openUserPermissionModal(userId) {
       <legend>${esc(group.label)}</legend>
       ${group.permissions.map((permission) => {
         const value = currentGlobal.allow.has(permission.key) ? 'allow' : currentGlobal.deny.has(permission.key) ? 'deny' : 'standard';
-        const grantable = capabilities.isAdmin || permissions.has(permission.key);
+        const grantable = privileged() || permissions.has(permission.key);
         return `<label class="object-permission">
           <span>${esc(permission.label)}</span>
           <select class="select select-sm" data-user-permission="${permission.key}" ${grantable ? '' : 'disabled title="Recht der eigenen Rolle nicht vorhanden"'}>
@@ -1791,7 +1799,7 @@ function openUserPermissionModal(userId) {
             <div class="object-rule-grid">
               ${type.permissions.map((permission) => {
                 const value = rule.allow.includes(permission) ? 'allow' : rule.deny.includes(permission) ? 'deny' : 'standard';
-                const grantable = capabilities.isAdmin || permissions.has(permission);
+                const grantable = privileged() || permissions.has(permission);
                 return `<label class="object-permission">
                   <span>${esc(permissionLabels.get(permission) || permission)}</span>
                   <select class="select select-sm" data-user-object-type="${type.key}" data-user-object-id="${item.id}" data-user-permission-key="${permission}" ${grantable ? '' : 'disabled title="Recht der eigenen Rolle nicht vorhanden"'}>
@@ -1916,6 +1924,10 @@ function openRoleModal(roleId = null) {
     toast('Geschützte Rolle', 'Die Administrator-Rolle kann nicht bearbeitet werden.', 'info');
     return;
   }
+  if (existing?.id === 'superadmin') {
+    toast('Geschützte Rolle', 'Die Superadmin-Rolle ist systemgeschützt und wird ausschließlich über die Superadmin-Datei verwaltet.', 'info');
+    return;
+  }
   if (existing && !canManageRole(existing)) {
     toast('Nicht bearbeitbar', 'Diese Rolle liegt nicht in Ihrem verwaltbaren Rangbereich oder enthält Rechte außerhalb Ihres Grant Ceilings.', 'error');
     return;
@@ -1934,7 +1946,7 @@ function openRoleModal(roleId = null) {
   const currentPermissions = new Set(role.permissions || []);
   const policy = role.bookingRequestPolicy || { allow: [], deny: [] };
   const policyRoles = (db.roles || [])
-    .filter((entry) => entry.id !== 'admin' && Number(entry.rank) < Number(currentUser?.roleRank || 0))
+    .filter((entry) => entry.id !== 'admin' && entry.id !== 'superadmin' && Number(entry.rank) < Number(currentUser?.roleRank || 0))
     .sort((a, b) => Number(b.rank) - Number(a.rank) || String(a.name).localeCompare(String(b.name), 'de'));
   const policyRoleOptions = (selected, name) => policyRoles.map((entry) => `
     <label class="permission-option">
@@ -1959,7 +1971,7 @@ function openRoleModal(roleId = null) {
     <fieldset class="permission-group">
       <legend>${esc(group.label)}</legend>
       ${group.permissions.map((permission) => {
-        const grantable = capabilities.isAdmin || permissions.has(permission.key);
+        const grantable = privileged() || permissions.has(permission.key);
         return `
         <label class="permission-option">
           <input type="checkbox" name="permissions" value="${esc(permission.key)}" ${currentPermissions.has(permission.key) ? 'checked' : ''} ${grantable ? '' : 'disabled title="Recht der eigenen Rolle nicht vorhanden"'}>
@@ -2059,6 +2071,10 @@ function openRoleObjectModal(roleId) {
     toast('Geschützte Rolle', 'Die Administrator-Rolle kann nicht bearbeitet werden.', 'info');
     return;
   }
+  if (role.id === 'superadmin') {
+    toast('Geschützte Rolle', 'Die Superadmin-Rolle ist systemgeschützt und wird ausschließlich über die Superadmin-Datei verwaltet.', 'info');
+    return;
+  }
   if (!canManageRole(role)) {
     toast('Nicht bearbeitbar', 'Diese Rolle liegt nicht in Ihrem verwaltbaren Rangbereich oder enthält Rechte außerhalb Ihres Grant Ceilings.', 'error');
     return;
@@ -2110,7 +2126,7 @@ function openRoleObjectModal(roleId) {
             <div class="object-rule-grid">
               ${type.permissions.map((permission) => {
                 const value = rule.allow.includes(permission) ? 'allow' : rule.deny.includes(permission) ? 'deny' : 'standard';
-                const grantable = capabilities.isAdmin || permissions.has(permission);
+                const grantable = privileged() || permissions.has(permission);
                 return `<label class="object-permission">
                   <span>${esc(permissionLabels.get(permission) || permission)}</span>
                   <select class="select select-sm" data-object-type="${type.key}" data-object-id="${item.id}" data-permission="${permission}" ${grantable ? '' : 'disabled title="Recht der eigenen Rolle nicht vorhanden"'}>
