@@ -188,10 +188,12 @@
           </div>
         </div>
 
-        <a class="user-chip" href="#/einstellungen" title="Einstellungen öffnen">
+        <div class="user-chip" aria-label="Angemeldetes Konto">
           <span class="avatar avatar-red" id="userAvatar">–</span>
           <span class="user-meta"><strong id="userName">Wird geladen …</strong><span id="userRole">Angemeldet</span></span>
-          <svg class="icon icon-sm user-chevron"><use href="#i-chevron-down"></use></svg>
+        </div>
+        <a class="icon-btn settings-btn" href="#/einstellungen" title="Einstellungen öffnen" aria-label="Einstellungen öffnen">
+          <svg class="icon"><use href="#i-settings"></use></svg>
         </a>
         <button class="icon-btn logout-btn" id="logoutBtn" type="button" title="Abmelden" aria-label="Abmelden">
           <svg class="icon"><use href="#i-log-out"></use></svg>

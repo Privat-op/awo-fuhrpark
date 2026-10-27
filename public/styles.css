@@ -449,13 +449,11 @@ p, h1, h2, h3, h4 { margin: 0; }
   padding: 4px 8px 4px 4px;
   border: 1px solid transparent;
   border-radius: 11px;
-  transition: background .15s ease, border-color .15s ease;
 }
-.user-chip:hover { background: #f8f9fa; border-color: var(--line); }
 .user-meta { display: flex; flex-direction: column; min-width: 0; }
 .user-meta strong { font-size: 11.5px; font-weight: 650; line-height: 1.35; white-space: nowrap; }
 .user-meta span { color: var(--muted); font-size: 9.5px; line-height: 1.35; white-space: nowrap; }
-.user-chevron { color: #a1a7b2; }
+.settings-btn { color: #8b93a0; }
 .logout-btn { margin-left: -4px; color: #9aa1ad; }
 .logout-btn:hover { color: var(--awo); background: var(--awo-soft); }
 
@@ -2694,7 +2692,7 @@ p, h1, h2, h3, h4 { margin: 0; }
   .search-box { width: auto; max-width: none; flex: 1; min-width: 100px; }
   .search-box input { padding-right: 12px; }
   .search-kbd { display: none; }
-  .user-meta, .user-chevron { display: none; }
+  .user-meta { display: none; }
   .user-chip { padding: 3px; border: 0; }
   .view { padding: 21px 16px 36px; }
   .page-head { align-items: flex-start; }
