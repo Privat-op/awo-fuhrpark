@@ -261,6 +261,8 @@ const AUDIT_ACTION_LABELS = {
   complete: 'Abgeschlossen',
   cancel: 'Storniert',
   change_password: 'Passwort geändert',
+  link_driver: 'Fahrerprofil verknüpft',
+  unlink_driver: 'Fahrerprofil entknüpft',
   anonymize: 'Anonymisiert',
   read: 'Audit-Log gelesen'
 };

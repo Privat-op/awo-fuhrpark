@@ -1270,80 +1270,184 @@ function renderBrandingCard() {
     </form>`;
 }
 
+function driverLinkStatus(driver) {
+  if (!driver) return null;
+  if (driver.status === 'away') return { label: 'Abwesend', badge: 'gray' };
+  const active = (db.bookings || []).some((booking) => booking.driverId === driver.id && booking.status === 'active');
+  return active
+    ? { label: 'Im Einsatz', badge: 'blue' }
+    : { label: 'Verfügbar', badge: 'green' };
+}
+
+function renderAdminDriverProfileCard() {
+  if (!capabilities?.isAdmin && !currentUser?.isAdmin) return '';
+  const drivers = Array.isArray(db.drivers) ? db.drivers : [];
+  const linkedDriver = drivers.find((driver) => driver.userId === currentUser?.id) || null;
+  const availableDrivers = drivers
+    .filter((driver) => !driver.userId || driver.id === linkedDriver?.id)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'de'));
+  const status = driverLinkStatus(linkedDriver);
+  const ownTripsChecked = linkedDriver ? linkedDriver.ownTripsAccess !== false : true;
+  const driverOptions = availableDrivers.map((driver) => `
+    <option value="${esc(driver.id)}" ${driver.id === linkedDriver?.id ? 'selected' : ''}>${esc(driver.name)} · ${esc(driver.role || 'Fahrer:in')}</option>
+  `).join('');
+  const currentLink = linkedDriver
+    ? `<div class="detail-list-item">
+        ${driverAvatar(linkedDriver, 'avatar-lg')}
+        <div class="main"><strong>${esc(linkedDriver.name)}</strong><span>${esc(linkedDriver.role || 'Fahrer:in')}</span></div>
+        <span class="badge badge-${status.badge} no-dot">${status.label}</span>
+      </div>`
+    : `<div class="detail-list-item">
+        <span class="mini-icon tint-blue">${icon('users')}</span>
+        <div class="main"><strong>Nicht verknüpft</strong><span>Ihr Administratorkonto ist derzeit keinem Fahrerprofil zugeordnet.</span></div>
+      </div>`;
+  const cardHead = `
+    <div class="card-head bordered">
+      <div><h3 class="card-title">Fahrerprofil</h3><p class="card-sub">Verknüpfung mit Ihrem Administratorkonto</p></div>
+      <span class="badge badge-red no-dot">Administration</span>
+    </div>`;
+  if (!availableDrivers.length) {
+    const emptyTitle = drivers.length ? 'Keine freien Fahrer:innen' : 'Noch keine Fahrer:innen';
+    const emptyText = drivers.length
+      ? 'Alle Fahrerprofile sind bereits mit anderen Konten verknüpft. Entfernen Sie dort zuerst die Verknüpfung.'
+      : 'Legen Sie zuerst ein Fahrerprofil an, um es mit Ihrem Administratorkonto zu verknüpfen.';
+    return `
+      <section class="card settings-card">
+        ${cardHead}
+        <div class="card-body">
+          <div class="detail-list" style="margin-bottom:16px">${currentLink}</div>
+          ${emptyState('users', emptyTitle, emptyText, '', true)}
+        </div>
+      </section>`;
+  }
+  return `
+    <form class="card settings-card" id="driverLinkForm" novalidate>
+      ${cardHead}
+      <div class="card-body">
+        <div class="form-alert">${icon('alert')}<span></span></div>
+        <div class="detail-list" style="margin-bottom:16px">${currentLink}</div>
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="driverLinkSelect">${linkedDriver ? 'Fahrerprofil wechseln' : 'Fahrerprofil auswählen'}</label>
+            <select class="select" id="driverLinkSelect" name="driverId" data-linked-driver="${esc(linkedDriver?.id || '')}" required>
+              ${linkedDriver ? '' : '<option value="" selected disabled>Bitte auswählen …</option>'}
+              ${driverOptions}
+            </select>
+            <p class="field-hint">Nur freie Fahrerprofile oder Ihre eigene Verknüpfung sind auswählbar.</p>
+          </div>
+          <div class="field field-full" id="driverLinkAccessField" ${linkedDriver ? '' : 'hidden'}>
+            <label class="check-row"><input type="checkbox" id="driverLinkOwnTripsAccess" name="ownTripsAccess" ${ownTripsChecked ? 'checked' : ''} ${linkedDriver ? '' : 'disabled'}> Standardzugriff auf Meine Fahrten aktiv</label>
+            <p class="field-hint">Gilt für die Verknüpfung mit Ihrem Administratorkonto. Explizite Rollen- und Benutzerregeln können den Standard übersteuern.</p>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">${linkedDriver ? 'Änderungen gelten sofort für Ihr Konto.' : 'Die Verknüpfung ist optional.'}</span>
+        <div class="setting-actions" style="margin-top:0">
+          ${linkedDriver ? `<button class="btn btn-danger-ghost btn-sm" type="button" data-action="unlink-admin-driver">${icon('x')} Entfernen</button>` : ''}
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} ${linkedDriver ? 'Speichern' : 'Verknüpfen'}</button>
+        </div>
+      </div>
+    </form>`;
+}
+
 function renderSettings() {
   const roleDisplay = currentUser?.roleName || roleLabel(currentUser?.role);
   const canEditSettings = can('settings_manage');
-  const disabled = canEditSettings ? '' : 'disabled';
+  const canManageBranding = can('branding_manage');
+  const canExport = can('export_data');
+  const canManageUsers = can('users_manage');
+  const canManageRoles = can('roles_manage');
   const managementLinks = [
-    can('users_manage') ? `<a class="link-arrow" href="#/benutzer">Benutzer verwalten ${icon('arrow-right')}</a>` : '',
-    can('roles_manage') ? `<a class="link-arrow" href="#/rollen">Rollen verwalten ${icon('arrow-right')}</a>` : ''
+    canManageUsers ? `<a class="link-arrow" href="#/benutzer">Benutzer verwalten ${icon('arrow-right')}</a>` : '',
+    canManageRoles ? `<a class="link-arrow" href="#/rollen">Rollen verwalten ${icon('arrow-right')}</a>` : ''
   ].filter(Boolean).join(' ');
-  const adminLink = managementLinks;
+  const adminAreas = [
+    canEditSettings ? 'Organisation' : '',
+    canManageBranding ? 'Erscheinungsbild' : '',
+    canExport ? 'Datenexport' : '',
+    canManageUsers ? 'Benutzer' : '',
+    canManageRoles ? 'Rollen' : ''
+  ].filter(Boolean);
+  const showInstallationInfo = adminAreas.length > 0;
+  const subtitle = showInstallationInfo
+    ? `${adminAreas.join(', ')} sowie Ihr Konto verwalten.`
+    : 'Ihr Konto und Ihre Zugangsdaten verwalten.';
+  const eyebrow = canEditSettings
+    ? 'Organisation'
+    : (canManageUsers || canManageRoles)
+      ? 'Verwaltung'
+      : canExport
+        ? 'Datenexport'
+        : canManageBranding
+          ? 'Erscheinungsbild'
+          : 'Konto';
+  const adminSections = [
+    canManageBranding ? renderBrandingCard() : '',
+    canEditSettings ? `
+      <form class="card settings-card" id="settingsForm">
+        <div class="card-head bordered">
+          <div><h3 class="card-title">Organisation</h3><p class="card-sub">Diese Angaben erscheinen in der Anwendung.</p></div>
+          <span class="badge badge-green no-dot">Server gespeichert</span>
+        </div>
+        <div class="card-body">
+          <div class="form-grid">
+            <div class="field field-full">
+              <label for="orgName">Name der Einrichtung</label>
+              <input class="input" id="orgName" name="orgName" value="${esc(db.settings.orgName)}" required>
+              <p class="field-hint">Wird in den Stammdaten und in der Organisation verwendet.</p>
+            </div>
+            <div class="field">
+              <label for="orgLocation">Standort</label>
+              <input class="input" id="orgLocation" name="location" value="${esc(db.settings.location)}" required>
+            </div>
+            <div class="field">
+              <label for="orgPhone">Telefon</label>
+              <input class="input" id="orgPhone" name="phone" value="${esc(db.settings.phone)}">
+            </div>
+            <div class="field field-full">
+              <label for="orgEmail">E-Mail Fuhrpark</label>
+              <input class="input" id="orgEmail" name="email" type="email" value="${esc(db.settings.email)}">
+            </div>
+          </div>
+          <div class="info-banner" style="margin-top:16px">
+            ${icon('shield')}
+            <div><strong>Zentrale Datenhaltung</strong><p>Alle Stammdaten, Buchungen und Dateien werden auf dem Server gespeichert. Regelmäßige Sicherungen des Datenverzeichnisses sind Aufgabe des Betriebs.</p></div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <span class="text-muted">Änderungen gelten sofort für alle angemeldeten Nutzer:innen.</span>
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+        </div>
+      </form>` : '',
+    canExport ? `
+      <section class="card">
+        <div class="card-head bordered">
+          <div><h3 class="card-title">Datenexport</h3><p class="card-sub">Stammdaten und Bewegungsdaten als JSON sichern.</p></div>
+        </div>
+        <div class="card-body">
+          <div class="detail-list">
+            <div class="detail-list-item">
+              <span class="mini-icon tint-blue">${icon('download')}</span>
+              <div class="main"><strong>Datenexport</strong><span>Fahrzeuge, Fahrer:innen, Buchungen, Wartungen und Kosten. Bild- und Belegdateien sind separat im Datenverzeichnis gesichert.</span></div>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="export-data">Exportieren</button>
+            </div>
+            <div class="detail-list-item">
+              <span class="mini-icon tint-green">${icon('shield')}</span>
+              <div class="main"><strong>Server-Sicherung</strong><span>Für den Produktivbetrieb müssen Datenbank und Upload-Verzeichnis regelmäßig gesichert werden.</span></div>
+            </div>
+          </div>
+          <div class="version-box">
+            <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
+            <span class="version-badge">Server-MVP 0.6.0</span>
+          </div>
+        </div>
+      </section>` : ''
+  ].filter(Boolean).join('');
   return `
-    ${pageHead('Organisation', 'Einstellungen', 'Organisation, Konto und Datenexport verwalten.', '')}
-    <div class="settings-grid">
-      <div class="stack">
-        ${renderBrandingCard()}
-        <form class="card settings-card" id="settingsForm">
-          <div class="card-head bordered">
-            <div><h3 class="card-title">Organisation</h3><p class="card-sub">Diese Angaben erscheinen in der Anwendung.</p></div>
-            <span class="badge badge-green no-dot">Server gespeichert</span>
-          </div>
-          <div class="card-body">
-            ${!canEditSettings ? `<div class="info-banner" style="margin-bottom:16px">${icon('shield')}<div><strong>Nur lesend</strong><p>Für das Bearbeiten der Organisationsdaten fehlt Ihrer Rolle die Berechtigung.</p></div></div>` : ''}
-            <div class="form-grid">
-              <div class="field field-full">
-                <label for="orgName">Name der Einrichtung</label>
-                <input class="input" id="orgName" name="orgName" value="${esc(db.settings.orgName)}" required ${disabled}>
-                <p class="field-hint">Wird in den Stammdaten und in der Organisation verwendet.</p>
-              </div>
-              <div class="field">
-                <label for="orgLocation">Standort</label>
-                <input class="input" id="orgLocation" name="location" value="${esc(db.settings.location)}" required ${disabled}>
-              </div>
-              <div class="field">
-                <label for="orgPhone">Telefon</label>
-                <input class="input" id="orgPhone" name="phone" value="${esc(db.settings.phone)}" ${disabled}>
-              </div>
-              <div class="field field-full">
-                <label for="orgEmail">E-Mail Fuhrpark</label>
-                <input class="input" id="orgEmail" name="email" type="email" value="${esc(db.settings.email)}" ${disabled}>
-              </div>
-            </div>
-            <div class="info-banner" style="margin-top:16px">
-              ${icon('shield')}
-              <div><strong>Zentrale Datenhaltung</strong><p>Alle Stammdaten, Buchungen und Dateien werden auf dem Server gespeichert. Regelmäßige Sicherungen des Datenverzeichnisses sind Aufgabe des Betriebs.</p></div>
-            </div>
-          </div>
-          <div class="card-footer">
-            <span class="text-muted">Änderungen gelten sofort für alle angemeldeten Nutzer:innen.</span>
-            ${canEditSettings ? `<button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>` : ''}
-          </div>
-        </form>
-
-        <section class="card">
-          <div class="card-head bordered">
-            <div><h3 class="card-title">Datenexport</h3><p class="card-sub">Stammdaten und Bewegungsdaten als JSON sichern.</p></div>
-          </div>
-          <div class="card-body">
-            <div class="detail-list">
-              <div class="detail-list-item">
-                <span class="mini-icon tint-blue">${icon('download')}</span>
-                <div class="main"><strong>Datenexport</strong><span>Fahrzeuge, Fahrer:innen, Buchungen, Wartungen und Kosten. Bild- und Belegdateien sind separat im Datenverzeichnis gesichert.</span></div>
-                ${can('export_data') ? `<button class="btn btn-ghost btn-sm" type="button" data-action="export-data">Exportieren</button>` : '<span class="text-muted">Keine Berechtigung</span>'}
-              </div>
-              <div class="detail-list-item">
-                <span class="mini-icon tint-green">${icon('shield')}</span>
-                <div class="main"><strong>Server-Sicherung</strong><span>Für den Produktivbetrieb müssen Datenbank und Upload-Verzeichnis regelmäßig gesichert werden.</span></div>
-              </div>
-            </div>
-            <div class="version-box">
-              <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-              <span class="version-badge">Server-MVP 0.6.0</span>
-            </div>
-          </div>
-        </section>
-      </div>
+    ${pageHead(eyebrow, 'Einstellungen', subtitle, '')}
+    <div class="settings-grid${adminSections ? '' : ' is-single'}">
+      ${adminSections ? `<div class="stack">${adminSections}</div>` : ''}
 
       <div class="stack">
         <section class="card">
@@ -1360,7 +1464,7 @@ function renderSettings() {
               ${capabilities.isSuperadmin
                 ? `<span class="text-muted">${icon('lock')} Passwort ausschließlich über die Superadmin-Datei und Neustart änderbar.</span>`
                 : `<button class="btn btn-ghost btn-sm" type="button" data-action="change-password">${icon('shield')} Passwort ändern</button>`}
-              ${adminLink}
+              ${managementLinks}
             </div>
           </div>
           <div class="card-footer">
@@ -1369,6 +1473,9 @@ function renderSettings() {
           </div>
         </section>
 
+        ${renderAdminDriverProfileCard()}
+
+        ${showInstallationInfo ? `
         <section class="card">
           <div class="card-head"><div><h3 class="card-title">Über diese Installation</h3><p class="card-sub">Fuhrparkmanagement für ${esc(brandDisplayName())}</p></div></div>
           <div class="card-body">
@@ -1402,7 +1509,7 @@ function renderSettings() {
               <div class="shortcut-row"><span>Erstes Suchergebnis öffnen</span><kbd>Enter</kbd></div>
             </div>
           </div>
-        </section>
+        </section>` : ''}
       </div>
     </div>`;
 }
