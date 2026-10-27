@@ -17,6 +17,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Dashboard, Suche und Benachrichtigungen mit Gelesen-Status
 - **Globales Erscheinungsbild:** Allgemeines AWO-Theme mit offiziellem Logo oder neutrales Theme mit eigenem Anzeigenamen, optionalem Logo, Akzentfarbe, weiteren Farben und Sidebar-Stil inklusive Live-Vorschau
 - DATEV-unabhängiger JSON-Export und CSV-Export des Fahrtenbuchs; beide serverseitig berechtigungsgeprüft und audit-protokolliert
+- **Audit-Log für alle angemeldeten Nutzer:** serverseitig begrenzte Sicht (eigene Aktionen, Rangbereich oder alle Aktivitäten), Suche/Filter, Maskierung, Meta-Audit und Pagination
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
 
@@ -76,6 +77,14 @@ npm start
 
 Die Anwendung läuft anschließend unter `http://127.0.0.1:3000`. Datenbank und Uploads landen standardmäßig im Verzeichnis `data/`.
 
+### Tests
+
+Die Integrationstests laufen mit einer temporären SQLite-Datenbank und einem zufälligen Loopback-Port; Produktivdaten und echte Zugangsdaten werden nicht verwendet:
+
+```bash
+node --test
+```
+
 ## HTTPS und Reverse Proxy
 
 Für den Produktivbetrieb ist HTTPS verpflichtend. Beispiel mit Caddy:
@@ -101,7 +110,7 @@ Danach den Container neu starten. Der Server sollte nicht ungeschützt direkt au
 | Rolle | Rechte |
 | --- | --- |
 | Administrator | Alle Fuhrparkfunktionen, Einstellungen sowie Benutzer- und Rollenverwaltung; immer vollständig, systemgeschützt und nicht über die Benutzerverwaltung vergebbar |
-| Fuhrparkleitung | Standardrolle mit allen Fuhrparkfunktionen, Einstellungen und den delegierten Rechten `users_manage`/`roles_manage`; Rechte, Rang und Objekt-Ausnahmen können angepasst werden |
+| Fuhrparkleitung | Standardrolle mit allen Fuhrparkfunktionen, Einstellungen, den delegierten Rechten `users_manage`/`roles_manage` sowie `audit_view` (ohne `audit_view_all`); Rechte, Rang und Objekt-Ausnahmen können angepasst werden |
 | Eigene Rollen | Frei anlegbare Rollen mit individuellem Rang, Modulrechten und Objekt-Ausnahmen |
 
 Konten mit `users_manage` können Benutzer anlegen, bearbeiten, deaktivieren, anonymisieren und Benutzer-Ausnahmen pflegen. Konten mit `roles_manage` verwalten Rollen, Ränge und Objekt-Ausnahmen. Beide Rechte sind getrennt vergebbar. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern.
@@ -151,6 +160,27 @@ Die Einstellungen gelten serverseitig für Datenanzeige und Aktionen. Ein Benutz
 ### Benutzer-Ausnahmen
 
 Unter **Benutzer → Benutzer-Ausnahmen** können Personen mit `users_manage` persönliche Modul- und Objekt-Ausnahmen pflegen, soweit Rang und Grant Ceiling dies zulassen. Diese haben Vorrang vor den Rollenrechten. Beim Wechsel in die Administrator-Rolle oder bei der Anonymisierung werden persönliche Ausnahmen entfernt.
+
+## Audit-Log
+
+Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichbar. Der sichtbare Bereich wird ausschließlich serverseitig bestimmt:
+
+| Berechtigung | Sichtbarer Bereich |
+| --- | --- |
+| keine Audit-Berechtigung | ausschließlich eigene Aktionen |
+| `audit_view` | eigene Aktionen und Aktionen von Personen mit strikt niedrigerem Rang |
+| `audit_view_all` | alle Aktivitäten, einschließlich Meta-, System- und Superadmin-Einträgen |
+
+- `audit_view_all` schließt `audit_view` ein und ist innerhalb von Rangfolge und Grant Ceiling delegierbar. Es gibt keinen Umschalter und keinen `all`-Parameter.
+- Rolle und Rang werden beim Schreiben als Snapshot gespeichert; spätere Rollen- oder Rangänderungen wirken nicht rückwirkend.
+- Die Fuhrparkleitung erhält durch die Migration einmalig `audit_view`, nicht `audit_view_all`. Wird das Recht später entzogen, bleibt der Entzug bestehen.
+- Suche und Filter (`q`, Akteur:in, Aktion, Zieltyp, Ziel, Zeitraum, Seite) arbeiten nur auf dem bereits serverseitig eingeschränkten Bereich. Gesucht wird ausschließlich in freigegebenen Feldern, nicht in rohen `details`.
+- Ziel-Labels erscheinen nur bei vorhandener Objektberechtigung; andernfalls werden Zieltyp und gekürzte ID angezeigt. Details werden als serverseitig erzeugte Allowlist (`detailsSummary`) ausgeliefert. Passwörter, Hashes, Tokens, Cookies, Session-IDs und IP-Adressen werden weder gespeichert noch ausgeliefert.
+- Eigene Einträge sind unmaskiert. Bei fremden Einträgen mit `audit_view` werden E-Mail-Adresse und Telefonnummer maskiert; `audit_view_all` zeigt sie unmaskiert.
+- Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
+- Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
+
+Die Audit-Migration verwendet `user_version = 2`, ergänzt die Snapshot-Spalten und Indizes idempotent und befüllt bestehende Einträge aus dem aktuellen Benutzer-/Rollenstand nach.
 
 ## Benutzerkonten und Anonymisierung
 
@@ -217,6 +247,7 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 ├─ server/             Express-Anwendung, API, Schema, Bootstrap und Backup
 ├─ public/             CSS, Browser-JavaScript und Branding-Dateien
 ├─ server/views/       HTML für Anwendung und Login
+├─ tests/              Integrationstests mit temporärer Datenbank
 ├─ Dockerfile
 ├─ docker-compose.yml
 ├─ deploy-docker.sh     Deployment ohne Compose-Plugin
@@ -233,8 +264,7 @@ Für einen echten Produktivbetrieb sind zusätzlich einzuplanen:
 - E-Mail-/Teams-Erinnerungen für TÜV und Wartungen
 - zentrale Virenprüfung für hochgeladene PDF-Belege
 - standortbezogene Sichtbarkeit und Freigabeprozesse
-- revisionssichere Audit-Auswertung im UI
-- Aufbewahrungs- und Löschkonzept nach DSGVO
+- Aufbewahrungs- und Löschkonzept für Audit- und personenbezogene Daten nach DSGVO
 - Datenschutz-Folgenabschätzung und Betriebsvereinbarung bei personenbezogenen Fahrerdaten
 - externe Backups, Monitoring und Wiederherstellungstests
 - Lasttests und Penetrationstest vor öffentlichem Betrieb

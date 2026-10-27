@@ -148,6 +148,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   entity_type TEXT NOT NULL,
   entity_id TEXT,
   details TEXT,
+  actor_role_id TEXT,
+  actor_role_name TEXT,
+  actor_rank INTEGER,
+  is_meta INTEGER NOT NULL DEFAULT 0 CHECK (is_meta IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

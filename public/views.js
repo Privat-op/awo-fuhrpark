@@ -1587,6 +1587,236 @@ function renderRoles() {
 }
 
 /* =========================================================
+   Audit-Log
+   ========================================================= */
+function auditScopeMeta(scope) {
+  if (scope === 'all') {
+    return {
+      label: 'Alle Aktivitäten',
+      description: 'Sie sehen alle Audit-Einträge, einschließlich Meta- und Systemeinträgen.'
+    };
+  }
+  if (scope === 'rank') {
+    return {
+      label: 'Mein Rangbereich',
+      description: 'Sie sehen Ihre eigenen Aktionen sowie Aktionen von Personen mit strikt niedrigerem Rang.'
+    };
+  }
+  if (scope === 'self') {
+    return {
+      label: 'Meine Aktivitäten',
+      description: 'Sie sehen ausschließlich Ihre eigenen Aktionen. Suche und Filter können diesen Bereich nicht erweitern.'
+    };
+  }
+  return {
+    label: 'Ihre Aktivitäten',
+    description: 'Der Server bestimmt den sichtbaren Bereich anhand Ihrer Berechtigungen.'
+  };
+}
+
+function auditActionTone(action) {
+  if (['create', 'start', 'complete', 'login'].includes(action)) return 'green';
+  if (['delete', 'cancel', 'login_failed'].includes(action)) return 'red';
+  if (['update', 'change_password'].includes(action)) return 'blue';
+  if (['export', 'anonymize'].includes(action)) return 'violet';
+  if (['read', 'logout'].includes(action)) return 'gray';
+  return 'gray';
+}
+
+function shortAuditId(value) {
+  const text = String(value || '');
+  if (!text) return '';
+  return text.length > 10 ? `${text.slice(0, 8)}…` : text;
+}
+
+function renderAuditResults(data) {
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (!items.length) {
+    if (hasActiveAuditFilters()) {
+      return emptyState(
+        'search',
+        'Keine Treffer',
+        'Für die gewählten Such- und Filterkriterien gibt es im freigegebenen Bereich keine Einträge.',
+        '<button class="btn btn-ghost btn-sm" type="button" data-action="audit-reset">Filter zurücksetzen</button>'
+      );
+    }
+    if (data?.scope === 'self') {
+      return emptyState('history', 'Noch keine eigenen Aktionen', 'Sobald Sie Änderungen vornehmen, erscheinen Ihre Aktivitäten hier.');
+    }
+    if (data?.scope === 'rank') {
+      return emptyState('shield', 'Keine Aktionen im Rangbereich', 'Im freigegebenen Rangbereich sind für den gewählten Zeitraum keine Aktivitäten vorhanden.');
+    }
+    return emptyState('history', 'Noch keine Audit-Einträge', 'Für den gewählten Zeitraum liegen keine protokollierten Aktivitäten vor.');
+  }
+
+  const rows = items.map((item) => {
+    const actor = item.actor || { id: null, name: 'System', roleName: null, rank: null };
+    const isSelf = actor.id && currentUser?.id === actor.id;
+    const roleMeta = actor.roleName
+      ? `<span class="table-main">${esc(actor.roleName)}</span>`
+      : actor.id
+        ? '<span class="table-main">—</span>'
+        : '<span class="table-main">System</span>';
+    const rankMeta = actor.rank === null || actor.rank === undefined
+      ? ''
+      : `<span class="table-sub">Rang ${formatNumber(actor.rank)}</span>`;
+    const actionText = item.actionLabel || AUDIT_ACTION_LABELS[item.action] || item.action;
+    const details = Array.isArray(item.detailsSummary) && item.detailsSummary.length
+      ? `<div class="audit-details">${item.detailsSummary.map((entry) => `
+          <span class="audit-detail"><span>${esc(entry.label)}</span><strong>${esc(entry.value)}</strong></span>
+        `).join('')}</div>`
+      : '<span class="text-muted">—</span>';
+    const targetMeta = item.entityId
+      ? `<span class="table-sub">#${esc(shortAuditId(item.entityId))}</span>`
+      : '';
+    return `
+      <tr>
+        <td>
+          <span class="table-main">${esc(formatDateTime(item.createdAt))}</span>
+          <span class="table-sub">#${esc(item.id)}${item.isMeta ? ' · Meta' : ''}</span>
+        </td>
+        <td>
+          <div class="table-person">
+            ${driverAvatar({ name: actor.name || 'System', color: actor.anonymized ? '#94a3b8' : '#2563eb' }, 'avatar-sm')}
+            <div>
+              <span class="table-main">${esc(actor.name || 'System')} ${isSelf ? '<span class="badge badge-gray no-dot">Sie</span>' : ''}</span>
+              ${actor.anonymized ? '<span class="table-sub">Konto anonymisiert</span>' : ''}
+            </div>
+          </div>
+        </td>
+        <td>${roleMeta}${rankMeta}</td>
+        <td>
+          <span class="badge badge-${auditActionTone(item.action)}">${esc(actionText)}</span>
+          <span class="table-sub">${esc(item.entityTypeLabel || AUDIT_ENTITY_LABELS[item.entityType] || item.entityType)}</span>
+        </td>
+        <td>
+          <span class="table-main">${esc(item.targetLabel || '—')}</span>
+          ${targetMeta}
+        </td>
+        <td>${details}</td>
+      </tr>`;
+  }).join('');
+
+  return `<div class="table-wrap"><table class="data-table audit-table">
+    <thead><tr><th>Zeit</th><th>Akteur:in</th><th>Rolle</th><th>Aktion</th><th>Ziel</th><th>Details</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+function renderAuditPagination(data) {
+  const page = Math.max(1, Number(data?.page) || 1);
+  const totalPages = Math.max(0, Number(data?.totalPages) || 0);
+  const total = Number(data?.total) || 0;
+  const lastPage = Math.max(1, totalPages);
+  return `
+    <div class="table-footer audit-pagination">
+      <span>${formatNumber(total)} ${total === 1 ? 'Eintrag' : 'Einträge'} · Seite ${page} von ${lastPage}</span>
+      <div class="audit-pager">
+        <button class="btn btn-ghost btn-sm" type="button" data-action="audit-page" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''} aria-label="Vorherige Seite">
+          ${icon('chevron-left')} Zurück
+        </button>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="audit-page" data-page="${page + 1}" ${totalPages === 0 || page >= totalPages ? 'disabled' : ''} aria-label="Nächste Seite">
+          Weiter ${icon('chevron-right')}
+        </button>
+      </div>
+    </div>`;
+}
+
+function renderAudit() {
+  ensureAuditFilters();
+  const scope = auditScopeMeta(ui.auditData?.scope);
+  const actionOptions = Object.entries(AUDIT_ACTION_LABELS)
+    .map(([value, label]) => `<option value="${esc(value)}" ${ui.auditAction === value ? 'selected' : ''}>${esc(label)}</option>`)
+    .join('');
+  const entityOptions = Object.entries(AUDIT_ENTITY_LABELS)
+    .map(([value, label]) => `<option value="${esc(value)}" ${ui.auditEntityType === value ? 'selected' : ''}>${esc(label)}</option>`)
+    .join('');
+  const pageSizeOptions = [25, 50, 100]
+    .map((value) => `<option value="${value}" ${Number(ui.auditPageSize) === value ? 'selected' : ''}>${value}</option>`)
+    .join('');
+
+  return `
+    ${pageHead('Transparenz', 'Audit-Log', 'Nachvollziehbare Aktivitäten im Rahmen Ihrer Berechtigungen. Einträge sind schreibgeschützt.',
+      '<span class="badge badge-gray no-dot">Schreibgeschützt</span>')}
+    <section class="audit-scope-banner" aria-labelledby="auditScopeLabel">
+      <span class="audit-scope-icon">${icon('shield')}</span>
+      <div class="audit-scope-copy">
+        <span class="eyebrow">Ihr Sichtbereich</span>
+        <strong id="auditScopeLabel">${esc(scope.label)}</strong>
+        <span id="auditScopeText">${esc(scope.description)}</span>
+      </div>
+    </section>
+
+    <form class="card audit-filter-card" id="auditFilterForm">
+      <div class="card-body">
+        <div class="audit-filter-grid">
+          <div class="field audit-filter-wide">
+            <label for="auditQuery">Suche</label>
+            <div class="input-icon-wrap audit-search-wrap">
+              ${icon('search')}
+              <input class="input" id="auditQuery" name="q" type="search" value="${esc(ui.auditQuery)}" placeholder="Akteur:in, Rolle, Aktion, Ziel …" autocomplete="off">
+            </div>
+          </div>
+          <div class="field">
+            <label for="auditActor">Akteur:in</label>
+            <input class="input" id="auditActor" name="actor" type="search" value="${esc(ui.auditActor)}" placeholder="Name oder ID" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="auditAction">Aktion</label>
+            <select class="select" id="auditAction" name="action">
+              <option value="">Alle Aktionen</option>
+              ${actionOptions}
+            </select>
+          </div>
+          <div class="field">
+            <label for="auditEntityType">Zieltyp</label>
+            <select class="select" id="auditEntityType" name="entityType">
+              <option value="">Alle Zieltypen</option>
+              ${entityOptions}
+            </select>
+          </div>
+          <div class="field">
+            <label for="auditTarget">Ziel/Objekt</label>
+            <input class="input" id="auditTarget" name="target" type="search" value="${esc(ui.auditTarget)}" placeholder="Label oder ID" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="auditFrom">Von</label>
+            <input class="input" id="auditFrom" name="from" type="date" value="${esc(ui.auditFrom)}">
+          </div>
+          <div class="field">
+            <label for="auditTo">Bis</label>
+            <input class="input" id="auditTo" name="to" type="date" value="${esc(ui.auditTo)}">
+          </div>
+          <div class="field">
+            <label for="auditPageSize">Einträge pro Seite</label>
+            <select class="select" id="auditPageSize" name="pageSize">
+              ${pageSizeOptions}
+            </select>
+          </div>
+        </div>
+        <div class="audit-filter-actions">
+          <span class="text-muted">Die Suche nutzt ausschließlich freigegebene Felder; Details werden serverseitig reduziert.</span>
+          <div class="audit-filter-buttons">
+            <button class="btn btn-ghost btn-sm" type="button" data-action="audit-reset">${icon('x')} Zurücksetzen</button>
+            <button class="btn btn-primary btn-sm" type="submit">${icon('filter')} Filter anwenden</button>
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <section class="card mt-18">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Ereignisse</h3><p class="card-sub">Neueste Einträge zuerst · Zeitraum inklusive</p></div>
+        <span id="auditTotal" class="badge badge-gray no-dot">Wird geladen …</span>
+      </div>
+      <div id="auditResults" aria-live="polite">
+        <div class="audit-loading" role="status"><span class="app-spinner"></span><span>Audit-Einträge werden geladen …</span></div>
+      </div>
+      <div id="auditPagination"></div>
+    </section>`;
+}
+
+/* =========================================================
    Routen
    ========================================================= */
 const ROUTES = {
@@ -1597,6 +1827,7 @@ const ROUTES = {
   wartung: renderMaintenance,
   kosten: renderCosts,
   fahrer: renderDrivers,
+  audit: renderAudit,
   benutzer: renderUsers,
   rollen: renderRoles,
   einstellungen: renderSettings

@@ -234,10 +234,47 @@ const PAGES = [
   { route: 'wartung', title: 'Wartung & TÜV', description: 'Wartungsplan und Hauptuntersuchungen', icon: 'wrench' },
   { route: 'kosten', title: 'Kosten', description: 'Betriebskosten und Auswertungen', icon: 'receipt' },
   { route: 'fahrer', title: 'Fahrer:innen', description: 'Mitarbeitende und Führerscheine', icon: 'users' },
+  { route: 'audit', title: 'Audit-Log', description: 'Nachvollziehbare Aktivitäten und Lesezugriffe', icon: 'history' },
   { route: 'benutzer', title: 'Benutzer', description: 'Zugänge und Konten verwalten', icon: 'id' },
   { route: 'rollen', title: 'Rollen & Rechte', description: 'Eigene Rollen und Berechtigungen verwalten', icon: 'shield' },
   { route: 'einstellungen', title: 'Einstellungen', description: 'Organisation und Datenexport', icon: 'settings' }
 ];
+
+const AUDIT_ACTION_LABELS = {
+  create: 'Erstellt',
+  update: 'Aktualisiert',
+  delete: 'Gelöscht',
+  login: 'Anmeldung',
+  login_failed: 'Fehlgeschlagene Anmeldung',
+  logout: 'Abmeldung',
+  export: 'Export',
+  start: 'Gestartet',
+  complete: 'Abgeschlossen',
+  cancel: 'Storniert',
+  change_password: 'Passwort geändert',
+  anonymize: 'Anonymisiert',
+  read: 'Audit-Log gelesen'
+};
+
+const AUDIT_ENTITY_LABELS = {
+  vehicle: 'Fahrzeug',
+  driver: 'Fahrer:in',
+  booking: 'Buchung',
+  trip: 'Fahrt',
+  cost: 'Kostenposition',
+  maintenance: 'Wartung',
+  user: 'Benutzerkonto',
+  role: 'Rolle',
+  role_object_permissions: 'Rollen-Objektausnahmen',
+  user_permissions: 'Benutzer-Ausnahmen',
+  user_policy: 'Benutzerrichtlinie',
+  settings: 'Einstellungen',
+  branding: 'Erscheinungsbild',
+  logbook: 'Fahrtenbuch',
+  data: 'Datenexport',
+  audit: 'Audit-Log',
+  system: 'System'
+};
 
 const ROUTE_PERMISSIONS = {
   fahrzeuge: 'vehicles_view',

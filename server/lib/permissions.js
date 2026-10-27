@@ -63,6 +63,14 @@ const PERMISSION_GROUPS = [
       { key: 'branding_manage', label: 'Erscheinungsbild verwalten' },
       { key: 'export_data', label: 'Datenexport' }
     ]
+  },
+  {
+    key: 'audit',
+    label: 'Audit-Log',
+    permissions: [
+      { key: 'audit_view', label: 'Eigene und niedrigere Ränge ansehen' },
+      { key: 'audit_view_all', label: 'Alle Aktivitäten ansehen' }
+    ]
   }
 ];
 
@@ -79,7 +87,8 @@ const IMPLICATIONS = {
   maintenance_manage: ['maintenance_view'],
   costs_view: ['vehicles_view'],
   costs_manage: ['costs_view'],
-  drivers_manage: ['drivers_view']
+  drivers_manage: ['drivers_view'],
+  audit_view_all: ['audit_view']
 };
 
 const DEFAULT_MANAGER_PERMISSIONS = [
@@ -90,7 +99,8 @@ const DEFAULT_MANAGER_PERMISSIONS = [
   'costs_view', 'costs_manage',
   'drivers_view', 'drivers_manage',
   'users_manage', 'roles_manage',
-  'settings_manage', 'export_data'
+  'settings_manage', 'export_data',
+  'audit_view'
 ];
 
 const ROLE_SCHEMA_VERSION = 1;
