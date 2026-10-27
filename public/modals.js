@@ -1638,10 +1638,6 @@ function openRoleModal(roleId = null) {
             <input class="input" id="roleRank" name="rank" type="number" min="1" max="${maxRank}" step="1" value="${esc(String(role.rank ?? 1))}" required>
             <p class="field-hint">Muss unterhalb Ihres eigenen Rangs (${formatNumber(currentUser?.roleRank || 0)}) liegen. Höher = mehr Rechte.</p>
           </div>
-          <div class="info-banner">
-            ${icon('shield')}
-            <div><strong>Rang und Grant Ceiling</strong><p>Die neue Rolle muss strikt unter Ihrem Rang liegen. Ausgegraute Rechte gehören nicht zum Grant Ceiling Ihrer eigenen Rolle und können nicht vergeben werden.</p></div>
-          </div>
         </div>
         <div class="detail-section">
           <p class="detail-section-title">Berechtigungen</p>
