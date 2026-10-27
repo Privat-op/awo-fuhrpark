@@ -36,6 +36,17 @@ v0.6.0 bündelt Etappe 2 (Own Trips, Buchungsanfragen, dauerhafte Fahrzeug-Sperr
 
 Details, Migration und bekannte Einschränkungen: [Release Notes v0.6.0](RELEASE_NOTES_v0.6.0.md).
 
+## Release v0.6.1
+
+v0.6.1 ergänzt Own-Trip-Actions, Superadmin (Etappe 3) und den UI-Berechtigungs-Fix inklusive Admin-Self-Driver-Link. QS-Freigabe: JA, keine Findings; DEV-Basis `506b9f0`.
+
+- **Own-Trip-Actions:** `own_trips_execute`; eigene geplante Fahrten starten, aktive beenden; Fremd-/Unverknüpft-Kontexte 403.
+- **Superadmin:** dateibasiert über `SUPERADMIN_FILE`, bcrypt-Hash, Rank 2.000.000, systemgeschützt und in der UI vollständig ausgeblendet; Admin-Verwaltung nur durch Superadmin; fehlende/ungültige Datei sperrt nur den Superadmin-Login.
+- **UI-Fix:** Sidebar ohne Flash unerlaubter Einträge; Settings nur mit erlaubten Karten; Admin kann ausschließlich sein eigenes Fahrerprofil verknüpfen.
+- **Migration:** `user_version = 4`.
+
+Details: [Release Notes v0.6.1](RELEASE_NOTES_v0.6.1.md) · [Feature-Doku v0.6.1](FEATURE_DOKU_v0.6.1.md).
+
 > **Hinweis zum Fahrtenbuch:** Historische Nachtragungen dürfen einen Startkilometer unter dem aktuellen Fahrzeugstand haben. Die Oberfläche zeigt in diesem Fall einen Hinweis, blockiert das Speichern aber nicht; der Fahrzeugstand wird nur angehoben, wenn der eingetragene Endkilometer höher liegt.
 
 ## Schnellstart mit Docker
