@@ -269,6 +269,7 @@ function applyState(state) {
       ? {
           driver: state.ownTrips.driver || null,
           canRequest: Boolean(state.ownTrips.canRequest),
+          canExecute: Boolean(state.ownTrips.canExecute),
           vehicles: Array.isArray(state.ownTrips.vehicles) ? state.ownTrips.vehicles : [],
           bookings: Array.isArray(state.ownTrips.bookings) ? state.ownTrips.bookings : [],
           requests: Array.isArray(state.ownTrips.requests) ? state.ownTrips.requests : []
@@ -864,13 +865,24 @@ function closeSidebar() {
 /* =========================================================
    Aktionen
    ========================================================= */
+function canExecuteOwnBooking(bookingId) {
+  if (canOn('booking', bookingId, 'bookings_manage')) return true;
+  return Boolean(db.ownTrips?.canExecute && db.ownTrips.bookings.some((item) => item.id === bookingId));
+}
+
+function getBookingForAction(bookingId) {
+  return db.bookings.find((item) => item.id === bookingId)
+    || db.ownTrips?.bookings?.find((item) => item.id === bookingId)
+    || null;
+}
+
 async function startBooking(bookingId) {
-  if (!canOn('booking', bookingId, 'bookings_manage')) {
+  if (!canExecuteOwnBooking(bookingId)) {
     toast('Keine Berechtigung', 'Für diese Buchung fehlt die Berechtigung zum Starten.', 'error');
     return;
   }
-  const booking = db.bookings.find((item) => item.id === bookingId);
-  const vehicle = booking ? getVehicle(booking.vehicleId) : null;
+  const booking = getBookingForAction(bookingId);
+  const vehicle = booking ? bookingVehicle(booking) : null;
   try {
     const state = await apiFetch(`/api/bookings/${encodeURIComponent(bookingId)}/start`, { method: 'POST' });
     applyServerState(state);
