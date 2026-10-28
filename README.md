@@ -28,14 +28,15 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
 
-## Release v0.9.0-dev (Paket 3)
+## Release v0.9.0 (Paket 3)
 
-Paket 3 führt den Dark Mode ein. Der Stand ist **nicht released und nicht deployed**; QS und Freigabe stehen aus.
+Paket 3 führt den Dark Mode ein. Der Stand ist **QS-freigegeben (54 Checks, Freigabe JA; ein niedriges Finding QS-012 im Backlog)** und wird als v0.9.0 deployed.
 
 - **Drei Modi:** `light`, `dark` und `auto` pro Nutzerkonto; `NULL` folgt dem globalen Default `light`.
 - **Globaler Default:** in den Einstellungen durch `settings_manage` änderbar; die Loginseite nutzt ausschließlich diesen Default.
 - **Kein Flackern:** serverseitiges `data-color-mode` und ein Inline-Bootstrap nur für `auto` vor dem Stylesheet; Media-Query-Listener aktualisiert ohne Reload.
 - **Darstellung:** semantische Light-/Dark-Tokens für AWO und neutral, Tabellen, Karten, Formulare, Modale, Charts, Toasts, Leerzustände und Login; Fokusringe und `prefers-reduced-motion` bleiben erhalten.
+- **Kompakter Header:** einzelner Hell/Dunkel-Umschalter; Automatik bleibt in den Einstellungen. Der Header nutzt eigene Tokens und bleibt im Dark Mode dunkel.
 - **Druck:** Druck/PDF erzwingt immer das helle Farbschema.
 - **Migration:** `user_version = 7`.
 

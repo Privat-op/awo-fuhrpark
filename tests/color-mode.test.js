@@ -126,6 +126,9 @@ test('CSS-Token-Vertrag: Light/Dark, color-scheme, Fokus und Print', () => {
   assert.match(print, /color-scheme:\s*light\s*!important/);
   assert.match(css, /\.color-mode-switch\s*\{/);
   assert.match(css, /\.color-mode-option\[aria-pressed="true"\]/);
+  assert.match(root, /--focus-ring:\s*var\(--ink\)/);
+  assert.match(dark, /--focus-ring:\s*var\(--ink\)/);
+  assert.match(dark, /--awo:\s*var\(--awo-on-dark/);
   const topbar = extractBlock(css, '.topbar');
   assert.ok(topbar, '.topbar fehlt');
   assert.match(topbar, /background:\s*var\(--topbar-bg\)/);
@@ -142,6 +145,16 @@ test('CSS-Token-Vertrag: Light/Dark, color-scheme, Fokus und Print', () => {
   const body = extractBlock(css, 'body');
   assert.match(body, /color:\s*var\(--ink\)/);
   assert.match(body, /background:\s*var\(--bg\)/);
+});
+
+test('Custom-Akzent wird im Dark Mode kontrastreich aufgehellt', () => {
+  const { getBranding } = require('../server/lib/branding');
+  const branding = getBranding({ theme: 'neutral', accent_color: '#101820' });
+  assert.ok(branding.accentOnDark.startsWith('#'), 'Dark-Akzent fehlt');
+  assert.notEqual(branding.accentOnDark, branding.accentColor);
+  assert.ok(contrast(branding.accentOnDark, '#191d23') >= 3, `Dark-Akzent-Kontrast zu niedrig: ${contrast(branding.accentOnDark, '#191d23')}`);
+  assert.match(branding.brandStyles, /--awo-on-dark:#/);
+  assert.match(branding.brandStyles, /--brand-rgb-on-dark:/);
 });
 
 test('UI enthält kompakten Header-Umschalter (Hell/Dunkel) und Einstellungs-Umschalter mit ARIA und Icons', () => {
