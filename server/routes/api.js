@@ -69,6 +69,7 @@ const {
   sanitizeSmtpError,
   smtpErrorMessage
 } = require('../lib/smtp');
+const { getRetentionSettings, setRetentionSettings, runRetention } = require('../lib/retention');
 
 const router = express.Router();
 
@@ -1855,6 +1856,35 @@ router.post('/users/:id/anonymize', requirePermission('users_manage'), (req, res
     assertUserManageable(req, existing);
     anonymizeUser(req.params.id, { actorId: req.user.id, reason: 'manual' });
     sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/retention', requireAdmin, (req, res, next) => {
+  try {
+    const current = getRetentionSettings(db);
+    const values = {
+      auditRetentionDays: intValue(req.body?.auditRetentionDays ?? current.auditRetentionDays, 'Audit-Aufbewahrung', { min: 0, max: 3650, required: true }),
+      sessionRetentionDays: intValue(req.body?.sessionRetentionDays ?? current.sessionRetentionDays, 'Sitzungs-Aufbewahrung', { min: 0, max: 3650, required: true }),
+      passwordResetRetentionDays: intValue(req.body?.passwordResetRetentionDays ?? current.passwordResetRetentionDays, 'Passwort-Reset-Aufbewahrung', { min: 0, max: 3650, required: true }),
+      notificationRetentionDays: intValue(req.body?.notificationRetentionDays ?? current.notificationRetentionDays, 'Benachrichtigungs-Aufbewahrung', { min: 0, max: 3650, required: true })
+    };
+    db.transaction(() => {
+      setRetentionSettings(db, values);
+      audit(req, 'update', 'retention_settings', '1', values);
+    })();
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/retention/run', requireAdmin, (req, res, next) => {
+  try {
+    const dryRun = booleanValue(req.body?.dryRun, false);
+    const result = runRetention(db, { dryRun });
+    res.json(result);
   } catch (error) {
     next(error);
   }

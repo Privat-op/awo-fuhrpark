@@ -417,6 +417,10 @@ function getState(db, user, auth = null) {
       borderColor: settingsRow?.border_color || '#e7e9ee',
       defaultColorMode,
       autoAnonymizeDays: Number(settingsRow?.auto_anonymize_days) || 0,
+      auditRetentionDays: Number(settingsRow?.audit_retention_days) || 0,
+      sessionRetentionDays: Number(settingsRow?.session_retention_days) || 0,
+      passwordResetRetentionDays: Number(settingsRow?.password_reset_retention_days) || 0,
+      notificationRetentionDays: Number(settingsRow?.notification_retention_days) || 0,
       logoUrl: settingsRow?.logo_file
         ? `/branding/logo?v=${encodeURIComponent(settingsRow.updated_at || '')}`
         : null

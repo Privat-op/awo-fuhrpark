@@ -176,6 +176,10 @@ CREATE TABLE IF NOT EXISTS settings (
   border_color TEXT NOT NULL DEFAULT '#e7e9ee',
   default_color_mode TEXT NOT NULL DEFAULT 'light' CHECK (default_color_mode IN ('light', 'dark', 'auto')),
   auto_anonymize_days INTEGER NOT NULL DEFAULT 0,
+  audit_retention_days INTEGER NOT NULL DEFAULT 0,
+  session_retention_days INTEGER NOT NULL DEFAULT 0,
+  password_reset_retention_days INTEGER NOT NULL DEFAULT 0,
+  notification_retention_days INTEGER NOT NULL DEFAULT 0,
   seeded_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

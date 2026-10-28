@@ -243,6 +243,41 @@ test('QS-010: explizit leeres permissions-Feld entfernt Rechte weiterhin', async
   assert.deepEqual(after, []);
 });
 
+test('Retention: Admin speichert Fristen, Manager erhält 403, Dry-Run ist CSRF-geschützt', async () => {
+  const saved = await apiJson(ADMIN_EMAIL, 'PATCH', '/api/retention', {
+    auditRetentionDays: 30,
+    sessionRetentionDays: 30,
+    passwordResetRetentionDays: 30,
+    notificationRetentionDays: 30
+  });
+  assert.equal(saved.status, 200, saved.text);
+  assert.equal(saved.data.settings.auditRetentionDays, 30);
+  assert.equal(saved.data.settings.notificationRetentionDays, 30);
+
+  const dryRun = await apiJson(ADMIN_EMAIL, 'POST', '/api/retention/run', { dryRun: true });
+  assert.equal(dryRun.status, 200, dryRun.text);
+  assert.equal(dryRun.data.dryRun, true);
+  assert.equal(typeof dryRun.data.total, 'number');
+
+  const forbidden = await apiJson(MANAGER_EMAIL, 'PATCH', '/api/retention', {
+    auditRetentionDays: 1,
+    sessionRetentionDays: 1,
+    passwordResetRetentionDays: 1,
+    notificationRetentionDays: 1
+  });
+  assert.equal(forbidden.status, 403);
+
+  const noCsrf = await fetch(`${baseUrl}/api/retention/run`, {
+    method: 'POST',
+    headers: {
+      cookie: clients[ADMIN_EMAIL].cookie,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ dryRun: true })
+  });
+  assert.equal(noCsrf.status, 403);
+});
+
 test('Auto-Refresh: 60s, visible tab, no modal/form, no scroll jump', () => {
   const source = fs.readFileSync(path.join(ROOT, 'public', 'app.js'), 'utf8');
   assert.match(source, /AUTO_REFRESH_INTERVAL_MS = 60_000/);

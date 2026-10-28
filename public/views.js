@@ -1623,6 +1623,48 @@ function renderSecurityCard() {
     </section>`;
 }
 
+function renderRetentionCard() {
+  const settings = db.settings || {};
+  return `
+    <form class="card settings-card" id="retentionForm">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Datenaufbewahrung</h3><p class="card-sub">Technische und auditnahe Daten regelmäßig bereinigen.</p></div>
+        <span class="badge badge-gray no-dot">0 = aus</span>
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="field">
+            <label for="auditRetentionDays">Audit-Log</label>
+            <div class="inline-number"><input class="input" id="auditRetentionDays" name="auditRetentionDays" type="number" min="0" max="3650" step="1" value="${Number(settings.auditRetentionDays) || 0}"><span>Tage</span></div>
+          </div>
+          <div class="field">
+            <label for="sessionRetentionDays">Abgelaufene Sitzungen</label>
+            <div class="inline-number"><input class="input" id="sessionRetentionDays" name="sessionRetentionDays" type="number" min="0" max="3650" step="1" value="${Number(settings.sessionRetentionDays) || 0}"><span>Tage</span></div>
+          </div>
+          <div class="field">
+            <label for="passwordResetRetentionDays">Passwort-Reset-Tokens</label>
+            <div class="inline-number"><input class="input" id="passwordResetRetentionDays" name="passwordResetRetentionDays" type="number" min="0" max="3650" step="1" value="${Number(settings.passwordResetRetentionDays) || 0}"><span>Tage</span></div>
+          </div>
+          <div class="field">
+            <label for="notificationRetentionDays">Benachrichtigungs-Deliveries</label>
+            <div class="inline-number"><input class="input" id="notificationRetentionDays" name="notificationRetentionDays" type="number" min="0" max="3650" step="1" value="${Number(settings.notificationRetentionDays) || 0}"><span>Tage</span></div>
+          </div>
+          <div class="info-banner field-full">
+            ${icon('shield')}
+            <div><strong>Keine automatische Löschung von Geschäftsdaten</strong><p>Buchungen, Kosten und Fahrtenbuch werden durch diese Retention nicht gelöscht. Diese Entscheidung bleibt der rechtlichen Prüfung vorbehalten. Der tägliche Lauf entfernt nur technische und auditnahe Daten.</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">Dry-Run prüft die Mengen, ohne Daten zu löschen.</span>
+        <div class="setting-actions" style="margin-top:0">
+          <button class="btn btn-ghost btn-sm" type="button" data-action="retention-dry-run">${icon('search')} Dry-Run prüfen</button>
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+        </div>
+      </div>
+    </form>`;
+}
+
 function renderSettings() {
   const roleDisplay = currentUser?.roleName || roleLabel(currentUser?.role);
   const canEditSettings = can('settings_manage');
@@ -1663,6 +1705,7 @@ function renderSettings() {
     canViewCostCenters ? renderCostCentersCard() : '',
     canManageBranding ? renderBrandingCard() : '',
     canManageSmtp ? renderSmtpCard() : '',
+    privileged() ? renderRetentionCard() : '',
     canEditSettings ? `
       <form class="card settings-card" id="settingsForm">
         <div class="card-head bordered">

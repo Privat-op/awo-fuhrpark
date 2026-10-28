@@ -31,6 +31,7 @@ const { migrateMfaSchema } = require('./lib/mfa-schema');
 const { migratePasswordResetSchema } = require('./lib/password-reset-schema');
 const { migratePasskeySchema } = require('./lib/passkey-schema');
 const { migrateSsoSchema } = require('./lib/sso-schema');
+const { migrateRetentionSchema } = require('./lib/retention-schema');
 const {
   FLOW_TTL_MS: SSO_FLOW_TTL_MS,
   getSsoConfig,
@@ -64,6 +65,7 @@ const {
 } = require('./lib/webauthn');
 const { startLeasingScheduler } = require('./lib/leasing');
 const { startMaintenanceReminderScheduler } = require('./lib/maintenance-reminders');
+const { startRetentionScheduler } = require('./lib/retention');
 const {
   ensureRoles,
   getRolePermissions,
@@ -277,6 +279,7 @@ migrateMfaSchema(db);
 migratePasswordResetSchema(db);
 migratePasskeySchema(db);
 migrateSsoSchema(db);
+migrateRetentionSchema(db);
 getMfaKey(DATA_DIR);
 bootstrap(db);
 try {
@@ -298,6 +301,11 @@ try {
   startMaintenanceReminderScheduler(db, { dataDir: DATA_DIR });
 } catch (error) {
   console.warn('Wartungs-Erinnerungen konnten nicht gestartet werden:', error.message);
+}
+try {
+  startRetentionScheduler(db);
+} catch (error) {
+  console.warn('Retention-Scheduler konnte nicht gestartet werden:', error.message);
 }
 
 app.disable('x-powered-by');

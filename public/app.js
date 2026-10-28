@@ -283,7 +283,7 @@ function applyState(state) {
   if (!state || typeof state !== 'object') throw new Error('Der Server hat keine gültigen Daten geliefert.');
   db = {
     meta: state.meta || { version: 1, seededAt: null },
-    settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', accentColor: '#0f766e', sidebarStyle: 'dark', pageBackground: '#f4f5f7', surfaceColor: '#ffffff', textColor: '#191c23', mutedColor: '#737a88', borderColor: '#e7e9ee', defaultColorMode: 'light', autoAnonymizeDays: 0, logoUrl: null },
+    settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', accentColor: '#0f766e', sidebarStyle: 'dark', pageBackground: '#f4f5f7', surfaceColor: '#ffffff', textColor: '#191c23', mutedColor: '#737a88', borderColor: '#e7e9ee', defaultColorMode: 'light', autoAnonymizeDays: 0, auditRetentionDays: 0, sessionRetentionDays: 0, passwordResetRetentionDays: 0, notificationRetentionDays: 0, logoUrl: null },
     vehicles: Array.isArray(state.vehicles) ? state.vehicles : [],
     drivers: Array.isArray(state.drivers) ? state.drivers : [],
     costCenters: Array.isArray(state.costCenters) ? state.costCenters : [],
@@ -1360,6 +1360,20 @@ async function testSmtpSettings() {
   }
 }
 
+async function runRetentionDryRun() {
+  try {
+    const result = await apiFetch('/api/retention/run', { method: 'POST', body: { dryRun: true } });
+    const counts = result.counts || {};
+    toast(
+      'Retention-Dry-Run',
+      `${result.total || 0} Datensätze würden entfernt (Audit ${counts.audit || 0}, Sitzungen ${counts.sessions || 0}, Reset-Tokens ${counts.passwordResets || 0}, Benachrichtigungen ${counts.notifications || 0}).`,
+      'info'
+    );
+  } catch (error) {
+    toast('Dry-Run fehlgeschlagen', error.message, 'error');
+  }
+}
+
 function dispatchAction(element) {
   const action = element.dataset.action;
   const id = element.dataset.id;
@@ -1419,6 +1433,7 @@ function dispatchAction(element) {
     case 'mfa-disable': openMfaDisableModal(); break;
     case 'mfa-regenerate': openMfaRegenerateModal(); break;
     case 'mfa-admin-reset': openMfaAdminResetConfirm(id); break;
+    case 'retention-dry-run': runRetentionDryRun(); break;
     case 'add-passkey': openAddPasskeyModal(); break;
     case 'rename-passkey': openRenamePasskeyModal(id); break;
     case 'delete-passkey': openDeletePasskeyConfirm(id); break;
@@ -1861,6 +1876,39 @@ function bindEvents() {
         applyServerState(state);
         if (ui.route === 'einstellungen') renderCurrentView();
         toast('Einstellungen gespeichert', 'Die Organisationsdaten wurden auf dem Server aktualisiert.');
+      } catch (error) {
+        toast('Speichern fehlgeschlagen', error.message, 'error');
+      } finally {
+        if (submitButton) submitButton.disabled = false;
+      }
+      return;
+    }
+
+    if (form.id === 'retentionForm') {
+      event.preventDefault();
+      const data = new FormData(form);
+      const values = {};
+      const fields = {
+        auditRetentionDays: 'Audit-Aufbewahrung',
+        sessionRetentionDays: 'Sitzungs-Aufbewahrung',
+        passwordResetRetentionDays: 'Passwort-Reset-Aufbewahrung',
+        notificationRetentionDays: 'Benachrichtigungs-Aufbewahrung'
+      };
+      for (const [key, label] of Object.entries(fields)) {
+        const value = Number(data.get(key));
+        if (!Number.isInteger(value) || value < 0 || value > 3650) {
+          toast('Ungültige Frist', `${label} muss eine ganze Zahl zwischen 0 und 3650 Tagen sein.`, 'error');
+          return;
+        }
+        values[key] = value;
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      try {
+        const state = await apiFetch('/api/retention', { method: 'PATCH', body: values });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Retention gespeichert', 'Die Aufbewahrungsfristen wurden aktualisiert.');
       } catch (error) {
         toast('Speichern fehlgeschlagen', error.message, 'error');
       } finally {
