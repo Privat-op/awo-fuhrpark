@@ -59,6 +59,10 @@ const {
 const { COLOR_MODES } = require('../lib/color-mode');
 const { leasingWarningForVehicle, triggerLeasingCheck } = require('../lib/leasing');
 const {
+  notifyBookingRequestCreated,
+  notifyBookingRequestDecision
+} = require('../lib/booking-request-notifications');
+const {
   loadSmtpConfig,
   saveSmtpConfig,
   sendMail,
@@ -1127,6 +1131,8 @@ router.post('/booking-requests', (req, res, next) => {
         conflictWarning: conflict.hasConflict
       });
     })();
+    notifyBookingRequestCreated(db, id, { dataDir: DATA_DIR })
+      .catch((error) => console.warn('Buchungsanfrage-Benachrichtigung fehlgeschlagen:', error.message));
     const state = getState(db, req.user, req.auth);
     res.status(201).json({
       ...state,
@@ -1191,6 +1197,8 @@ router.post('/booking-requests/:id/approve', requirePermission('booking_requests
       });
     });
     transaction();
+    notifyBookingRequestDecision(db, req.params.id, 'approved', { dataDir: DATA_DIR })
+      .catch((error) => console.warn('Buchungsanfrage-Benachrichtigung fehlgeschlagen:', error.message));
     sendState(req, res);
   } catch (error) {
     next(error);
@@ -1226,6 +1234,8 @@ router.post('/booking-requests/:id/reject', requirePermission('booking_requests_
       });
     });
     transaction();
+    notifyBookingRequestDecision(db, req.params.id, 'rejected', { dataDir: DATA_DIR })
+      .catch((error) => console.warn('Buchungsanfrage-Benachrichtigung fehlgeschlagen:', error.message));
     sendState(req, res);
   } catch (error) {
     next(error);
