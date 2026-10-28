@@ -9,6 +9,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - **Optionale MFA:** TOTP über Authenticator-App plus 10 einmalige Recovery-Codes, freiwillig pro Konto aktivierbar; kein Zwang, kein Step-up
 - **Optionale Passkeys:** WebAuthn/Passkey als zweiter Faktor nach dem Passwort, mehrere Geräte pro Konto, Fallback auf TOTP/Recovery; kein passwordless Login
 - **Optionales SSO:** generischer OIDC-Authorization-Code-Flow mit PKCE, State und Nonce, Entra-ID-Gruppenmapping, optionalem JIT-Provisioning; lokaler Login bleibt Fallback
+- **Optionale Standorte:** Stammdaten, Benutzer-/Fahrzeugzuordnung, standortbezogene Sichtbarkeit und Freigaberouting; standardmäßig aus (`LOCATIONS_ENABLED=false`)
 - Rollen: **Administrator**, **Fuhrparkleitung**, **Standardbenutzer** sowie frei anlegbare Rollen
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
@@ -352,7 +353,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 12`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 13`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 
@@ -462,6 +463,18 @@ SSO ist standardmäßig deaktiviert (`SSO_ENABLED` fehlt oder ist `0`). Der loka
 - **Sicherheit:** State/Nonce/PKCE sind sessiongebunden, einmalig und 10 Minuten gültig. Sessions werden nach Erfolg regeneriert. Audit-Einträge `sso_login`, `sso_provision`, `sso_failed` enthalten keine Tokens, Codes oder Secrets.
 - **Entra-App-Registrierung:** Redirect-URI exakt auf `SSO_REDIRECT_URI` setzen (z. B. `https://fuhrpark.example.org/auth/sso/callback`), Client-ID und Client-Secret hinterlegen, optional Token-/Group-Claims für `groups` konfigurieren. `SSO_ISSUER` ist der Tenant-Issuer (z. B. `https://login.microsoftonline.com/<tenant-id>/v2.0`). `SSO_ALLOWED_DOMAINS` beschränkt die zulässigen E-Mail-Domains; leer bedeutet keine zusätzliche Domain-Beschränkung.
 
+## Standorte und Freigaberouting (optional)
+
+`LOCATIONS_ENABLED=true` aktiviert Standort-Stammdaten und Zuordnungen. Ohne Flag bleibt das bisherige Verhalten unverändert.
+
+- Administrator:innen verwalten Standorte unter **Einstellungen → Standorte**; Benutzer- und Fahrzeugformulare erhalten eine Standortauswahl.
+- Sichtbarkeit: Administrator, Superadmin und Fuhrparkleitung bleiben global. Andere Konten mit Standort sehen nur Fahrzeuge, Buchungen, Wartungen, Kosten und Buchungsanfragen ihres Standorts; Fahrzeuge ohne Standort bleiben global sichtbar. Konten ohne Standort bleiben global (Legacy/Übergang).
+- Freigaberouting: Bei Buchungsanfragen werden Manager mit Standort auf den Fahrzeugstandort gefiltert; Manager ohne Standort und Administrator:innen bleiben global. E-Mail-/Teams-Empfänger folgen derselben Regel.
+- Standorte mit Zuordnungen können nicht gelöscht, sondern nur deaktiviert werden.
+- Die bestehende Freitext-Location am Fahrzeug bleibt als Beschreibung erhalten; `locationId` ist die steuernde Zuordnung.
+
+Details: [Feature-Doku v0.12.0 Standorte](FEATURE_DOKU_v0.12.0_Locations.md).
+
 ## Benutzerkonten und Anonymisierung
 
 Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Die Deaktivierung lässt eine bestehende Fahrer-Konto-Verknüpfung unverändert; der Login ist gesperrt. Deaktivierte Konten können anschließend anonymisiert werden – Administratorkonten nur durch den Superadmin; das Superadmin-Konto selbst bleibt ausgenommen:
@@ -560,6 +573,7 @@ Der Lasttest ist kein Produktions-Benchmark und darf nicht gegen den Produktivse
 | `RETENTION_INTERVAL_MS` | Intervall des Retention-Schedulers, Standard 24 Stunden. |
 | `RETENTION_INITIAL_DELAY_MS` | Verzögerung des ersten Retention-Laufs, Standard 10 Sekunden. |
 | `RETENTION_SCHEDULER_DISABLED` | `true` deaktiviert den automatischen Retention-Lauf. |
+| `LOCATIONS_ENABLED` | `true` aktiviert Standorte, Sichtbarkeitsfilter und Freigaberouting; Standard aus. |
 | `APP_BASE_URL` | Öffentliche Basis-URL für Passwort-Reset-Links, z. B. `https://fuhrpark.example.org`. Fehlt sie, wird die Host-Information der Anfrage verwendet. |
 | `REMINDER_INTERVAL_MS` | Intervall des Wartungs-/TÜV-Schedulers in Millisekunden, Standard sechs Stunden. |
 | `REMINDER_INITIAL_DELAY_MS` | Verzögerung des ersten Wartungs-/TÜV-Laufs, Standard fünf Sekunden. |

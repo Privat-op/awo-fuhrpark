@@ -5,6 +5,7 @@ const { getPublicSmtpConfig } = require('./smtp');
 const { getAllCostCenterUsage } = require('./cost-centers');
 const { getDefaultColorMode, getResolvedColorMode, getUserColorMode } = require('./color-mode');
 const { getWebAuthnConfig, listPasskeys } = require('./webauthn');
+const { isLocationsEnabled, listLocations } = require('./locations');
 
 function costCenterFields(row, costCenter = null) {
   return {
@@ -14,7 +15,7 @@ function costCenterFields(row, costCenter = null) {
   };
 }
 
-function mapVehicle(row, costCenter = null) {
+function mapVehicle(row, costCenter = null, location = null) {
   const version = encodeURIComponent(row.updated_at || '');
   return {
     id: row.id,
@@ -36,6 +37,8 @@ function mapVehicle(row, costCenter = null) {
     blocked: Boolean(row.blocked),
     blockedReason: row.blocked_reason || '',
     ...costCenterFields(row, costCenter),
+    locationId: row.location_id || null,
+    locationName: location?.name || '',
     leasing: calculateLeasingState(row),
     image: row.image_file ? `/api/vehicles/${encodeURIComponent(row.id)}/image?v=${version}` : ''
   };
@@ -122,7 +125,7 @@ function mapCost(row, costCenter = null) {
   };
 }
 
-function mapUser(row, costCenter = null, defaultColorMode = 'light') {
+function mapUser(row, costCenter = null, defaultColorMode = 'light', location = null) {
   return {
     id: row.id,
     email: row.email,
@@ -131,6 +134,8 @@ function mapUser(row, costCenter = null, defaultColorMode = 'light') {
     permissionOverrides: parsePermissionOverrides(row.permission_overrides),
     objectPermissions: parseObjectPermissions(row.object_permissions),
     ...costCenterFields(row, costCenter),
+    locationId: row.location_id || null,
+    locationName: location?.name || '',
     colorMode: getUserColorMode(row),
     resolvedColorMode: getResolvedColorMode(row, { default_color_mode: defaultColorMode }),
     active: Boolean(row.active),
@@ -211,6 +216,15 @@ function getState(db, user, auth = null) {
     db.prepare('SELECT user_id, COUNT(*) AS count FROM user_passkeys GROUP BY user_id').all()
       .map((row) => [row.user_id, Number(row.count) || 0])
   );
+  const locationsEnabled = isLocationsEnabled();
+  const locationRows = locationsEnabled ? listLocations(db) : [];
+  const locationById = new Map(locationRows.map((row) => [row.id, row]));
+  const locationFor = (row) => locationById.get(row?.location_id) || null;
+  const actorLocationId = user.location_id || null;
+  const locationGlobal = !locationsEnabled
+    || ['admin', 'superadmin', 'manager'].includes(user.role)
+    || !actorLocationId;
+  const locationVisible = (row) => locationGlobal || !row?.location_id || row.location_id === actorLocationId;
   const costCenterRows = db.prepare('SELECT * FROM cost_centers ORDER BY active DESC, code, id').all();
   const costCenterById = new Map(costCenterRows.map((row) => [row.id, row]));
   const costCenterUsage = getAllCostCenterUsage(db);
@@ -259,17 +273,26 @@ function getState(db, user, auth = null) {
     vehicle: vehicleById.get(row.vehicle_id)
   });
 
-  const visibleVehicleRows = vehicleRows.filter((row) => can('vehicles_view', { vehicle: row }));
+  const visibleVehicleRows = vehicleRows.filter((row) => (
+    can('vehicles_view', { vehicle: row }) && locationVisible(row)
+  ));
   const ownTripVehicleRows = visibleVehicleRows.length
     ? visibleVehicleRows
-    : vehicleRows.filter((row) => !isObjectPermissionDenied(layers, 'vehicle', row.id, 'vehicles_view'));
+    : vehicleRows.filter((row) => (
+      !isObjectPermissionDenied(layers, 'vehicle', row.id, 'vehicles_view') && locationVisible(row)
+    ));
   const visibleDriverRows = driverRows.filter((row) => can('drivers_view', { driver: row }));
   const visibleBookingRows = bookingRows.filter((row) => {
     const context = bookingContext(row);
-    return can('bookings_view', context) || (row.status === 'completed' && can('logbook_view', context));
+    return locationVisible(context.vehicle)
+      && (can('bookings_view', context) || (row.status === 'completed' && can('logbook_view', context)));
   });
-  const visibleMaintenanceRows = maintenanceRows.filter((row) => can('maintenance_view', maintenanceContext(row)));
-  const visibleCostRows = costRows.filter((row) => can('costs_view', costContext(row)));
+  const visibleMaintenanceRows = maintenanceRows.filter((row) => (
+    locationVisible(vehicleById.get(row.vehicle_id)) && can('maintenance_view', maintenanceContext(row))
+  ));
+  const visibleCostRows = costRows.filter((row) => (
+    locationVisible(vehicleById.get(row.vehicle_id)) && can('costs_view', costContext(row))
+  ));
 
   const objectAccess = { vehicle: {}, driver: {}, booking: {}, cost: {}, maintenance: {} };
   const accessKeys = {
@@ -385,7 +408,8 @@ function getState(db, user, auth = null) {
       WHERE status = 'requested'
       ORDER BY created_at, id
     `).all()
-      .filter((row) => isRequestVisibleToApprover(db, user, row, requesterById.get(row.requested_by), { isAdmin }))
+      .filter((row) => locationVisible(vehicleById.get(row.vehicle_id))
+        && isRequestVisibleToApprover(db, user, row, requesterById.get(row.requested_by), { isAdmin }))
       .map((row) => mapBookingRequest(row, {
         vehicle: vehicleById.get(row.vehicle_id),
         driver: driverById.get(row.driver_id),
@@ -425,11 +449,14 @@ function getState(db, user, auth = null) {
         ? `/branding/logo?v=${encodeURIComponent(settingsRow.updated_at || '')}`
         : null
     },
+    features: {
+      locationsEnabled
+    },
     access: {
       modules: moduleAccess,
       objects: objectAccess
     },
-    vehicles: visibleVehicleRows.map((row) => mapVehicle(row, costCenterFor(row))),
+    vehicles: visibleVehicleRows.map((row) => mapVehicle(row, costCenterFor(row), locationFor(row))),
     drivers: visibleDriverRows.map((row) => mapDriver(row, costCenterFor(row))),
     bookings: visibleBookingRows.map((row) => mapBooking(
       row,
@@ -443,6 +470,8 @@ function getState(db, user, auth = null) {
     bookingRequests,
     notificationReads
   };
+
+  if (locationsEnabled) state.locations = locationRows;
 
   const ownMfa = mfaByUserId.get(user.id) || null;
   const passkeys = listPasskeys(db, user.id);
@@ -499,7 +528,7 @@ function getState(db, user, auth = null) {
     const passkeyCount = passkeyCountByUserId.get(row.id) || 0;
     const targetRank = roleRankById.get(row.role) || 0;
     return {
-      ...mapUser(row, costCenterFor(row), defaultColorMode),
+      ...mapUser(row, costCenterFor(row), defaultColorMode, locationFor(row)),
       roleRank: targetRank,
       driverId: linkedDriver?.id || null,
       driverName: linkedDriver?.name || '',

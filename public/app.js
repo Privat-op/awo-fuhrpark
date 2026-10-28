@@ -294,6 +294,10 @@ function applyState(state) {
     users: Array.isArray(state.users) ? state.users : [],
     roles: Array.isArray(state.roles) ? state.roles : [],
     smtp: state.smtp && typeof state.smtp === 'object' ? state.smtp : null,
+    features: state.features && typeof state.features === 'object'
+      ? { locationsEnabled: Boolean(state.features.locationsEnabled) }
+      : { locationsEnabled: false },
+    locations: Array.isArray(state.locations) ? state.locations : [],
     security: state.security && typeof state.security === 'object'
       ? {
           totpEnabled: Boolean(state.security.totpEnabled),
@@ -1387,6 +1391,10 @@ function dispatchAction(element) {
     case 'new-driver': openDriverModal(); break;
     case 'new-cost-center': openCostCenterModal(); break;
     case 'edit-cost-center': openCostCenterModal(id); break;
+    case 'new-location': openLocationModal(); break;
+    case 'edit-location': openLocationModal(id); break;
+    case 'toggle-location-active': toggleLocationActive(id); break;
+    case 'delete-location': deleteLocation(id); break;
     case 'toggle-cost-center-active': toggleCostCenterActive(id); break;
     case 'delete-cost-center': deleteCostCenter(id); break;
     case 'new-maintenance': openMaintenanceModal(); break;

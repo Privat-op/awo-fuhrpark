@@ -15,6 +15,7 @@ const {
   validateSmtpConfig
 } = require('./smtp');
 const { teamsConfigured, deliverTeams } = require('./teams');
+const { isLocationsEnabled } = require('./locations');
 
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
 const PENDING_TIMEOUT_MS = 15 * 60 * 1000;
@@ -38,15 +39,21 @@ function userCanApprove(db, user) {
   }, 'booking_requests_manage', {});
 }
 
-function approverRecipients(db, { excludeUserId = null } = {}) {
+function approverRecipients(db, { excludeUserId = null, locationId = null } = {}) {
   const users = db.prepare(`
-    SELECT id, email, role
+    SELECT id, email, role, location_id
     FROM users
     WHERE active = 1 AND anonymized_at IS NULL AND email <> ''
     ORDER BY role DESC, email
   `).all();
+  const locationFilter = isLocationsEnabled() && locationId;
   return [...new Set(users
     .filter((user) => user.id !== excludeUserId && userCanApprove(db, user))
+    .filter((user) => {
+      if (!locationFilter || !user.location_id) return true;
+      if (user.role === 'admin' || user.role === 'superadmin') return true;
+      return user.location_id === locationId;
+    })
     .map((user) => String(user.email || '').trim().toLowerCase())
     .filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))].sort();
 }
@@ -62,7 +69,7 @@ function requesterRecipient(db, userId) {
 
 function requestContext(db, requestId) {
   return db.prepare(`
-    SELECT r.*, v.name AS vehicle_name, v.plate AS vehicle_plate,
+    SELECT r.*, v.name AS vehicle_name, v.plate AS vehicle_plate, v.location_id AS vehicle_location_id,
       d.name AS driver_name, u.name AS requester_name, u.email AS requester_email
     FROM booking_requests r
     LEFT JOIN vehicles v ON v.id = r.vehicle_id
@@ -192,7 +199,10 @@ async function sendNotification(db, {
 async function notifyBookingRequestCreated(db, requestId, options = {}) {
   const request = requestContext(db, requestId);
   if (!request) return { skipped: 'not_found' };
-  const recipients = approverRecipients(db, { excludeUserId: request.requested_by });
+  const recipients = approverRecipients(db, {
+    excludeUserId: request.requested_by,
+    locationId: request.vehicle_location_id
+  });
   const vehicle = request.vehicle_name
     ? `${request.vehicle_name} (${request.vehicle_plate || 'ohne Kennzeichen'})`
     : 'Fahrzeug';

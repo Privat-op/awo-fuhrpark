@@ -10,6 +10,14 @@ CREATE TABLE IF NOT EXISTS cost_centers (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS locations (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -20,6 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
   object_permissions TEXT NOT NULL DEFAULT '{}',
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
+  location_id TEXT REFERENCES locations(id) ON DELETE SET NULL,
   color_mode TEXT CHECK (color_mode IN ('light', 'dark', 'auto')),
   last_login_at TEXT,
   deactivated_at TEXT,
@@ -61,6 +70,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   notes TEXT NOT NULL DEFAULT '',
   image_file TEXT,
   cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
+  location_id TEXT REFERENCES locations(id) ON DELETE SET NULL,
   leasing_start TEXT,
   leasing_end TEXT,
   leasing_start_km INTEGER,

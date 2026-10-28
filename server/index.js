@@ -32,6 +32,7 @@ const { migratePasswordResetSchema } = require('./lib/password-reset-schema');
 const { migratePasskeySchema } = require('./lib/passkey-schema');
 const { migrateSsoSchema } = require('./lib/sso-schema');
 const { migrateRetentionSchema } = require('./lib/retention-schema');
+const { migrateLocationsSchema } = require('./lib/locations-schema');
 const {
   FLOW_TTL_MS: SSO_FLOW_TTL_MS,
   getSsoConfig,
@@ -280,6 +281,7 @@ migratePasswordResetSchema(db);
 migratePasskeySchema(db);
 migrateSsoSchema(db);
 migrateRetentionSchema(db);
+migrateLocationsSchema(db);
 getMfaKey(DATA_DIR);
 bootstrap(db);
 try {

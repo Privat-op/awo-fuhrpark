@@ -70,6 +70,11 @@ const {
   smtpErrorMessage
 } = require('../lib/smtp');
 const { getRetentionSettings, setRetentionSettings, runRetention } = require('../lib/retention');
+const {
+  isLocationsEnabled,
+  getLocation,
+  assertLocationAssignable
+} = require('../lib/locations');
 
 const router = express.Router();
 
@@ -118,6 +123,15 @@ function requireCostCenterViewForSelection(req, id) {
   if (id && !hasEffectivePermission(req, 'cost_centers_view')) {
     throw new HttpError(403, 'Für die Auswahl einer Kostenstelle fehlt die Berechtigung „Kostenstellen ansehen“.');
   }
+}
+
+function locationIdForPayload(req, body, existingId = null) {
+  if (!isLocationsEnabled()) return existingId;
+  const provided = Object.prototype.hasOwnProperty.call(body || {}, 'locationId');
+  const raw = provided ? body.locationId : existingId;
+  if (raw === undefined || raw === null || raw === '') return null;
+  const id = requiredString(raw, 'Standort', { max: 120 });
+  return assertLocationAssignable(db, id, { existingId });
 }
 
 function costCenterIdForPayload(req, body, existingId = null) {
@@ -668,6 +682,62 @@ router.delete('/cost-centers/:id', requirePermission('cost_centers_manage'), (re
 });
 
 /* =========================================================
+   Standorte
+   ========================================================= */
+router.post('/locations', requireAdmin, (req, res, next) => {
+  try {
+    if (!isLocationsEnabled()) throw new HttpError(404, 'Standorte sind nicht aktiviert.');
+    const name = requiredString(req.body?.name, 'Standortname', { max: 120 });
+    const duplicate = db.prepare('SELECT id FROM locations WHERE name = ? COLLATE NOCASE').get(name);
+    if (duplicate) throw new HttpError(409, 'Ein Standort mit diesem Namen existiert bereits.');
+    const id = crypto.randomUUID();
+    const now = isoNow();
+    db.prepare('INSERT INTO locations (id, name, active, created_at, updated_at) VALUES (?, ?, 1, ?, ?)')
+      .run(id, name, now, now);
+    audit(req, 'create', 'location', id, { name });
+    sendState(req, res, 201);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/locations/:id', requireAdmin, (req, res, next) => {
+  try {
+    if (!isLocationsEnabled()) throw new HttpError(404, 'Standorte sind nicht aktiviert.');
+    const existing = getLocation(db, req.params.id);
+    if (!existing) throw new HttpError(404, 'Standort wurde nicht gefunden.');
+    const name = requiredString(req.body?.name ?? existing.name, 'Standortname', { max: 120 });
+    const active = booleanValue(req.body?.active, Boolean(existing.active));
+    const duplicate = db.prepare('SELECT id FROM locations WHERE name = ? COLLATE NOCASE AND id <> ?').get(name, existing.id);
+    if (duplicate) throw new HttpError(409, 'Ein Standort mit diesem Namen existiert bereits.');
+    db.prepare('UPDATE locations SET name = ?, active = ?, updated_at = ? WHERE id = ?')
+      .run(name, active ? 1 : 0, isoNow(), existing.id);
+    audit(req, 'update', 'location', existing.id, { name, active, previousName: existing.name, previousActive: Boolean(existing.active) });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/locations/:id', requireAdmin, (req, res, next) => {
+  try {
+    if (!isLocationsEnabled()) throw new HttpError(404, 'Standorte sind nicht aktiviert.');
+    const existing = getLocation(db, req.params.id);
+    if (!existing) throw new HttpError(404, 'Standort wurde nicht gefunden.');
+    const users = db.prepare('SELECT COUNT(*) AS count FROM users WHERE location_id = ?').get(existing.id).count;
+    const vehicles = db.prepare('SELECT COUNT(*) AS count FROM vehicles WHERE location_id = ?').get(existing.id).count;
+    if (users + vehicles > 0) {
+      throw new HttpError(409, 'Der Standort ist noch zugeordnet. Deaktivieren Sie ihn stattdessen.');
+    }
+    db.prepare('DELETE FROM locations WHERE id = ?').run(existing.id);
+    audit(req, 'delete', 'location', existing.id, { name: existing.name });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* =========================================================
    Fahrzeuge
    ========================================================= */
 function parseLeasingPayload(body, existing = null, mileage = 0) {
@@ -741,6 +811,7 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
   try {
     const values = parseVehiclePayload(req.body || {});
     values.costCenterId = costCenterIdForPayload(req, req.body || {}, null);
+    values.locationId = locationIdForPayload(req, req.body || {}, null);
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ?').get(values.plate);
     if (duplicate) throw new HttpError(409, `Das Kennzeichen ${values.plate} ist bereits vergeben.`);
     if (req.body?.imageData) imageFile = await storeVehicleImage(req.body.imageData, { actorId: req.user.id });
@@ -751,14 +822,14 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
     if (activeBooking) values.status = 'in_use';
     db.prepare(`
       INSERT INTO vehicles
-        (id, name, plate, type, fuel, seats, location, department, status, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, cost_center_id, leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, name, plate, type, fuel, seats, location, department, status, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, cost_center_id, location_id, leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, values.name, values.plate, values.type, values.fuel, values.seats,
       values.location, values.department, values.status, values.mileage,
       values.blocked ? 1 : 0, values.blockedReason,
       values.nextService, values.tuv, values.insurance, todayISO(),
-      values.color, values.notes, imageFile, values.costCenterId,
+      values.color, values.notes, imageFile, values.costCenterId, values.locationId,
       values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
       now, now
     );
@@ -767,7 +838,8 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
       plate: values.plate,
       blocked: values.blocked,
       blockedReason: values.blockedReason,
-      costCenterId: values.costCenterId
+      costCenterId: values.costCenterId,
+      locationId: values.locationId
     });
     if (values.blocked) audit(req, 'block', 'vehicle', id, { reason: values.blockedReason });
     if (values.leasingEnd) {
@@ -794,6 +866,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
     const existing = ensureVehicleExists(req.params.id);
     const values = parseVehiclePayload(req.body || {}, existing);
     values.costCenterId = costCenterIdForPayload(req, req.body || {}, existing.cost_center_id);
+    values.locationId = locationIdForPayload(req, req.body || {}, existing.location_id);
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ? AND id <> ?').get(values.plate, existing.id);
     if (duplicate) throw new HttpError(409, `Das Kennzeichen ${values.plate} ist bereits vergeben.`);
 
@@ -810,13 +883,14 @@ router.patch('/vehicles/:id', async (req, res, next) => {
       || String(existing.leasing_km_limit ?? '') !== String(values.leasingKmLimit ?? '');
     const mileageChanged = Number(existing.mileage) !== Number(values.mileage);
     const costCenterChanged = (existing.cost_center_id || null) !== (values.costCenterId || null);
+    const locationChanged = (existing.location_id || null) !== (values.locationId || null);
 
     db.transaction(() => {
       db.prepare(`
         UPDATE vehicles SET
           name = ?, plate = ?, type = ?, fuel = ?, seats = ?, location = ?, department = ?,
           status = ?, mileage = ?, blocked = ?, blocked_reason = ?, next_service = ?, tuv = ?, insurance = ?, color = ?, notes = ?,
-          cost_center_id = ?, leasing_start = ?, leasing_end = ?, leasing_start_km = ?, leasing_km_limit = ?,
+          cost_center_id = ?, location_id = ?, leasing_start = ?, leasing_end = ?, leasing_start_km = ?, leasing_km_limit = ?,
           image_file = ?, updated_at = ?
         WHERE id = ?
       `).run(
@@ -824,7 +898,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
         values.location, values.department, values.status, values.mileage,
         values.blocked ? 1 : 0, values.blockedReason,
         values.nextService, values.tuv, values.insurance, values.color, values.notes,
-        values.costCenterId, values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
+        values.costCenterId, values.locationId, values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
         imageFile, isoNow(), existing.id
       );
       audit(req, 'update', 'vehicle', existing.id, {
@@ -832,8 +906,15 @@ router.patch('/vehicles/:id', async (req, res, next) => {
         plate: values.plate,
         blocked: values.blocked,
         blockedReason: values.blockedReason,
-        costCenterId: values.costCenterId
+        costCenterId: values.costCenterId,
+        locationId: values.locationId
       });
+      if (locationChanged) {
+        audit(req, 'assign_location', 'vehicle', existing.id, {
+          locationId: values.locationId,
+          previousLocationId: existing.location_id || null
+        });
+      }
       if (costCenterChanged) {
         audit(req, 'assign_cost_center', 'vehicle', existing.id, {
           costCenterId: values.costCenterId,
@@ -1686,6 +1767,7 @@ router.post('/users', requirePermission('users_manage'), (req, res, next) => {
     const driverId = body.driverId ? requiredString(body.driverId, 'Fahrer:in', { max: 120 }) : null;
     const ownTripsAccess = booleanValue(body.ownTripsAccess, true) ? 1 : 0;
     const costCenterId = costCenterIdForPayload(req, body, null);
+    const locationId = locationIdForPayload(req, body, null);
     if (driverId) {
       const driver = getDriver(driverId);
       if (!driver) throw new HttpError(400, 'Die ausgewählte Fahrer:in existiert nicht.');
@@ -1697,9 +1779,9 @@ router.post('/users', requirePermission('users_manage'), (req, res, next) => {
     const now = isoNow();
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO users (id, email, name, password_hash, role, active, cost_center_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, email, name, bcrypt.hashSync(password, 12), role, 1, costCenterId, now, now);
+        INSERT INTO users (id, email, name, password_hash, role, active, cost_center_id, location_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, email, name, bcrypt.hashSync(password, 12), role, 1, costCenterId, locationId, now, now);
       if (driverId) {
         db.prepare('UPDATE drivers SET user_id = ?, own_trips_access = ?, updated_at = ? WHERE id = ?')
           .run(id, ownTripsAccess, now, driverId);
@@ -1710,7 +1792,8 @@ router.post('/users', requirePermission('users_manage'), (req, res, next) => {
         roleRank: getRoleRank(db, role),
         driverId,
         ownTripsAccess: driverId ? ownTripsAccess : null,
-        costCenterId
+        costCenterId,
+        locationId
       });
       if (driverId) audit(req, 'link_driver', 'user', id, { driverId, ownTripsAccess });
     })();
@@ -1741,6 +1824,8 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
     const password = body.password ? passwordValue(body.password) : null;
     const costCenterId = costCenterIdForPayload(req, body, existing.cost_center_id);
     const costCenterChanged = (existing.cost_center_id || null) !== (costCenterId || null);
+    const locationId = locationIdForPayload(req, body, existing.location_id);
+    const locationChanged = (existing.location_id || null) !== (locationId || null);
 
     const currentDriver = db.prepare('SELECT * FROM drivers WHERE user_id = ?').get(existing.id) || null;
     let nextDriverId = currentDriver?.id || null;
@@ -1766,12 +1851,12 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
     db.transaction(() => {
       if (password) {
         db.prepare(`
-          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, password_hash = ?, cost_center_id = ?, updated_at = ? WHERE id = ?
-        `).run(email, name, role, active ? 1 : 0, deactivatedAt, bcrypt.hashSync(password, 12), costCenterId, now, existing.id);
+          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, password_hash = ?, cost_center_id = ?, location_id = ?, updated_at = ? WHERE id = ?
+        `).run(email, name, role, active ? 1 : 0, deactivatedAt, bcrypt.hashSync(password, 12), costCenterId, locationId, now, existing.id);
       } else {
         db.prepare(`
-          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, cost_center_id = ?, updated_at = ? WHERE id = ?
-        `).run(email, name, role, active ? 1 : 0, deactivatedAt, costCenterId, now, existing.id);
+          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, cost_center_id = ?, location_id = ?, updated_at = ? WHERE id = ?
+        `).run(email, name, role, active ? 1 : 0, deactivatedAt, costCenterId, locationId, now, existing.id);
       }
       if (role === 'admin') {
         db.prepare("UPDATE users SET permission_overrides = '{}', object_permissions = '{}' WHERE id = ?").run(existing.id);
@@ -1803,8 +1888,15 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
         passwordChanged: Boolean(password),
         driverId: nextDriverId,
         ownTripsAccess: nextDriverId ? nextOwnTripsAccess : null,
-        costCenterId
+        costCenterId,
+        locationId
       });
+      if (locationChanged) {
+        audit(req, 'assign_location', 'user', existing.id, {
+          locationId,
+          previousLocationId: existing.location_id || null
+        });
+      }
       if (costCenterChanged) {
         audit(req, 'assign_cost_center', 'user', existing.id, {
           costCenterId,

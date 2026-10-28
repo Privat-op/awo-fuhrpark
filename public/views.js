@@ -1623,6 +1623,32 @@ function renderSecurityCard() {
     </section>`;
 }
 
+function renderLocationsCard() {
+  const locations = db.locations || [];
+  return `
+    <section class="card settings-card" id="locationsCard">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Standorte</h3><p class="card-sub">Stammdaten für Sichtbarkeit und Freigaberouting.</p></div>
+        <button class="btn btn-primary btn-sm" type="button" data-action="new-location">${icon('plus')} Standort anlegen</button>
+      </div>
+      <div class="card-body">
+        ${locations.length ? `<div class="table-wrap"><table class="data-table">
+          <thead><tr><th>Standort</th><th>Status</th><th class="num">Aktion</th></tr></thead>
+          <tbody>${locations.map((location) => `<tr>
+            <td><span class="table-main">${esc(location.name)}</span></td>
+            <td>${location.active ? '<span class="badge badge-green no-dot">Aktiv</span>' : '<span class="badge badge-gray no-dot">Inaktiv</span>'}</td>
+            <td><div class="table-actions">
+              <button class="table-action" type="button" title="Standort bearbeiten" aria-label="Standort bearbeiten" data-action="edit-location" data-id="${location.id}">${icon('edit')}</button>
+              <button class="table-action" type="button" title="${location.active ? 'Standort deaktivieren' : 'Standort aktivieren'}" aria-label="${location.active ? 'Standort deaktivieren' : 'Standort aktivieren'}" data-action="toggle-location-active" data-id="${location.id}">${icon(location.active ? 'x' : 'check-circle')}</button>
+              <button class="table-action danger" type="button" title="Standort löschen" aria-label="Standort löschen" data-action="delete-location" data-id="${location.id}">${icon('trash')}</button>
+            </div></td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : emptyState('map-pin', 'Noch keine Standorte', 'Legen Sie den ersten Standort an, um Fahrzeuge und Konten zuzuordnen.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-location">Standort anlegen</button>')}
+      </div>
+      <div class="card-footer"><span class="text-muted">Löschen ist nur ohne Zuordnungen möglich; sonst bitte deaktivieren.</span></div>
+    </section>`;
+}
+
 function renderRetentionCard() {
   const settings = db.settings || {};
   return `
@@ -1705,6 +1731,7 @@ function renderSettings() {
     canViewCostCenters ? renderCostCentersCard() : '',
     canManageBranding ? renderBrandingCard() : '',
     canManageSmtp ? renderSmtpCard() : '',
+    db.features?.locationsEnabled && privileged() ? renderLocationsCard() : '',
     privileged() ? renderRetentionCard() : '',
     canEditSettings ? `
       <form class="card settings-card" id="settingsForm">

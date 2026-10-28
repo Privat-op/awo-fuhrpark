@@ -105,6 +105,14 @@ function openConfirm({ title = 'Sind Sie sicher?', text = '', confirmLabel = 'Be
 /* =========================================================
    Buchungen
    ========================================================= */
+function locationOptionsMarkup(selectedId = '') {
+  const locations = (db.locations || []).filter((location) => location.active || location.id === selectedId);
+  return [
+    '<option value="">Kein Standort</option>',
+    ...locations.map((location) => `<option value="${esc(location.id)}" ${location.id === selectedId ? 'selected' : ''}>${esc(location.name)}${location.active ? '' : ' · inaktiv'}</option>`)
+  ].join('');
+}
+
 function costCenterSelectMarkup(id, selectedId = '') {
   return `
     <div class="field field-full">
@@ -826,9 +834,14 @@ function openVehicleModal(vehicleId = null) {
             </select>
           </div>
           <div class="field">
-            <label for="vehicleLocation">Standort</label>
+            <label for="vehicleLocation">Standort (Freitext)</label>
             <input class="input" id="vehicleLocation" name="location" type="text" value="${esc(vehicle.location)}" placeholder="z. B. Kita Pusteblume">
           </div>
+          ${db.features?.locationsEnabled ? `<div class="field">
+            <label for="vehicleLocationId">Standortzuordnung</label>
+            <select class="select" id="vehicleLocationId" name="locationId">${locationOptionsMarkup(vehicle.locationId)}</select>
+            <p class="field-hint">Steuert die Sichtbarkeit bei aktivierter Standortfunktion.</p>
+          </div>` : ''}
           <div class="field">
             <label for="vehicleDepartment">Abteilung / Einrichtung</label>
             <input class="input" id="vehicleDepartment" name="department" type="text" value="${esc(vehicle.department)}" placeholder="z. B. Ambulante Pflege">
@@ -986,6 +999,7 @@ function openVehicleModal(vehicleId = null) {
       location: String(data.get('location') || '').trim(),
       department: String(data.get('department') || '').trim(),
       costCenterId: String(data.get('costCenterId') || '') || null,
+      locationId: String(data.get('locationId') || '') || null,
       mileage: Math.max(0, Number(data.get('mileage')) || 0),
       insurance: String(data.get('insurance') || '').trim(),
       nextService: String(data.get('nextService') || ''),
@@ -1032,6 +1046,7 @@ function vehicleMutationPayload(vehicle, overrides = {}) {
     location: vehicle.location || '',
     department: vehicle.department || '',
     costCenterId: vehicle.costCenterId || '',
+    locationId: vehicle.locationId || '',
     mileage: vehicle.mileage,
     nextService: vehicle.nextService || '',
     tuv: vehicle.tuv || '',
@@ -2335,6 +2350,101 @@ function openDeletePasskeyConfirm(passkeyId) {
   });
 }
 
+function openLocationModal(locationId = null) {
+  const existing = locationId ? (db.locations || []).find((entry) => entry.id === locationId) : null;
+  if (locationId && !existing) return;
+  showModal({
+    title: existing ? 'Standort bearbeiten' : 'Standort anlegen',
+    eyebrow: 'Organisation',
+    subtitle: 'Standorte steuern Sichtbarkeit und Freigaberouting.',
+    size: 'modal-sm',
+    body: `
+      <form id="locationForm" novalidate>
+        ${formAlertMarkup()}
+        <div class="field field-full">
+          <label for="locationName">Name</label>
+          <input class="input" id="locationName" name="name" type="text" maxlength="120" value="${esc(existing?.name || '')}" required data-autofocus>
+        </div>
+        ${existing ? `<label class="check-row"><input type="checkbox" name="active" ${existing.active ? 'checked' : ''}> Standort aktiv</label>` : ''}
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="locationForm">${icon('check')} Speichern</button>`
+  });
+  const form = $('#locationForm');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const name = String(data.get('name') || '').trim();
+    if (!name) {
+      showFormError(form, 'Bitte geben Sie einen Namen an.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="locationForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch(existing ? `/api/locations/${encodeURIComponent(existing.id)}` : '/api/locations', {
+        method: existing ? 'PATCH' : 'POST',
+        body: { name, ...(existing ? { active: data.get('active') === 'on' } : {}) }
+      });
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast(existing ? 'Standort gespeichert' : 'Standort angelegt', 'Die Standortdaten wurden aktualisiert.');
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function toggleLocationActive(locationId) {
+  const location = (db.locations || []).find((entry) => entry.id === locationId);
+  if (!location) return;
+  openConfirm({
+    title: location.active ? 'Standort deaktivieren?' : 'Standort aktivieren?',
+    text: `<strong>${esc(location.name)}</strong> wird ${location.active ? 'deaktiviert' : 'aktiviert'}. Bestehende Zuordnungen bleiben erhalten.`,
+    confirmLabel: location.active ? 'Deaktivieren' : 'Aktivieren',
+    danger: location.active,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/locations/${encodeURIComponent(location.id)}`, {
+          method: 'PATCH',
+          body: { name: location.name, active: !location.active }
+        });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Standort aktualisiert', 'Der Status wurde geändert.');
+      } catch (error) {
+        toast('Standort konnte nicht geändert werden', error.message, 'error');
+      }
+    }
+  });
+}
+
+function deleteLocation(locationId) {
+  const location = (db.locations || []).find((entry) => entry.id === locationId);
+  if (!location) return;
+  openConfirm({
+    title: 'Standort löschen?',
+    text: `<strong>${esc(location.name)}</strong> wird gelöscht. Das ist nur ohne zugeordnete Konten oder Fahrzeuge möglich.`,
+    confirmLabel: 'Standort löschen',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/locations/${encodeURIComponent(location.id)}`, { method: 'DELETE' });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Standort gelöscht', 'Der Standort wurde entfernt.');
+      } catch (error) {
+        toast('Löschen fehlgeschlagen', error.message, 'error');
+      }
+    }
+  });
+}
+
 /* =========================================================
    Benutzerverwaltung
    ========================================================= */
@@ -2444,6 +2554,11 @@ function openUserModal(userId = null) {
             <select class="select" id="accountCostCenter" name="costCenterId">${costCenterOptionsMarkup(user.costCenterId)}</select>
             <p class="field-hint">Default für Buchungen, wenn weder Fahrer:in noch Fahrzeug eine Kostenstelle haben.</p>
           </div>` : ''}
+          ${db.features?.locationsEnabled ? `<div class="field">
+            <label for="accountLocation">Standort</label>
+            <select class="select" id="accountLocation" name="locationId">${locationOptionsMarkup(user.locationId)}</select>
+            <p class="field-hint">Nicht-Administrator:innen sehen bei aktivierter Standortfunktion nur Daten dieses Standorts.</p>
+          </div>` : ''}
           <div class="field">
             <label for="accountPassword">${existing ? 'Neues Passwort' : 'Passwort'} ${existing ? '<span class="optional">optional</span>' : '<span class="optional">*</span>'}</label>
             <input class="input" id="accountPassword" name="password" type="password" autocomplete="new-password" minlength="10" placeholder="${existing ? 'Leer lassen, um nichts zu ändern' : 'Mindestens 10 Zeichen'}">
@@ -2499,7 +2614,8 @@ function openUserModal(userId = null) {
       active: existing ? data.get('active') === 'on' : true,
       driverId: driverId || null,
       ownTripsAccess: Boolean(driverId) && data.get('ownTripsAccess') === 'on',
-      ...(data.has('costCenterId') ? { costCenterId: String(data.get('costCenterId') || '') || null } : {})
+      ...(data.has('costCenterId') ? { costCenterId: String(data.get('costCenterId') || '') || null } : {}),
+      ...(data.has('locationId') ? { locationId: String(data.get('locationId') || '') || null } : {})
     };
     if (password) body.password = password;
     const submitButton = modalRoot.querySelector('button[form="userForm"]');

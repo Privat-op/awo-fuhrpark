@@ -3,6 +3,7 @@
 const { writeAudit } = require('./audit');
 const { HttpError, isoNow } = require('./validation');
 const { getRoleRank } = require('./permissions');
+const { isLocationsEnabled } = require('./locations');
 
 const REQUEST_STATUSES = ['requested', 'approved', 'rejected', 'canceled'];
 
@@ -44,7 +45,12 @@ function getRoleBookingRequestPolicy(db, roleId) {
 function isRequestVisibleToApprover(db, actorUser, request, requesterUser, { isAdmin = false } = {}) {
   if (!request || !actorUser) return false;
   if (request.requested_by && request.requested_by === actorUser.id) return false;
-  if (isAdmin) return true;
+  if (isAdmin || actorUser.role === 'superadmin') return true;
+  if (isLocationsEnabled()) {
+    const vehicle = db.prepare('SELECT location_id FROM vehicles WHERE id = ?').get(request.vehicle_id);
+    const actor = db.prepare('SELECT location_id FROM users WHERE id = ?').get(actorUser.id);
+    if (vehicle?.location_id && actor?.location_id && actor.location_id !== vehicle.location_id) return false;
+  }
   if (!requesterUser) return false;
   const actorRank = getRoleRank(db, actorUser.role);
   const requesterRank = getRoleRank(db, requesterUser.role);
