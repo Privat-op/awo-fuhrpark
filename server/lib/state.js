@@ -194,6 +194,18 @@ function getState(db, user, auth = null) {
   const can = (permission, context = {}) => resolvePermission(layers, permission, context);
   const settingsRow = db.prepare('SELECT * FROM settings WHERE id = 1').get();
   const defaultColorMode = getDefaultColorMode(settingsRow);
+  const mfaByUserId = new Map(
+    db.prepare('SELECT user_id, totp_enabled, totp_confirmed_at, last_verified_at, locked_until FROM user_mfa')
+      .all()
+      .map((row) => [row.user_id, row])
+  );
+  const recoveryCountByUserId = new Map(
+    db.prepare(`
+      SELECT user_id, COUNT(*) AS count FROM mfa_recovery_codes
+      WHERE used_at IS NULL GROUP BY user_id
+    `).all()
+      .map((row) => [row.user_id, Number(row.count) || 0])
+  );
   const costCenterRows = db.prepare('SELECT * FROM cost_centers ORDER BY active DESC, code, id').all();
   const costCenterById = new Map(costCenterRows.map((row) => [row.id, row]));
   const costCenterUsage = getAllCostCenterUsage(db);
@@ -423,6 +435,15 @@ function getState(db, user, auth = null) {
     notificationReads
   };
 
+  const ownMfa = mfaByUserId.get(user.id) || null;
+  state.security = {
+    totpEnabled: Number(ownMfa?.totp_enabled) === 1,
+    confirmedAt: ownMfa?.totp_confirmed_at || null,
+    lastVerifiedAt: ownMfa?.last_verified_at || null,
+    recoveryCodesRemaining: recoveryCountByUserId.get(user.id) || 0,
+    lockedUntil: ownMfa?.locked_until || null
+  };
+
   if (moduleAccess.cost_centers_view) {
     state.costCenters = costCenterRows.map(mapCostCenter);
   }
@@ -457,14 +478,23 @@ function getState(db, user, auth = null) {
     rank: Number(row.rank) || 0,
     userCount: userCountByRole.get(row.id) || 0
   });
+  const actorRank = roleRankById.get(user.role) || 0;
   const mapStateUser = (row) => {
     const linkedDriver = driverByUserId.get(row.id) || null;
+    const mfa = mfaByUserId.get(row.id) || null;
+    const targetRank = roleRankById.get(row.role) || 0;
     return {
       ...mapUser(row, costCenterFor(row), defaultColorMode),
-      roleRank: roleRankById.get(row.role) || 0,
+      roleRank: targetRank,
       driverId: linkedDriver?.id || null,
       driverName: linkedDriver?.name || '',
-      ownTripsAccess: linkedDriver ? Number(linkedDriver.own_trips_access) !== 0 : null
+      ownTripsAccess: linkedDriver ? Number(linkedDriver.own_trips_access) !== 0 : null,
+      mfaEnabled: Number(mfa?.totp_enabled) === 1,
+      mfaConfirmedAt: mfa?.totp_confirmed_at || null,
+      mfaLastVerifiedAt: mfa?.last_verified_at || null,
+      canResetMfa: isPrivileged
+        && row.id !== user.id
+        && (isSuperadmin || (row.role !== 'admin' && targetRank < actorRank))
     };
   };
 
