@@ -1800,10 +1800,6 @@ function renderRoles() {
       <span class="summary-chip"><span class="dot" style="--dot:var(--blue)"></span><strong>${customCount}</strong> eigene Rollen</span>
       <span class="summary-chip"><span class="dot" style="--dot:var(--green)"></span><strong>${assigned}</strong> Zuweisungen</span>
     </div>
-    ${privileged() ? `<div class="info-banner" style="margin-bottom:18px">
-      ${icon('lock')}
-      <div><strong>Superadmin ist datei-verwaltet</strong><p>Rolle und Konto des Superadmins sind systemgeschützt. Anlage, Passwortwechsel und Rotation erfolgen ausschließlich über die Superadmin-Datei und einen Neustart; es gibt keine UI- oder API-Route dafür. Das Konto erscheint nicht in der Benutzerliste.</p></div>
-    </div>` : ''}
     <section class="card">
       <div class="card-head bordered">
         <div><h3 class="card-title">Rollenübersicht</h3><p class="card-sub">Modulrechte steuern und pro Objekt übersteuern</p></div>
