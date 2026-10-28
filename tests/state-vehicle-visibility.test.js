@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
 const { getState } = require('../server/lib/state');
+const { isObjectPermissionDenied } = require('../server/lib/permissions');
 
 const ROOT = path.join(__dirname, '..');
 const SCHEMA = fs.readFileSync(path.join(ROOT, 'server', 'schema.sql'), 'utf8');
@@ -72,4 +73,14 @@ test('ownTrips fallback keeps requestable vehicles but still hides an explicit d
   } finally {
     db.close();
   }
+});
+
+test('object deny precedence: user allow wins over role deny, user deny wins over role allow', () => {
+  const layers = {
+    userObjectPermissions: { vehicle: { v1: { allow: ['vehicles_view'] }, v2: { deny: ['vehicles_view'] } } },
+    roleObjectPermissions: { vehicle: { v1: { deny: ['vehicles_view'] }, v2: { allow: ['vehicles_view'] }, v3: { deny: ['vehicles_view'] } } }
+  };
+  assert.equal(isObjectPermissionDenied(layers, 'vehicle', 'v1', 'vehicles_view'), false);
+  assert.equal(isObjectPermissionDenied(layers, 'vehicle', 'v2', 'vehicles_view'), true);
+  assert.equal(isObjectPermissionDenied(layers, 'vehicle', 'v3', 'vehicles_view'), true);
 });

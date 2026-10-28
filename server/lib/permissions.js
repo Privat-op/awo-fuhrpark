@@ -504,6 +504,14 @@ function evaluateObjectLayer(objectPermissions, refs, permission) {
   return explicit ? true : null;
 }
 
+function isObjectPermissionDenied(layers, type, id, permission) {
+  const userRule = layers?.userObjectPermissions?.[type]?.[id];
+  if (userRule?.deny?.includes(permission)) return true;
+  if (userRule?.allow?.includes(permission)) return false;
+  const roleRule = layers?.roleObjectPermissions?.[type]?.[id];
+  return Boolean(roleRule?.deny?.includes(permission));
+}
+
 function permissionRelevantToContext(permission, context) {
   const refs = getContextRefs(context);
   if (!refs.length) return true;
@@ -630,6 +638,7 @@ module.exports = {
   effectivePermission,
   effectiveGlobalPermissions,
   driverDefaultPermissions,
+  isObjectPermissionDenied,
   resolvePermission,
   hasEffectivePermission,
   requirePermission,
