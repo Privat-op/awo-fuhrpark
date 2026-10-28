@@ -5,6 +5,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 ## Funktionen
 
 - Zentrale Anmeldung mit Sessions, CSRF-Schutz und Rate-Limits
+- **Optionale MFA:** TOTP über Authenticator-App plus 10 einmalige Recovery-Codes, freiwillig pro Konto aktivierbar; kein Zwang, kein Step-up
 - Rollen: **Administrator** und **Fuhrparkleitung** sowie frei anlegbare Rollen
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
@@ -27,6 +28,18 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - **Audit-Log für alle angemeldeten Nutzer:** serverseitig begrenzte Sicht (eigene Aktionen, Rangbereich oder alle Aktivitäten), Suche/Filter, Maskierung, Meta-Audit und Pagination
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
+
+## Release v0.10.0 (Optionale MFA)
+
+v0.10.0 ergänzt eine freiwillige Zwei-Faktor-Authentifizierung mit TOTP und Recovery-Codes. Es gibt keine Rollenpflicht, keine Fristen, kein Enforcement und keinen Step-up; Passkeys/WebAuthn bleiben Phase B.
+
+- **Self-Service:** Jede:r kann unter **Einstellungen → Sicherheit** TOTP aktivieren, deaktivieren und Recovery-Codes neu ausgeben.
+- **Login:** Nur bei aktivierter MFA wird nach dem Passwort ein zusätzlicher Schritt `/login/mfa` verlangt; ohne MFA bleibt der Login unverändert.
+- **Sicherheit:** TOTP-Secret AES-256-GCM-verschlüsselt, Recovery-Codes nur als HMAC-Hash, 5 Fehlversuche/15 Minuten mit 15-Minuten-Sperre, Replay-Schutz.
+- **Support:** Administrator:innen können MFA von Konten mit strikt niedrigerem Rang zurücksetzen, der Superadmin von jedem Konto; Ziel-Sitzungen werden beendet.
+- **Migration:** `user_version = 8` (`user_mfa`, `mfa_recovery_codes`).
+
+Details: [Feature-Doku v0.10.0 MFA](FEATURE_DOKU_v0.10.0_MFA.md). Das Design liegt extern unter `C:\awo-fuhrpark-docs\v0.10.0_MFA_Passkey_Design.md`.
 
 ## Release v0.9.1
 
@@ -209,7 +222,7 @@ Der Superadmin ist die oberste Verwaltungsinstanz. Er kann Administratorkonten a
 - **Bootstrap:** Beim Start wird nach Schema-/Rollenmigration ein Konto mit fester ID `superadmin`, der Rolle `superadmin` und `active=1` idempotent angelegt oder aktualisiert. Fehlt die Datei oder ist sie ungültig, wird nur gewarnt, ein vorhandenes Konto wird `active=0` gesetzt und der Superadmin-Login ist gesperrt; das System läuft normal weiter. Es gibt keinen Fallback auf einen alten Hash und keine Löschung oder Anonymisierung.
 - **Rotation/Recovery:** Datei ersetzen und Dienst bzw. Container neu starten. Änderungen an E-Mail oder Hash sowie eine Reaktivierung invalidieren alle Superadmin-Sessions. Jede Änderung wird als `superadmin_update` ohne Secret auditiert; eine Sperrung als `superadmin_disabled`.
 - **Schutz:** Keine UI-/API-Route zum Anlegen, Ändern oder Löschen des Superadmins. Das Konto ist in Benutzerliste und Datenexport vollständig ausgeblendet; die Rolle erscheint im Rollenbaum systemgeschützt mit Schloss. Superadmin-Ereignisse bleiben für berechtigte `audit_view_all`- und Administrator-Konten im Audit sichtbar.
-- **MFA/Passkey:** perspektivisch verpflichtend vorgemerkt, in dieser Etappe nicht enthalten.
+- **MFA:** optional für alle Konten einschließlich Superadmin. Der Superadmin richtet TOTP wie jede andere Person selbst ein; bei Totalverlust greift der dokumentierte Betriebsweg über Superadmin-Datei/DB. Passkeys/WebAuthn sind nicht enthalten.
 
 Beispiel für die Dateistruktur (Werte ersetzen; kein echter Hash im Repository):
 
@@ -360,6 +373,19 @@ sudo ./scripts/install-superadmin.sh
 
 Der Installer fragt E-Mail, Name und Passwort verdeckt ab, sichert eine bestehende Datei, installiert sie mit restriktiven Rechten und erstellt den Container mit read-only Secret-Mount neu. Voraussetzung: `npm ci` wurde im Projektordner ausgeführt.
 
+## Optionale Zwei-Faktor-Authentifizierung (TOTP)
+
+Unter **Einstellungen → Sicherheit** kann jedes Konto freiwillig TOTP aktivieren:
+
+1. **TOTP einrichten** öffnet QR-Code und manuelles Secret für eine Authenticator-App.
+2. Nach Bestätigung eines 6-stelligen Codes werden **10 Recovery-Codes** einmalig angezeigt. Sie können kopiert oder als Textdatei gespeichert werden und sind danach nicht erneut abrufbar.
+3. **Deaktivieren** und **Recovery-Codes neu ausgeben** verlangen einen aktuellen TOTP- oder Recovery-Code.
+4. Beim Login erscheint nach korrektem Passwort nur bei aktivierter MFA die Seite `/login/mfa` mit TOTP- und Recovery-Option.
+
+Sicherheitsregeln: maximal 5 Fehlversuche pro 15 Minuten, danach 15 Minuten Sperre; TOTP akzeptiert ±1 Zeitschritt und verhindert Replay; Recovery-Codes sind einmalig. Administrator:innen können MFA für Konten mit strikt niedrigerem Rang zurücksetzen, der Superadmin für jedes Konto. Dabei werden die Ziel-Sitzungen beendet und ein Audit-Eintrag ohne Geheimnisse geschrieben.
+
+Der Schlüssel liegt in `MFA_ENCRYPTION_KEY` oder automatisch in `DATA_DIR/mfa.key` (0600). **Schlüssel und Datenbank gemeinsam sichern:** Bei Schlüsselverlust sind bestehende TOTP-Secrets nicht mehr entschlüsselbar und müssen per Admin-Reset neu eingerichtet werden.
+
 ## Benutzerkonten und Anonymisierung
 
 Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Die Deaktivierung lässt eine bestehende Fahrer-Konto-Verknüpfung unverändert; der Login ist gesperrt. Deaktivierte Konten können anschließend anonymisiert werden:
@@ -394,6 +420,7 @@ Dauerhafte Daten liegen im Docker-Volume `awo_fuhrpark_data` unter `/app/data`:
 - `uploads/vehicles/` – Fahrzeugbilder
 - `uploads/receipts/` – Kostenbelege
 - `backups/` – lokale Sicherungen
+- `mfa.key` – automatisch erzeugter 32-Byte-Schlüssel für TOTP-Secrets und Recovery-Pepper (0600); nur zusammen mit der Datenbank sichern
 
 Konsistente Sicherung anstoßen:
 
@@ -417,6 +444,7 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 | `TRUST_PROXY` | `1`, wenn ein Reverse Proxy davorsteht |
 | `APP_PORT` | Host-Port für Docker Compose, Standard `3000` |
 | `DATA_DIR` | Datenverzeichnis im Container, Standard `/app/data` |
+| `MFA_ENCRYPTION_KEY` | Optional; 32 Byte als Base64 oder 64 Hex-Zeichen. Fehlt sie, wird `DATA_DIR/mfa.key` automatisch erzeugt. Ein gesetzter, ungültiger Wert bricht den Start ab. |
 
 ## Dateien
 
@@ -438,7 +466,7 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 
 Für einen echten Produktivbetrieb sind zusätzlich einzuplanen:
 
-- SSO/Entra ID und Mehrfaktor-Authentifizierung
+- SSO/Entra ID (optionale TOTP-MFA ist vorhanden, aber kein SSO und kein zentrales Enforcement)
 - E-Mail-/Teams-Erinnerungen für TÜV und Wartungen
 - zentrale Virenprüfung für hochgeladene PDF-Belege
 - standortbezogene Sichtbarkeit und Freigabeprozesse
