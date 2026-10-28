@@ -35,6 +35,7 @@ const {
 const {
   PERMISSION_GROUPS,
   normalizePermissions,
+  parsePermissions,
   normalizePermissionOverrides,
   parsePermissionOverrides,
   parseObjectPermissions,
@@ -1572,11 +1573,12 @@ router.patch('/roles/:id', requirePermission('roles_manage'), (req, res, next) =
     if (!existing) throw new HttpError(404, 'Rolle wurde nicht gefunden.');
     assertRoleManageable(req, existing);
     const name = requiredString(req.body?.name, 'Rollenname', { max: 120 });
-    const permissions = normalizePermissions(req.body?.permissions);
+    const permissionsProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'permissions');
+    const permissions = permissionsProvided ? normalizePermissions(req.body.permissions) : null;
     const rank = req.body?.rank === undefined
       ? Number(existing.rank) || 0
       : rankBelowActor(req, req.body.rank);
-    assertGrantCeiling(req, permissions);
+    assertGrantCeiling(req, permissionsProvided ? permissions : parsePermissions(existing.permissions));
     const policyProvided = Object.prototype.hasOwnProperty.call(req.body || {}, 'bookingRequestPolicy');
     const bookingRequestPolicy = policyProvided
       ? normalizeBookingRequestPolicy(db, req.body.bookingRequestPolicy, { actorRank: actorRank(req) })
@@ -1585,13 +1587,13 @@ router.patch('/roles/:id', requirePermission('roles_manage'), (req, res, next) =
     if (duplicate) throw new HttpError(409, 'Eine Rolle mit diesem Namen existiert bereits.');
     db.transaction(() => {
       db.prepare(`
-        UPDATE roles SET name = ?, permissions = ?, rank = ?,
+        UPDATE roles SET name = ?, permissions = COALESCE(?, permissions), rank = ?,
           booking_request_policy = COALESCE(?, booking_request_policy), updated_at = ?
         WHERE id = ?
-      `).run(name, JSON.stringify(permissions), rank, bookingRequestPolicy ? JSON.stringify(bookingRequestPolicy) : null, isoNow(), existing.id);
+      `).run(name, permissionsProvided ? JSON.stringify(permissions) : null, rank, bookingRequestPolicy ? JSON.stringify(bookingRequestPolicy) : null, isoNow(), existing.id);
       audit(req, 'update', 'role', existing.id, {
         name,
-        permissions,
+        ...(permissionsProvided ? { permissions } : {}),
         rank,
         ...(policyProvided ? { bookingRequestPolicy } : {})
       });
