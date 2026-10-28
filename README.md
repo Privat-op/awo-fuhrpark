@@ -502,8 +502,8 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 
 Für einen echten Produktivbetrieb sind zusätzlich einzuplanen:
 
-- SSO/Entra ID (optionale TOTP-MFA ist vorhanden, aber kein SSO und kein zentrales Enforcement)
-- E-Mail-/Teams-Erinnerungen für TÜV und Wartungen
+- SSO/Entra ID (optionale TOTP-MFA und Passkeys sind vorhanden, aber kein SSO und kein zentrales Enforcement)
+- Teams-Erinnerungen für TÜV und Wartungen (E-Mail-Erinnerungen sind vorhanden)
 - zentrale Virenprüfung für hochgeladene PDF-Belege
 - standortbezogene Sichtbarkeit und Freigabeprozesse
 - Aufbewahrungs- und Löschkonzept für Audit- und personenbezogene Daten nach DSGVO
