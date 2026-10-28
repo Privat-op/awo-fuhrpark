@@ -4,8 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const sharp = require('sharp');
-const { UPLOAD_DIR } = require('../db');
+const { db, UPLOAD_DIR } = require('../db');
 const { HttpError } = require('./validation');
+const { writeAudit } = require('./audit');
+const { scanBuffer } = require('./virus-scan');
 
 const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const RECEIPT_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -37,9 +39,22 @@ function relativePath(fullPath) {
   return path.relative(UPLOAD_DIR, fullPath).split(path.sep).join('/');
 }
 
-async function storeVehicleImage(dataUrl) {
+async function scanUpload(buffer, kind, actorId) {
+  const result = await scanBuffer(buffer);
+  if (!result.scanned || result.ok) return;
+  writeAudit(db, {
+    userId: actorId || null,
+    action: 'upload_blocked',
+    entityType: 'upload',
+    details: { kind, reason: result.found ? 'virus_found' : 'scan_failed' }
+  });
+  throw new HttpError(422, 'Upload wurde aus Sicherheitsgründen abgelehnt.');
+}
+
+async function storeVehicleImage(dataUrl, { actorId = null } = {}) {
   const { buffer } = parseDataUrl(dataUrl, IMAGE_MIME_TYPES);
   if (buffer.length > 12 * 1024 * 1024) throw new HttpError(400, 'Das Bild ist zu groß (max. 12 MB).');
+  await scanUpload(buffer, 'vehicle_image', actorId);
   try {
     const processed = await sharp(buffer, { limitInputPixels: 50_000_000 })
       .rotate()
@@ -62,7 +77,7 @@ function safeReceiptName(name, extension) {
   return `${withoutExtension || 'beleg'}${extension}`;
 }
 
-async function storeReceipt(receipt) {
+async function storeReceipt(receipt, { actorId = null } = {}) {
   if (!receipt || typeof receipt !== 'object') return null;
   const { data, name } = receipt;
   if (typeof data !== 'string') throw new HttpError(400, 'Der Beleg konnte nicht verarbeitet werden.');
@@ -73,6 +88,7 @@ async function storeReceipt(receipt) {
     if (buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
       throw new HttpError(400, 'Die PDF-Datei ist ungültig.');
     }
+    await scanUpload(buffer, 'receipt_pdf', actorId);
     const file = `${crypto.randomUUID()}.pdf`;
     const fullPath = path.join(UPLOAD_DIR, 'receipts', file);
     fs.writeFileSync(fullPath, buffer);
@@ -86,6 +102,7 @@ async function storeReceipt(receipt) {
 
   const { buffer } = parseDataUrl(data, RECEIPT_IMAGE_TYPES);
   if (buffer.length > 12 * 1024 * 1024) throw new HttpError(400, 'Der Beleg ist zu groß (max. 12 MB).');
+  await scanUpload(buffer, 'receipt_image', actorId);
   try {
     const processed = await sharp(buffer, { limitInputPixels: 50_000_000 })
       .rotate()
@@ -117,9 +134,10 @@ function deleteUpload(relative) {
   }
 }
 
-async function storeBrandingLogo(dataUrl) {
+async function storeBrandingLogo(dataUrl, { actorId = null } = {}) {
   const { buffer } = parseDataUrl(dataUrl, IMAGE_MIME_TYPES);
   if (buffer.length > 8 * 1024 * 1024) throw new HttpError(400, 'Das Logo ist zu groß (max. 8 MB).');
+  await scanUpload(buffer, 'branding_logo', actorId);
   try {
     const processed = await sharp(buffer, { limitInputPixels: 50_000_000 })
       .rotate()

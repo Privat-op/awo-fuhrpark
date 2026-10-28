@@ -17,6 +17,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Leasingüberwachung mit Laufzeit, Gesamt-Kilometerlimit, Warnschwellen 80/90/100 % und Erinnerungen 90/30 Tage vor Leasingende
 - Optionaler E-Mail-Versand an Fuhrparkleitung und Administration bei Leasing-Schwellen, Buchungsanfragen sowie Wartungs-/TÜV-Erinnerungen; SMTP-Konfiguration ausschließlich für Administrator:innen
 - **Optionaler Teams-Webhook:** MessageCards für Leasing, Buchungsanfragen/-entscheidungen und Wartungs-/TÜV-Erinnerungen; ohne Graph/App-Registration, ohne URL in Logs
+- **Optionale ClamAV-Prüfung:** Uploads (PDF-Belege und Bilder) per clamd INSTREAM vor dem Speichern, Fail-Closed und Audit `upload_blocked` ohne Dateiinhalte
 - Dauerhafte Fahrzeug-Sperre mit Begründung, Audit und serverseitiger 409-Sperre für neue Buchungen und Anfragen
 - Buchungen mit serverseitiger Konfliktprüfung für Fahrzeug und Fahrer:in
 - Eigene Fahrten: verknüpfte Fahrer:innen sehen ausschließlich ihre eigenen Buchungen und können Buchungsanfragen stellen
@@ -362,6 +363,16 @@ Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 10
 - **Buchungsanfragen:** Beim Eingang werden aktive Administrator:innen, Fuhrparkleitung und Konten mit `booking_requests_manage` informiert. Bei Genehmigung oder Ablehnung erhält die anfragende Person eine Entscheidungsmail. Dedupe verhindert Doppelversendungen; Mailfehler blockieren die API-Aktion nicht.
 - **Wartung/TÜV:** Der Scheduler erinnert 30, 14 und 7 Tage vor Fälligkeit sowie bei Überfälligkeit an offene Wartungen, HU/AU und Service/Inspektion. Empfänger sind aktive Administrator:innen und Fuhrparkleitung; Dedupe gilt pro Fahrzeug/Typ/Schwelle. Die Prüfung läuft beim Start und anschließend alle sechs Stunden und kann mit `REMINDER_SCHEDULER_DISABLED=true` deaktiviert werden.
 
+## Virenprüfung für Uploads (optional)
+
+Mit `VIRUS_SCAN_ENABLED=1` werden PDF-Belege und Bilder vor dem Speichern über clamd INSTREAM geprüft.
+
+- `CLAMAV_HOST`, `CLAMAV_PORT` (Standard `3310`), Timeout 10 Sekunden.
+- `VIRUS_SCAN_FAIL_CLOSED=true` (Standard bei aktivierter Prüfung) lehnt Uploads bei Scannerfehlern oder Timeout ab; `false` erlaubt sie mit Warnung.
+- Befund oder Fail-Closed: HTTP `422` mit „Upload wurde aus Sicherheitsgründen abgelehnt.“, Audit `upload_blocked` mit Kategorie/Reason, keine Dateiinhalte in Logs.
+- Ohne aktivierte Prüfung bleibt der Uploadpfad unverändert; PDF-/Logo-/Bildgrößenlimits bleiben bestehen.
+- ClamAV ist nicht im Repository enthalten und muss als Dienst betrieben werden.
+
 ## Teams-Benachrichtigungen (optional)
 
 Mit `TEAMS_WEBHOOK_URL` kann ein Incoming-Webhook für Microsoft Teams konfiguriert werden. Es wird kein Graph, keine App-Registration und kein Secret im Repository benötigt.
@@ -508,6 +519,9 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 | `SSO_DEFAULT_ROLE` | Rolle für JIT-Konten, Standard `manager`; `superadmin` ist nie zulässig. |
 | `SSO_GROUP_CLAIM`, `SSO_ADMIN_GROUP`, `SSO_MANAGER_GROUP` | Gruppen-Claim und Gruppen-IDs für das Rollenmapping. |
 | `TEAMS_WEBHOOK_URL` | Optionaler Incoming-Webhook für Teams; leer = deaktiviert. Nicht loggen/committen. |
+| `VIRUS_SCAN_ENABLED` | `1` aktiviert die ClamAV-Prüfung; Standard aus. |
+| `CLAMAV_HOST`, `CLAMAV_PORT` | clamd-Ziel, Standard `127.0.0.1:3310`. |
+| `VIRUS_SCAN_FAIL_CLOSED` | `true` (Standard bei aktivierter Prüfung) blockiert bei Scannerfehlern. |
 | `APP_BASE_URL` | Öffentliche Basis-URL für Passwort-Reset-Links, z. B. `https://fuhrpark.example.org`. Fehlt sie, wird die Host-Information der Anfrage verwendet. |
 | `REMINDER_INTERVAL_MS` | Intervall des Wartungs-/TÜV-Schedulers in Millisekunden, Standard sechs Stunden. |
 | `REMINDER_INITIAL_DELAY_MS` | Verzögerung des ersten Wartungs-/TÜV-Laufs, Standard fünf Sekunden. |

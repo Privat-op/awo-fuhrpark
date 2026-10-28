@@ -742,7 +742,7 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
     values.costCenterId = costCenterIdForPayload(req, req.body || {}, null);
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ?').get(values.plate);
     if (duplicate) throw new HttpError(409, `Das Kennzeichen ${values.plate} ist bereits vergeben.`);
-    if (req.body?.imageData) imageFile = await storeVehicleImage(req.body.imageData);
+    if (req.body?.imageData) imageFile = await storeVehicleImage(req.body.imageData, { actorId: req.user.id });
 
     const id = crypto.randomUUID();
     const now = isoNow();
@@ -796,7 +796,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ? AND id <> ?').get(values.plate, existing.id);
     if (duplicate) throw new HttpError(409, `Das Kennzeichen ${values.plate} ist bereits vergeben.`);
 
-    if (req.body?.imageData) newImageFile = await storeVehicleImage(req.body.imageData);
+    if (req.body?.imageData) newImageFile = await storeVehicleImage(req.body.imageData, { actorId: req.user.id });
     const removeImage = booleanValue(req.body?.removeImage, false);
     const imageFile = newImageFile || (removeImage ? null : existing.image_file);
 
@@ -1383,7 +1383,7 @@ router.post('/costs', async (req, res, next) => {
     const amount = numericValue(body.amount, 'Betrag', { min: 0.01, max: 10_000_000 });
     const note = optionalString(body.note, { max: 300 });
     const costCenterId = resolveCostCostCenterFromPayload(req, body, { vehicle, user: req.user });
-    if (body.receipt) receipt = await storeReceipt(body.receipt);
+    if (body.receipt) receipt = await storeReceipt(body.receipt, { actorId: req.user.id });
     const id = crypto.randomUUID();
     const now = isoNow();
     db.prepare(`
@@ -1536,7 +1536,7 @@ router.patch('/branding', requirePermission('branding_manage'), async (req, res,
     const textColor = hexColorValue(req.body?.textColor ?? current.text_color, '#191c23');
     const mutedColor = hexColorValue(req.body?.mutedColor ?? current.muted_color, '#737a88');
     const borderColor = hexColorValue(req.body?.borderColor ?? current.border_color, '#e7e9ee');
-    if (req.body?.logoData) newLogoFile = await storeBrandingLogo(req.body.logoData);
+    if (req.body?.logoData) newLogoFile = await storeBrandingLogo(req.body.logoData, { actorId: req.user.id });
     const removeLogo = booleanValue(req.body?.removeLogo, false);
     const logoFile = newLogoFile || (removeLogo ? null : current.logo_file);
     const now = isoNow();
