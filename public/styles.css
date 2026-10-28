@@ -2759,7 +2759,10 @@ p, h1, h2, h3, h4 { margin: 0; }
 @media (max-width: 980px) {
   .sidebar { transform: translateX(-100%); transition: transform .22s cubic-bezier(.22, 1, .36, 1); box-shadow: 24px 0 70px rgba(10, 13, 19, .25); }
   .sidebar.is-open { transform: none; }
-  .sidebar-close { display: inline-grid; }
+  .brand { position: relative; padding-right: 44px; }
+  .brand-text strong,
+  .brand-text span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sidebar-close { position: absolute; top: 0; right: 0; display: inline-grid; margin-left: 0; }
   .icon-btn.sidebar-close { display: inline-grid; }
   .sidebar-scrim {
     display: block;
