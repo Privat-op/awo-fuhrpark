@@ -785,8 +785,8 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
 router.patch('/vehicles/:id', async (req, res, next) => {
   let newImageFile = null;
   try {
+    assertCan(req, 'vehicles_manage', { vehicle: { id: req.params.id } });
     const existing = ensureVehicleExists(req.params.id);
-    assertCan(req, 'vehicles_manage', { vehicle: existing });
     const values = parseVehiclePayload(req.body || {}, existing);
     values.costCenterId = costCenterIdForPayload(req, req.body || {}, existing.cost_center_id);
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ? AND id <> ?').get(values.plate, existing.id);
@@ -868,8 +868,8 @@ router.patch('/vehicles/:id', async (req, res, next) => {
 
 router.get('/vehicles/:id/image', (req, res, next) => {
   try {
+    assertCan(req, 'vehicles_view', { vehicle: { id: req.params.id } });
     const vehicle = ensureVehicleExists(req.params.id);
-    assertCan(req, 'vehicles_view', { vehicle });
     if (!vehicle.image_file) throw new HttpError(404, 'Für dieses Fahrzeug ist kein Bild hinterlegt.');
     const fullPath = uploadPath(vehicle.image_file);
     if (!fullPath) throw new HttpError(404, 'Das Bild wurde nicht gefunden.');
@@ -956,9 +956,9 @@ router.post('/bookings', (req, res, next) => {
     const start = combineDateTime(date, startTime, 'Start');
     const end = combineDateTime(date, endTime, 'Ende');
     if (end <= start) throw new HttpError(400, 'Das Ende der Buchung muss nach dem Beginn liegen.');
+    assertCan(req, 'bookings_create', { vehicle: { id: vehicleId }, driver: { id: driverId } });
     const vehicle = ensureVehicleExists(vehicleId);
     const driver = ensureDriverExists(driverId);
-    assertCan(req, 'bookings_create', { vehicle, driver });
     if (vehicle.blocked) throw new HttpError(409, vehicleBlockedMessage(vehicle));
     if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
     if (driver.status === 'away') throw new HttpError(409, `${driver.name} ist aktuell abwesend.`);
@@ -984,9 +984,9 @@ router.post('/bookings/:id/start', (req, res, next) => {
       const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(req.params.id);
       if (!booking) throw new HttpError(404, 'Buchung wurde nicht gefunden.');
       if (booking.status !== 'planned') throw new HttpError(409, 'Nur geplante Fahrten können gestartet werden.');
+      assertBookingAction(req, booking, { id: booking.vehicle_id }, { id: booking.driver_id });
       const vehicle = ensureVehicleExists(booking.vehicle_id);
       const driver = getDriver(booking.driver_id);
-      assertBookingAction(req, booking, vehicle, driver);
       if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
       const activeVehicle = db.prepare("SELECT id FROM bookings WHERE vehicle_id = ? AND status = 'active' AND id <> ? LIMIT 1").get(vehicle.id, booking.id);
       if (activeVehicle) throw new HttpError(409, 'Für dieses Fahrzeug läuft bereits eine andere Fahrt.');
@@ -1012,9 +1012,9 @@ router.post('/bookings/:id/end', (req, res, next) => {
       const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(req.params.id);
       if (!booking) throw new HttpError(404, 'Buchung wurde nicht gefunden.');
       if (booking.status !== 'active') throw new HttpError(409, 'Nur aktive Fahrten können beendet werden.');
+      assertBookingAction(req, booking, { id: booking.vehicle_id }, { id: booking.driver_id });
       const vehicle = ensureVehicleExists(booking.vehicle_id);
       const driver = getDriver(booking.driver_id);
-      assertBookingAction(req, booking, vehicle, driver);
       const startKm = booking.start_km ?? vehicle.mileage;
       if (endKm < startKm) throw new HttpError(400, 'Der Endkilometerstand darf nicht kleiner als der Startkilometerstand sein.');
       const now = isoNow();
@@ -1043,9 +1043,13 @@ router.post('/bookings/:id/cancel', (req, res, next) => {
       const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(req.params.id);
       if (!booking) throw new HttpError(404, 'Buchung wurde nicht gefunden.');
       if (!['planned', 'active'].includes(booking.status)) throw new HttpError(409, 'Diese Buchung kann nicht storniert werden.');
+      assertCan(req, 'bookings_manage', {
+        booking,
+        vehicle: { id: booking.vehicle_id },
+        driver: { id: booking.driver_id }
+      });
       const vehicle = ensureVehicleExists(booking.vehicle_id);
       const driver = getDriver(booking.driver_id);
-      assertCan(req, 'bookings_manage', { booking, vehicle, driver });
       const now = isoNow();
       db.prepare("UPDATE bookings SET status = 'canceled', updated_at = ? WHERE id = ?").run(now, booking.id);
       if (booking.status === 'active') syncVehicleStatus(booking.vehicle_id);
@@ -1063,9 +1067,13 @@ router.delete('/bookings/:id', (req, res, next) => {
     const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(req.params.id);
     if (!booking) throw new HttpError(404, 'Buchung wurde nicht gefunden.');
     if (booking.status !== 'canceled') throw new HttpError(409, 'Nur stornierte Buchungen können gelöscht werden.');
+    assertCan(req, 'bookings_manage', {
+      booking,
+      vehicle: { id: booking.vehicle_id },
+      driver: { id: booking.driver_id }
+    });
     const vehicle = ensureVehicleExists(booking.vehicle_id);
     const driver = getDriver(booking.driver_id);
-    assertCan(req, 'bookings_manage', { booking, vehicle, driver });
     db.prepare('DELETE FROM bookings WHERE id = ?').run(booking.id);
     audit(req, 'delete', 'booking', booking.id, { purpose: booking.purpose });
     sendState(req, res);
@@ -1084,11 +1092,12 @@ router.post('/booking-requests', (req, res, next) => {
     if (!linkedDriver) {
       throw new HttpError(403, 'Für Buchungsanfragen ist kein Fahrerprofil mit Ihrem Konto verknüpft.');
     }
-    const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
-    if (isObjectPermissionDenied(req.auth, 'vehicle', vehicle.id, 'vehicles_view')) {
+    const vehicleId = requiredString(body.vehicleId, 'Fahrzeug');
+    if (isObjectPermissionDenied(req.auth, 'vehicle', vehicleId, 'vehicles_view')) {
       throw new HttpError(403, 'Für dieses Fahrzeug fehlt die erforderliche Sichtberechtigung.');
     }
-    assertCan(req, 'own_trips_request', { driver: linkedDriver, vehicle });
+    assertCan(req, 'own_trips_request', { driver: linkedDriver, vehicle: { id: vehicleId } });
+    const vehicle = ensureVehicleExists(vehicleId);
     if (vehicle.blocked) throw new HttpError(409, vehicleBlockedMessage(vehicle));
     const purpose = requiredString(body.purpose, 'Einsatzzweck', { max: 200 });
     const date = requiredDate(body.date, 'Datum');
@@ -1258,9 +1267,11 @@ router.post('/booking-requests/:id/cancel', (req, res, next) => {
 router.post('/trips', (req, res, next) => {
   try {
     const body = req.body || {};
-    const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
-    const driver = ensureDriverExists(requiredString(body.driverId, 'Fahrer:in'));
-    assertCan(req, 'logbook_manage', { vehicle, driver });
+    const vehicleId = requiredString(body.vehicleId, 'Fahrzeug');
+    const driverId = requiredString(body.driverId, 'Fahrer:in');
+    assertCan(req, 'logbook_manage', { vehicle: { id: vehicleId }, driver: { id: driverId } });
+    const vehicle = ensureVehicleExists(vehicleId);
+    const driver = ensureDriverExists(driverId);
     const date = requiredDate(body.date, 'Datum');
     const start = combineDateTime(date, String(body.startTime || ''), 'Start');
     const end = combineDateTime(date, String(body.endTime || ''), 'Ende');
@@ -1297,8 +1308,9 @@ router.post('/trips', (req, res, next) => {
 router.post('/maintenance', (req, res, next) => {
   try {
     const body = req.body || {};
-    const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
-    assertCan(req, 'maintenance_manage', { vehicle });
+    const vehicleId = requiredString(body.vehicleId, 'Fahrzeug');
+    assertCan(req, 'maintenance_manage', { vehicle: { id: vehicleId } });
+    const vehicle = ensureVehicleExists(vehicleId);
     const title = requiredString(body.title, 'Ma?nahme', { max: 160 });
     const dueDate = requiredDate(body.dueDate, 'Fälligkeitsdatum');
     const id = crypto.randomUUID();
@@ -1320,8 +1332,8 @@ router.post('/maintenance/:id/done', (req, res, next) => {
       const item = db.prepare('SELECT * FROM maintenance WHERE id = ?').get(req.params.id);
       if (!item) throw new HttpError(404, 'Wartung wurde nicht gefunden.');
       if (item.completed_at || item.status === 'done') throw new HttpError(409, 'Diese Wartung ist bereits erledigt.');
+      assertCan(req, 'maintenance_manage', { maintenance: item, vehicle: { id: item.vehicle_id } });
       const vehicle = ensureVehicleExists(item.vehicle_id);
-      assertCan(req, 'maintenance_manage', { maintenance: item, vehicle });
       const now = isoNow();
       db.prepare("UPDATE maintenance SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ?").run(todayISO(), now, item.id);
       let costId = null;
@@ -1353,8 +1365,9 @@ router.post('/costs', async (req, res, next) => {
   let receipt = null;
   try {
     const body = req.body || {};
-    const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
-    assertCan(req, 'costs_manage', { vehicle });
+    const vehicleId = requiredString(body.vehicleId, 'Fahrzeug');
+    assertCan(req, 'costs_manage', { vehicle: { id: vehicleId } });
+    const vehicle = ensureVehicleExists(vehicleId);
     const date = requiredDate(body.date, 'Datum');
     const category = oneOf(body.category, COST_CATEGORIES, 'Kostenart');
     const amount = numericValue(body.amount, 'Betrag', { min: 0.01, max: 10_000_000 });

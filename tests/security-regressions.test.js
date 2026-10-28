@@ -18,6 +18,7 @@ const TEST_PASSWORD = 'Security-Regression-Test-2026';
 const ADMIN_EMAIL = 'security-admin@example.invalid';
 const MANAGER_EMAIL = 'security-manager@example.invalid';
 const VIEWER_EMAIL = 'security-viewer@example.invalid';
+const NO_ACCESS_EMAIL = 'security-no-access@example.invalid';
 
 let tempDir;
 let dbPath;
@@ -188,12 +189,15 @@ before(async () => {
     'maintenance_view', 'maintenance_manage', 'costs_view', 'costs_manage', 'logbook_view', 'logbook_manage'
   ]);
   insertRole('role-viewer-test', 'Viewer Test', 100000, ['vehicles_view']);
+  insertRole('role-noaccess-test', 'No Access Test', 50000, []);
   insertUser('user-manager-test', MANAGER_EMAIL, 'role-manager-test');
   insertUser('user-viewer-test', VIEWER_EMAIL, 'role-viewer-test');
+  insertUser('user-noaccess-test', NO_ACCESS_EMAIL, 'role-noaccess-test');
 
   await login(ADMIN_EMAIL);
   await login(MANAGER_EMAIL);
   await login(VIEWER_EMAIL);
+  await login(NO_ACCESS_EMAIL);
 });
 
 after(async () => {
@@ -237,6 +241,37 @@ test('QS-010: explizit leeres permissions-Feld entfernt Rechte weiterhin', async
   assert.equal(response.status, 200, response.text);
   const after = JSON.parse(db.prepare("SELECT permissions FROM roles WHERE id = 'role-qs010-clear'").get().permissions);
   assert.deepEqual(after, []);
+});
+
+test('QS-004: unauthorized vehicle requests fail with 403 before existence is checked', async () => {
+  const missingId = '00000000-0000-4000-8000-000000000004';
+  const forbiddenPatch = await apiJson(NO_ACCESS_EMAIL, 'PATCH', `/api/vehicles/${missingId}`, {});
+  assert.equal(forbiddenPatch.status, 403, forbiddenPatch.text);
+
+  const forbiddenImage = await fetch(`${baseUrl}/api/vehicles/${missingId}/image`, {
+    headers: { cookie: clients[NO_ACCESS_EMAIL].cookie },
+    redirect: 'manual'
+  });
+  assert.equal(forbiddenImage.status, 403);
+
+  const forbiddenBooking = await apiJson(NO_ACCESS_EMAIL, 'POST', '/api/bookings', {
+    vehicleId: missingId,
+    driverId: '00000000-0000-4000-8000-000000000005',
+    purpose: 'QS-004',
+    date: '2026-10-28',
+    startTime: '10:00',
+    endTime: '11:00'
+  });
+  assert.equal(forbiddenBooking.status, 403, forbiddenBooking.text);
+
+  const managerPatch = await apiJson(MANAGER_EMAIL, 'PATCH', `/api/vehicles/${missingId}`, {});
+  assert.equal(managerPatch.status, 404, managerPatch.text);
+
+  const managerImage = await fetch(`${baseUrl}/api/vehicles/${missingId}/image`, {
+    headers: { cookie: clients[MANAGER_EMAIL].cookie },
+    redirect: 'manual'
+  });
+  assert.equal(managerImage.status, 404);
 });
 
 test('QS-003: a 12 MB image payload passes the JSON parser and reaches the image limit check', async () => {
