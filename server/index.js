@@ -30,6 +30,17 @@ const { normalizeColorMode } = require('./lib/color-mode');
 const { migrateMfaSchema } = require('./lib/mfa-schema');
 const { migratePasswordResetSchema } = require('./lib/password-reset-schema');
 const { migratePasskeySchema } = require('./lib/passkey-schema');
+const { migrateSsoSchema } = require('./lib/sso-schema');
+const {
+  FLOW_TTL_MS: SSO_FLOW_TTL_MS,
+  getSsoConfig,
+  randomFlowValue,
+  verifyIdToken,
+  buildAuthorizationUrl,
+  exchangeCode,
+  resolveSsoUser,
+  auditSsoFailure
+} = require('./lib/sso');
 const { requestPasswordReset, resetPasswordWithToken, validatePasswordResetToken } = require('./lib/password-reset');
 const { getMfaKey } = require('./lib/mfa-crypto');
 const {
@@ -149,6 +160,16 @@ function noticeMarkup(notice) {
   return notice ? `<div class="login-notice" role="status">${escapeHtml(notice)}</div>` : '';
 }
 
+function ssoLoginMarkup() {
+  const config = getSsoConfig();
+  if (!config.enabled || !config.configured) return '';
+  return `
+    <div class="login-sso">
+      <a class="login-button login-sso-button" href="/auth/sso/start">Mit Microsoft anmelden</a>
+      <div class="login-divider"><span>oder lokal anmelden</span></div>
+    </div>`;
+}
+
 function renderLogin(req, res, { status = 200, error = '', email = '', notice = '' } = {}) {
   const csrfToken = ensureCsrfToken(req);
   const errorMarkup = error ? `<div class="login-error" role="alert">${escapeHtml(error)}</div>` : '';
@@ -158,6 +179,7 @@ function renderLogin(req, res, { status = 200, error = '', email = '', notice = 
     .replaceAll('{{CSRF_TOKEN}}', escapeHtml(csrfToken))
     .replaceAll('{{ERROR}}', errorMarkup)
     .replaceAll('{{NOTICE}}', noticeMarkup(notice))
+    .replaceAll('{{SSO_BLOCK}}', ssoLoginMarkup())
     .replaceAll('{{EMAIL}}', escapeHtml(email));
   res.status(status)
     .set('Cache-Control', 'no-store')
@@ -254,6 +276,7 @@ migrateColorModeSchema(db);
 migrateMfaSchema(db);
 migratePasswordResetSchema(db);
 migratePasskeySchema(db);
+migrateSsoSchema(db);
 getMfaKey(DATA_DIR);
 bootstrap(db);
 try {
@@ -369,6 +392,15 @@ const mfaLimiter = rateLimit({
   skipSuccessfulRequests: true
 });
 
+const ssoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  handler: (req, res) => res.status(429).type('text').send('Zu viele SSO-Anfragen. Bitte warten Sie einen Moment.')
+});
+
 const passkeyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
@@ -418,6 +450,108 @@ const PASSWORD_RESET_NOTICE = 'Wenn ein Konto mit dieser E-Mail-Adresse existier
 function csrfMatches(req, value) {
   return Boolean(req.session?.csrfToken && value && safeEqual(req.session.csrfToken, value));
 }
+
+function ssoFailure(req, res, reason, status = 401) {
+  auditSsoFailure(db, reason);
+  return renderLogin(req, res, {
+    status,
+    error: 'Die SSO-Anmeldung ist fehlgeschlagen. Bitte versuchen Sie es erneut oder nutzen Sie die lokale Anmeldung.'
+  });
+}
+
+app.get('/auth/sso/start', ssoLimiter, async (req, res, next) => {
+  try {
+    const config = getSsoConfig();
+    if (!config.enabled) return res.status(404).type('text').send('SSO ist nicht aktiviert.');
+    if (!config.configured) {
+      return renderLogin(req, res, {
+        status: 503,
+        error: 'SSO ist derzeit nicht vollständig konfiguriert.'
+      });
+    }
+    const flow = {
+      state: randomFlowValue(),
+      nonce: randomFlowValue(),
+      codeVerifier: randomFlowValue(),
+      createdAt: Date.now()
+    };
+    const url = await buildAuthorizationUrl(config, flow);
+    req.session.ssoFlow = flow;
+    await new Promise((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()));
+    return res.redirect(302, url);
+  } catch {
+    return ssoFailure(req, res, 'start', 502);
+  }
+});
+
+app.get('/auth/sso/callback', ssoLimiter, async (req, res, next) => {
+  try {
+    const config = getSsoConfig();
+    if (!config.enabled) return res.status(404).type('text').send('SSO ist nicht aktiviert.');
+    if (!config.configured) return ssoFailure(req, res, 'configuration', 503);
+    const flow = req.session?.ssoFlow;
+    delete req.session?.ssoFlow;
+    if (!flow || Date.now() - Number(flow.createdAt || 0) > SSO_FLOW_TTL_MS) {
+      return ssoFailure(req, res, 'state');
+    }
+    if (!safeEqual(String(req.query.state || ''), String(flow.state || ''))) {
+      return ssoFailure(req, res, 'state');
+    }
+    if (req.query.error) return ssoFailure(req, res, 'provider_error');
+    const code = String(req.query.code || '');
+    if (!code) return ssoFailure(req, res, 'missing_code');
+
+    let idToken;
+    try {
+      idToken = await exchangeCode(config, code, flow.codeVerifier);
+    } catch {
+      return ssoFailure(req, res, 'token_exchange');
+    }
+    let verified;
+    try {
+      verified = await verifyIdToken(idToken, config, { nonce: flow.nonce });
+    } catch {
+      return ssoFailure(req, res, 'token_verification');
+    }
+    if (!verified.valid) return ssoFailure(req, res, verified.reason || 'invalid_token');
+
+    const resolved = resolveSsoUser(db, config, verified.claims);
+    if (!resolved.ok) return ssoFailure(req, res, resolved.reason || 'account');
+
+    await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
+    const now = new Date().toISOString();
+    req.session.userId = resolved.user.id;
+    req.session.csrfToken = randomToken();
+    req.session.authMethod = 'sso';
+    req.session.ssoIssuer = config.issuer;
+    await new Promise((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()));
+    db.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?')
+      .run(now, now, resolved.user.id);
+    writeAudit(db, {
+      userId: resolved.user.id,
+      action: 'sso_login',
+      entityType: 'user',
+      entityId: resolved.user.id,
+      details: {
+        provisioned: Boolean(resolved.provisioned),
+        role: resolved.role,
+        roleChanged: Boolean(resolved.roleChanged)
+      }
+    });
+    if (resolved.provisioned) {
+      writeAudit(db, {
+        userId: resolved.user.id,
+        action: 'sso_provision',
+        entityType: 'user',
+        entityId: resolved.user.id,
+        details: { role: resolved.role }
+      });
+    }
+    return res.redirect(303, '/');
+  } catch (error) {
+    return next(error);
+  }
+});
 
 app.get('/login', (req, res) => {
   if (req.session?.userId) return res.redirect('/');

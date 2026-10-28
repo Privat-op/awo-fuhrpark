@@ -542,3 +542,31 @@ button, input { font: inherit; }
   font-size: 9.5px;
   line-height: 1.45;
 }
+
+.login-sso {
+  margin-bottom: 15px;
+}
+
+.login-sso-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 2px;
+  color: var(--subtle);
+  font-size: 9px;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}

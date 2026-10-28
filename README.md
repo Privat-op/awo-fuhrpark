@@ -8,6 +8,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - **Passwort vergessen:** Self-Service-Link mit 60-Minuten-Token, Einmalverwendung, generischer Antwort und Invalidierung aller Sitzungen
 - **Optionale MFA:** TOTP über Authenticator-App plus 10 einmalige Recovery-Codes, freiwillig pro Konto aktivierbar; kein Zwang, kein Step-up
 - **Optionale Passkeys:** WebAuthn/Passkey als zweiter Faktor nach dem Passwort, mehrere Geräte pro Konto, Fallback auf TOTP/Recovery; kein passwordless Login
+- **Optionales SSO:** generischer OIDC-Authorization-Code-Flow mit PKCE, State und Nonce, Entra-ID-Gruppenmapping, optionalem JIT-Provisioning; lokaler Login bleibt Fallback
 - Rollen: **Administrator** und **Fuhrparkleitung** sowie frei anlegbare Rollen
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
@@ -415,6 +416,16 @@ Passkeys sind ein optionaler zweiter Faktor nach korrektem Passwort. Es gibt **k
 - Konfiguration ausschließlich über `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME` und `WEBAUTHN_ORIGIN` (kommagetrennt). Die Werte werden **nicht** aus dem Host-Header abgeleitet. Fehlt die Konfiguration, sind die Passkey-Endpunkte sauber deaktiviert.
 - Die Challenge liegt ausschließlich in der Session, ist an das Konto gebunden, fünf Minuten gültig und einmalig. Credential-IDs, Public Keys und Challenges erscheinen nicht in State, Export, Audit oder Logs.
 
+## SSO / Entra ID (optional)
+
+SSO ist standardmäßig deaktiviert (`SSO_ENABLED` fehlt oder ist `0`). Der lokale Login bleibt immer verfügbar, insbesondere für den Superadmin.
+
+- **Ablauf:** `/auth/sso/start` erzeugt State, Nonce und PKCE; `/auth/sso/callback` prüft State/Nonce, tauscht den Code ein und validiert das ID-Token strikt (Signatur über JWKS, Issuer, Audience, Ablauf, `email_verified` falls vorhanden, Domain-Allowlist).
+- **Konto-Verknüpfung:** bestehende aktive Konten werden per E-Mail verknüpft. Mit `SSO_AUTO_PROVISION=true` werden unbekannte Konten mit `SSO_DEFAULT_ROLE` angelegt. Superadmin wird nie automatisch angelegt oder hochgestuft; Superadmin-, inaktive und anonymisierte Konten werden abgelehnt.
+- **Gruppen:** `SSO_GROUP_CLAIM` (Standard `groups`) wird gegen `SSO_ADMIN_GROUP` und `SSO_MANAGER_GROUP` gemappt. Ohne Treffer bleibt die bestehende Rolle erhalten; JIT nutzt `SSO_DEFAULT_ROLE`.
+- **Sicherheit:** State/Nonce/PKCE sind sessiongebunden, einmalig und 10 Minuten gültig. Sessions werden nach Erfolg regeneriert. Audit-Einträge `sso_login`, `sso_provision`, `sso_failed` enthalten keine Tokens, Codes oder Secrets.
+- **Entra-App-Registrierung:** Redirect-URI exakt auf `SSO_REDIRECT_URI` setzen (z. B. `https://fuhrpark.example.org/auth/sso/callback`), Client-ID und Client-Secret hinterlegen, optional Token-/Group-Claims für `groups` konfigurieren. `SSO_ISSUER` ist der Tenant-Issuer (z. B. `https://login.microsoftonline.com/<tenant-id>/v2.0`). `SSO_ALLOWED_DOMAINS` beschränkt die zulässigen E-Mail-Domains; leer bedeutet keine zusätzliche Domain-Beschränkung.
+
 ## Benutzerkonten und Anonymisierung
 
 Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Die Deaktivierung lässt eine bestehende Fahrer-Konto-Verknüpfung unverändert; der Login ist gesperrt. Deaktivierte Konten können anschließend anonymisiert werden – Administratorkonten nur durch den Superadmin; das Superadmin-Konto selbst bleibt ausgenommen:
@@ -477,6 +488,15 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 | `WEBAUTHN_RP_ID` | RP-ID der Passkey-Domain, z. B. `fuhrpark.example.org`; ohne Schema/Port. |
 | `WEBAUTHN_RP_NAME` | Anzeigename für den Passkey-Dialog. |
 | `WEBAUTHN_ORIGIN` | Erlaubte Origin(s) inklusive Schema, mehrere kommagetrennt. Muss zur RP-ID passen. |
+| `SSO_ENABLED` | `1` aktiviert OIDC-SSO; Standard aus. |
+| `SSO_ISSUER` | OIDC-Issuer, z. B. Entra-Tenant-Issuer. |
+| `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET` | Entra-App-Registrierung. Secret niemals in Logs/Repo. |
+| `SSO_REDIRECT_URI` | Exakte Callback-URI, z. B. `https://fuhrpark.example.org/auth/sso/callback`. |
+| `SSO_SCOPES` | Standard `openid profile email`. |
+| `SSO_ALLOWED_DOMAINS` | Kommagetrennte E-Mail-Domains; leer = keine zusätzliche Beschränkung. |
+| `SSO_AUTO_PROVISION` | `true` legt unbekannte Konten automatisch an; Standard aus. |
+| `SSO_DEFAULT_ROLE` | Rolle für JIT-Konten, Standard `manager`; `superadmin` ist nie zulässig. |
+| `SSO_GROUP_CLAIM`, `SSO_ADMIN_GROUP`, `SSO_MANAGER_GROUP` | Gruppen-Claim und Gruppen-IDs für das Rollenmapping. |
 | `APP_BASE_URL` | Öffentliche Basis-URL für Passwort-Reset-Links, z. B. `https://fuhrpark.example.org`. Fehlt sie, wird die Host-Information der Anfrage verwendet. |
 | `REMINDER_INTERVAL_MS` | Intervall des Wartungs-/TÜV-Schedulers in Millisekunden, Standard sechs Stunden. |
 | `REMINDER_INITIAL_DELAY_MS` | Verzögerung des ersten Wartungs-/TÜV-Laufs, Standard fünf Sekunden. |

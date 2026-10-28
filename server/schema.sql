@@ -229,6 +229,15 @@ CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS user_sso (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  issuer TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  email TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -299,3 +308,4 @@ CREATE INDEX IF NOT EXISTS idx_user_mfa_enabled ON user_mfa (totp_enabled);
 CREATE INDEX IF NOT EXISTS idx_mfa_recovery_user ON mfa_recovery_codes (user_id, used_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens (user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_user_passkeys_user ON user_passkeys (user_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_sso_subject ON user_sso (issuer, subject);
