@@ -243,6 +243,16 @@ test('QS-010: explizit leeres permissions-Feld entfernt Rechte weiterhin', async
   assert.deepEqual(after, []);
 });
 
+test('Auto-Refresh: 60s, visible tab, no modal/form, no scroll jump', () => {
+  const source = fs.readFileSync(path.join(ROOT, 'public', 'app.js'), 'utf8');
+  assert.match(source, /AUTO_REFRESH_INTERVAL_MS = 60_000/);
+  assert.match(source, /document\.visibilityState !== 'visible'/);
+  assert.match(source, /modal\.children\.length/);
+  assert.match(source, /active\?\.matches\?\.\('input, textarea, select/);
+  assert.match(source, /renderCurrentView\(\)/);
+  assert.match(source, /window\.scrollTo\(\{ top: scrollY, left: scrollX/);
+});
+
 test('QS-004: unauthorized vehicle requests fail with 403 before existence is checked', async () => {
   const missingId = '00000000-0000-4000-8000-000000000004';
   const forbiddenPatch = await apiJson(NO_ACCESS_EMAIL, 'PATCH', `/api/vehicles/${missingId}`, {});

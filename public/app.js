@@ -395,6 +395,52 @@ async function loadInitialData() {
   applyState(state);
 }
 
+const AUTO_REFRESH_INTERVAL_MS = 60_000;
+const AUTO_REFRESH_ROUTES = new Set([
+  'dashboard', 'buchungen', 'meine-fahrten', 'anfragen', 'fahrtenbuch',
+  'fahrzeuge', 'wartung', 'kosten', 'fahrer'
+]);
+let autoRefreshInFlight = false;
+
+function autoRefreshPaused() {
+  if (document.visibilityState !== 'visible' || document.hidden) return true;
+  const modal = $('#modalRoot');
+  if (modal && modal.children.length) return true;
+  if (!AUTO_REFRESH_ROUTES.has(ui.route)) return true;
+  const active = document.activeElement;
+  if (active?.matches?.('input, textarea, select, [contenteditable="true"]')) return true;
+  return false;
+}
+
+async function autoRefreshState() {
+  if (autoRefreshInFlight || autoRefreshPaused()) return;
+  autoRefreshInFlight = true;
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  const focusId = document.activeElement?.id || '';
+  try {
+    const state = await apiFetch('/api/state');
+    applyState(state);
+    updateChrome();
+    updateSaveIndicator();
+    renderCurrentView();
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollY, left: scrollX, behavior: 'auto' });
+      if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
+    });
+  } catch (error) {
+    console.warn('Automatische Aktualisierung fehlgeschlagen:', error.message);
+  } finally {
+    autoRefreshInFlight = false;
+  }
+}
+
+function startAutoRefresh() {
+  window.setInterval(() => {
+    autoRefreshState();
+  }, AUTO_REFRESH_INTERVAL_MS);
+}
+
 function getReadNotificationKeys() {
   return new Set(Array.isArray(db.notificationReads) ? db.notificationReads : []);
 }
@@ -1940,6 +1986,7 @@ async function init() {
     updateChrome();
     updateSaveIndicator();
     renderRoute(false);
+    startAutoRefresh();
   } catch (error) {
     console.error('Initialisierung fehlgeschlagen:', error);
     const view = $('#view');
