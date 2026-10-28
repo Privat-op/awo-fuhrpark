@@ -10,6 +10,8 @@
   --muted: #5f6774;
   --line: #e7e9ee;
   --line-soft: #f0f2f5;
+  --topbar-bg: rgba(255, 255, 255, .88);
+  --topbar-border: rgba(224, 227, 233, .85);
   --bg: #f4f5f7;
   --surface: #ffffff;
   --surface-2: #f9fafb;
@@ -75,6 +77,8 @@
   --subtle: #b7c0cc !important;
   --line: #2d343e !important;
   --line-soft: #262d36 !important;
+  --topbar-bg: rgba(17, 20, 24, .88) !important;
+  --topbar-border: rgba(45, 52, 62, .9) !important;
   --on-accent: #fff !important;
   --track: #303742 !important;
   --scrollbar: #3a424e !important;
@@ -427,8 +431,8 @@ p, h1, h2, h3, h4 { margin: 0; }
   align-items: center;
   gap: 14px;
   padding: 0 28px;
-  border-bottom: 1px solid rgba(224, 227, 233, .85);
-  background: rgba(255, 255, 255, .88);
+  border-bottom: 1px solid var(--topbar-border);
+  background: var(--topbar-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }

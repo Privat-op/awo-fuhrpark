@@ -616,12 +616,14 @@ function updateColorModeControls(preference) {
   });
   const toggle = $('#colorModeToggle');
   if (toggle) {
-    const iconName = preference === 'dark' ? '#i-moon' : preference === 'auto' ? '#i-monitor' : '#i-sun';
+    const resolved = resolveColorMode(preference);
+    const iconName = resolved === 'dark' ? '#i-moon' : '#i-sun';
     toggle.querySelector('use')?.setAttribute('href', iconName);
-    const label = preference === 'dark' ? 'Dunkel' : preference === 'auto' ? 'Automatik' : 'Hell';
-    const next = preference === 'light' ? 'Dunkel' : preference === 'dark' ? 'Automatik' : 'Hell';
-    toggle.setAttribute('aria-label', `Farbschema: ${label}. Klicken für ${next}.`);
-    toggle.setAttribute('title', `Farbschema: ${label} – klicken für ${next}`);
+    const label = resolved === 'dark' ? 'Dunkel' : 'Hell';
+    const next = resolved === 'dark' ? 'Hell' : 'Dunkel';
+    const suffix = preference === 'auto' ? ' (Automatik)' : '';
+    toggle.setAttribute('aria-label', `Farbschema: ${label}${suffix}. Klicken für ${next}.`);
+    toggle.setAttribute('title', `Farbschema: ${label}${suffix} – klicken für ${next}`);
   }
 }
 
@@ -671,9 +673,8 @@ async function setColorMode(mode) {
 }
 
 function cycleColorMode() {
-  const current = activeColorModePreference();
-  const next = current === 'light' ? 'dark' : current === 'dark' ? 'auto' : 'light';
-  setColorMode(next);
+  const resolved = resolveColorMode(activeColorModePreference());
+  setColorMode(resolved === 'dark' ? 'light' : 'dark');
 }
 
 function updateNavigationVisibility() {
