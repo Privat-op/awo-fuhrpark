@@ -24,7 +24,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/login.css?v=0.10.0-dev">
+  <link rel="stylesheet" href="/login.css?v=0.11.0-dev">
 </head>
 <body>
   <main class="login-shell">
@@ -62,24 +62,31 @@
         <div class="login-heading">
           <span class="login-eyebrow">Zwei-Faktor-Anmeldung</span>
           <h2>Bestätigen</h2>
-          <p>Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.</p>
+          <p>{{FACTOR_HINT}}</p>
         </div>
 
         {{ERROR}}
 
-        <form action="/login/mfa" method="post" autocomplete="off">
-          <input type="hidden" name="_csrf" value="{{CSRF_TOKEN}}">
-          <div class="login-field">
-            <label for="code">Bestätigungscode</label>
-            <input id="code" name="code" type="text" inputmode="text" autocomplete="one-time-code" placeholder="123456" maxlength="32" autocapitalize="characters" spellcheck="false" required autofocus>
-            <p class="login-field-hint">Alternativ können Sie einen Ihrer Recovery-Codes eingeben.</p>
-          </div>
-          <label class="login-check">
-            <input type="checkbox" name="useRecovery" value="1">
-            <span>Recovery-Code verwenden</span>
-          </label>
-          <button class="login-button" type="submit">Anmeldung bestätigen</button>
-        </form>
+        <div class="login-passkey" id="passkeyLogin" data-enabled="{{PASSKEY_ENABLED}}" hidden>
+          <button class="login-button login-passkey-button" type="button" id="passkeyLoginButton">Mit Passkey anmelden</button>
+          <div class="login-passkey-status" id="passkeyLoginStatus" role="alert" aria-live="polite" hidden></div>
+        </div>
+
+        <div {{TOTP_HIDDEN}}>
+          <form action="/login/mfa" method="post" autocomplete="off">
+            <input type="hidden" name="_csrf" value="{{CSRF_TOKEN}}">
+            <div class="login-field">
+              <label for="code">Bestätigungscode</label>
+              <input id="code" name="code" type="text" inputmode="text" autocomplete="one-time-code" placeholder="123456" maxlength="32" autocapitalize="characters" spellcheck="false" required autofocus>
+              <p class="login-field-hint">Alternativ können Sie einen Ihrer Recovery-Codes eingeben.</p>
+            </div>
+            <label class="login-check">
+              <input type="checkbox" name="useRecovery" value="1">
+              <span>Recovery-Code verwenden</span>
+            </label>
+            <button class="login-button" type="submit">Anmeldung bestätigen</button>
+          </form>
+        </div>
 
         <form action="/login/mfa/cancel" method="post" class="login-cancel-form">
           <input type="hidden" name="_csrf" value="{{CSRF_TOKEN}}">
@@ -100,5 +107,7 @@
       </footer>
     </section>
   </main>
+  <script src="/vendor/simplewebauthn-browser.js?v=0.11.0-dev"></script>
+  <script src="/passkey-login.js?v=0.11.0-dev"></script>
 </body>
 </html>

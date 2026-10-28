@@ -2170,8 +2170,8 @@ function openMfaAdminResetConfirm(userId) {
   }
   openConfirm({
     title: 'MFA zurücksetzen?',
-    text: `Für <strong>${esc(user.name)}</strong> (${esc(user.email)}) werden TOTP und alle Recovery-Codes gelöscht. Alle aktiven Sitzungen dieses Kontos werden beendet. Die Person muss MFA bei Bedarf neu einrichten.`,
-    confirmLabel: 'MFA zurücksetzen',
+    text: `Für <strong>${esc(user.name)}</strong> (${esc(user.email)}) werden TOTP, alle Recovery-Codes und alle Passkeys gelöscht. Alle aktiven Sitzungen dieses Kontos werden beendet. Die Person muss MFA bzw. Passkeys bei Bedarf neu einrichten.`,
+    confirmLabel: 'MFA und Passkeys zurücksetzen',
     danger: true,
     onConfirm: async () => {
       try {
@@ -2182,6 +2182,154 @@ function openMfaAdminResetConfirm(userId) {
         toast('MFA zurückgesetzt', `Die MFA-Einrichtung von ${user.name} wurde entfernt und die Sitzungen beendet.`);
       } catch (error) {
         toast('Reset fehlgeschlagen', error.message, 'error');
+      }
+    }
+  });
+}
+
+function passkeysSupported() {
+  return Boolean(window.PublicKeyCredential && window.SimpleWebAuthnBrowser);
+}
+
+function openAddPasskeyModal() {
+  if (!db.security?.passkeyEnabled) {
+    toast('Passkeys nicht konfiguriert', 'Die Administration muss WebAuthn konfigurieren.', 'info');
+    return;
+  }
+  if (!passkeysSupported()) {
+    toast('Passkeys nicht verfügbar', 'Dieser Browser unterstützt keine Passkeys.', 'info');
+    return;
+  }
+  showModal({
+    title: 'Passkey hinzufügen',
+    eyebrow: 'Sicherheit',
+    subtitle: 'Bestätigen Sie Ihr Passwort. Danach fordert der Browser die Passkey-Einrichtung an.',
+    size: 'modal-sm',
+    body: `
+      <form id="addPasskeyForm" novalidate autocomplete="off">
+        ${formAlertMarkup()}
+        <div class="field field-full">
+          <label for="passkeyName">Name</label>
+          <input class="input" id="passkeyName" name="name" type="text" maxlength="120" placeholder="z. B. Laptop oder Smartphone" autocomplete="off">
+        </div>
+        <div class="field field-full">
+          <label for="passkeyPassword">Aktuelles Passwort</label>
+          <input class="input" id="passkeyPassword" name="password" type="password" autocomplete="current-password" required autofocus>
+          <p class="field-hint">Erforderlich, um einen Passkey zu Ihrem Konto hinzuzufügen.</p>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="addPasskeyForm">${icon('shield')} Passkey hinzufügen</button>`
+  });
+
+  const form = $('#addPasskeyForm');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const password = String(data.get('password') || '');
+    const name = String(data.get('name') || '').trim();
+    if (!password) {
+      showFormError(form, 'Bitte bestätigen Sie Ihr aktuelles Passwort.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="addPasskeyForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const optionsResult = await apiFetch('/api/security/passkeys/options', {
+        method: 'POST',
+        body: { password }
+      });
+      const registration = await window.SimpleWebAuthnBrowser.startRegistration({
+        optionsJSON: optionsResult.options
+      });
+      await apiFetch('/api/security/passkeys/verify', {
+        method: 'POST',
+        body: { response: registration, name }
+      });
+      const state = await apiFetch('/api/state');
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast('Passkey hinzugefügt', 'Der Passkey kann ab sofort als zweiter Faktor verwendet werden.');
+    } catch (error) {
+      if (error?.name === 'NotAllowedError') {
+        showFormError(form, 'Die Passkey-Einrichtung wurde abgebrochen.');
+      } else {
+        showFormError(form, error.message || 'Der Passkey konnte nicht hinzugefügt werden.');
+      }
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function openRenamePasskeyModal(passkeyId) {
+  const passkey = (db.security?.passkeys || []).find((entry) => entry.id === passkeyId);
+  if (!passkey) return;
+  showModal({
+    title: 'Passkey umbenennen',
+    eyebrow: 'Sicherheit',
+    subtitle: 'Der Name ist nur für Ihre Übersicht sichtbar.',
+    size: 'modal-sm',
+    body: `
+      <form id="renamePasskeyForm" novalidate>
+        ${formAlertMarkup()}
+        <div class="field field-full">
+          <label for="renamePasskeyName">Name</label>
+          <input class="input" id="renamePasskeyName" name="name" type="text" maxlength="120" value="${esc(passkey.name || '')}" required data-autofocus>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="renamePasskeyForm">${icon('check')} Speichern</button>`
+  });
+
+  const form = $('#renamePasskeyForm');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const name = String(new FormData(form).get('name') || '').trim();
+    if (!name) {
+      showFormError(form, 'Bitte geben Sie einen Namen an.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="renamePasskeyForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      await apiFetch(`/api/security/passkeys/${encodeURIComponent(passkey.id)}`, {
+        method: 'PATCH',
+        body: { name }
+      });
+      const state = await apiFetch('/api/state');
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast('Passkey umbenannt', 'Der neue Name wurde gespeichert.');
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function openDeletePasskeyConfirm(passkeyId) {
+  const passkey = (db.security?.passkeys || []).find((entry) => entry.id === passkeyId);
+  if (!passkey) return;
+  openConfirm({
+    title: 'Passkey entfernen?',
+    text: `Der Passkey <strong>${esc(passkey.name || 'Passkey')}</strong> wird entfernt. Alle aktiven Sitzungen dieses Kontos werden beendet; Sie müssen sich neu anmelden. TOTP/Recovery bleiben als Fallback bestehen.`,
+    confirmLabel: 'Passkey entfernen',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        await apiFetch(`/api/security/passkeys/${encodeURIComponent(passkey.id)}`, { method: 'DELETE' });
+        toast('Passkey entfernt', 'Bitte melden Sie sich neu an.');
+        window.setTimeout(() => { window.location.href = '/login'; }, 400);
+      } catch (error) {
+        toast('Entfernen fehlgeschlagen', error.message, 'error');
       }
     }
   });

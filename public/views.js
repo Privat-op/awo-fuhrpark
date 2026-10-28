@@ -1592,6 +1592,23 @@ function renderSecurityCard() {
             <div class="main"><strong>Zuletzt bestätigt</strong><span>${formatDateTime(security.lastVerifiedAt)}</span></div>
           </div>` : ''}
         </div>
+        ${security.passkeyEnabled ? `
+          <div class="passkey-feature">
+            <div class="passkey-head">
+              <div><strong>Passkeys</strong><span>${security.passkeyCount ? `${security.passkeyCount} hinterlegt` : 'Noch kein Passkey hinterlegt'}</span></div>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="add-passkey">${icon('plus')} Passkey hinzufügen</button>
+            </div>
+            ${(security.passkeys || []).length ? `<div class="passkey-list">
+              ${(security.passkeys || []).map((passkey) => `<div class="passkey-item">
+                <span class="mini-icon tint-violet">${icon('lock')}</span>
+                <div class="main"><strong>${esc(passkey.name || 'Passkey')}</strong><span>Angelegt ${formatDateTime(passkey.createdAt)}${passkey.lastUsedAt ? ` · zuletzt ${formatDateTime(passkey.lastUsedAt)}` : ''}</span></div>
+                <div class="passkey-actions">
+                  <button class="table-action" type="button" title="Passkey umbenennen" aria-label="Passkey umbenennen" data-action="rename-passkey" data-id="${passkey.id}">${icon('edit')}</button>
+                  <button class="table-action danger" type="button" title="Passkey entfernen" aria-label="Passkey entfernen" data-action="delete-passkey" data-id="${passkey.id}">${icon('trash')}</button>
+                </div>
+              </div>`).join('')}
+            </div>` : '<p class="passkey-empty">Fügen Sie einen Passkey für diesen Browser oder ein Gerät hinzu.</p>'}
+          </div>` : `<div class="info-banner" style="margin-top:14px">${icon('info')}<div><strong>Passkeys nicht konfiguriert</strong><p>Die Administration muss WEBAUTHN_RP_ID, WEBAUTHN_RP_NAME und WEBAUTHN_ORIGIN einrichten.</p></div></div>`}
         <div class="setting-actions">
           ${active
             ? `<button class="btn btn-ghost btn-sm" type="button" data-action="mfa-regenerate">${icon('history')} Recovery-Codes neu ausgeben</button>
@@ -1710,7 +1727,7 @@ function renderSettings() {
           </div>
           <div class="version-box">
             <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-            <span class="version-badge">Server-MVP 0.10.0-dev</span>
+            <span class="version-badge">Server-MVP 0.11.0-dev</span>
           </div>
         </div>
       </section>` : ''
@@ -1816,7 +1833,7 @@ function renderUsers() {
       : manageable
         ? `${canEditOverrides ? `<button class="table-action" type="button" title="Benutzer-Ausnahmen bearbeiten" aria-label="Benutzer-Ausnahmen bearbeiten" data-action="edit-user-permissions" data-id="${user.id}">${icon('filter')}</button>` : ''}
            <button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button>
-           ${user.canResetMfa && user.mfaEnabled ? `<button class="table-action danger" type="button" title="MFA zurücksetzen" aria-label="MFA zurücksetzen" data-action="mfa-admin-reset" data-id="${user.id}">${icon('shield')}</button>` : ''}
+           ${user.canResetMfa ? `<button class="table-action danger" type="button" title="MFA und Passkeys zurücksetzen" aria-label="MFA und Passkeys zurücksetzen" data-action="mfa-admin-reset" data-id="${user.id}">${icon('shield')}</button>` : ''}
            ${!user.active ? `<button class="table-action danger" type="button" title="Benutzerkonto anonymisieren" aria-label="Benutzerkonto anonymisieren" data-action="anonymize-user" data-id="${user.id}">${icon('user-x')}</button>` : ''}`
         : `<span class="table-action" title="Nur eigene oder niedrigere Ränge bearbeitbar" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`;
     return `
@@ -1831,7 +1848,8 @@ function renderUsers() {
         <td>
           <span class="badge badge-${user.role === 'admin' ? 'red' : 'blue'}">${esc(roleLabel(user.role))}</span>
           <span class="table-sub">Rang ${formatNumber(user.roleRank || roleRankOf(user.role))}</span>
-          ${user.mfaEnabled ? '<span class="badge badge-green no-dot" title="Zwei-Faktor-Authentifizierung aktiv">MFA</span>' : ''}
+          ${user.mfaEnabled ? '<span class="badge badge-green no-dot" title="TOTP aktiv">MFA</span>' : ''}
+          ${user.passkeyCount ? `<span class="badge badge-blue no-dot" title="Passkey aktiv">${user.passkeyCount} Passkey${user.passkeyCount === 1 ? '' : 's'}</span>` : ''}
           ${user.costCenterId ? costCenterBadge(user) : ''}
           ${overrideCount ? `<span class="badge badge-violet no-dot">${overrideCount} Ausnahmen</span>` : ''}
           ${user.driverId ? `<span class="badge badge-${user.ownTripsAccess ? 'green' : 'gray'} no-dot">Fahrer:in: ${esc(user.driverName)}${user.ownTripsAccess ? '' : ' · ohne Standardzugriff'}</span>` : ''}

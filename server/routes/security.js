@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const QRCode = require('qrcode');
 const { db, DATA_DIR } = require('../db');
 const { HttpError } = require('../lib/validation');
@@ -8,6 +9,22 @@ const { writeAudit } = require('../lib/audit');
 const { getRoleRank } = require('../lib/permissions');
 const { generateTotpSecret, otpauthUri } = require('../lib/totp');
 const { encryptSecret } = require('../lib/mfa-crypto');
+const {
+  getWebAuthnConfig,
+  listPasskeys,
+  countPasskeys,
+  renamePasskey,
+  removePasskey,
+  deleteUserPasskeys,
+  isPasskeyLocked,
+  lockRemainingMs,
+  registerPasskeyFailure,
+  clearPasskeyFailures,
+  storeRegistrationChallenge,
+  takeRegistrationChallenge,
+  buildRegistrationOptions,
+  verifyRegistration
+} = require('../lib/webauthn');
 const {
   getMfaRow,
   isTotpEnabled,
@@ -84,9 +101,38 @@ function failureResponse(req, res, result, row, context, method) {
   return res.status(400).json({ error: 'Der Bestätigungscode ist nicht gültig.' });
 }
 
+function passkeyConfigOrNull(res) {
+  const config = getWebAuthnConfig();
+  if (!config.enabled) {
+    res.set('Cache-Control', 'no-store').status(503).json({
+      error: config.reason || 'Passkeys sind auf dieser Installation nicht konfiguriert.'
+    });
+    return null;
+  }
+  return config;
+}
+
+function passkeyLockedResponse(res, userId) {
+  return res.set('Cache-Control', 'no-store').status(429).json({
+    error: 'Zu viele Passkey-Versuche. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.',
+    retryAfter: lockRemainingMs(db, userId)
+  });
+}
+
 router.get('/', (req, res) => {
+  const config = getWebAuthnConfig();
   res.set('Cache-Control', 'no-store');
-  res.json({ security: securityStatus(db, req.user.id) });
+  res.json({
+    security: {
+      ...securityStatus(db, req.user.id),
+      passkeyEnabled: config.enabled,
+      passkeyCount: countPasskeys(db, req.user.id)
+    },
+    passkeys: {
+      enabled: config.enabled,
+      items: listPasskeys(db, req.user.id)
+    }
+  });
 });
 
 router.post('/totp/enroll/start', (req, res, next) => {
@@ -185,6 +231,92 @@ router.post('/recovery/regenerate', (req, res, next) => {
   }
 });
 
+router.post('/passkeys/options', async (req, res, next) => {
+  try {
+    const config = passkeyConfigOrNull(res);
+    if (!config) return;
+    if (isPasskeyLocked(db, req.user.id)) return passkeyLockedResponse(res, req.user.id);
+    const password = String(req.body?.password || '');
+    if (!password) throw new HttpError(400, 'Bitte bestätigen Sie Ihr Passwort.');
+    const valid = await bcrypt.compare(password, req.user.password_hash);
+    if (!valid) {
+      const failure = registerPasskeyFailure(db, req.user.id);
+      if (failure.lockedUntil) return passkeyLockedResponse(res, req.user.id);
+      throw new HttpError(400, 'Das Passwort ist nicht korrekt.');
+    }
+    const result = await buildRegistrationOptions(db, req.user, config);
+    storeRegistrationChallenge(req, result.challenge, req.user.id);
+    res.set('Cache-Control', 'no-store').json({ options: result.options });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/passkeys/verify', async (req, res, next) => {
+  try {
+    const config = passkeyConfigOrNull(res);
+    if (!config) return;
+    if (isPasskeyLocked(db, req.user.id)) return passkeyLockedResponse(res, req.user.id);
+    const challenge = takeRegistrationChallenge(req, req.user.id);
+    if (!challenge) throw new HttpError(400, 'Die Passkey-Einrichtung ist abgelaufen. Bitte starten Sie sie erneut.');
+    const response = req.body?.response;
+    if (!response || typeof response !== 'object') throw new HttpError(400, 'Der Passkey konnte nicht bestätigt werden.');
+
+    let result;
+    try {
+      result = await verifyRegistration(db, req.user, response, challenge, config, req.body?.name);
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      const failure = registerPasskeyFailure(db, req.user.id);
+      if (failure.lockedUntil) return passkeyLockedResponse(res, req.user.id);
+      return res.status(400).json({ error: 'Der Passkey konnte nicht bestätigt werden.' });
+    }
+    if (!result.valid) {
+      const failure = registerPasskeyFailure(db, req.user.id);
+      if (failure.lockedUntil) return passkeyLockedResponse(res, req.user.id);
+      return res.status(400).json({ error: 'Der Passkey konnte nicht bestätigt werden.' });
+    }
+    clearPasskeyFailures(db, req.user.id);
+    audit(req, 'passkey_added', { name: result.passkey.name });
+    res.set('Cache-Control', 'no-store').json({
+      passkey: result.passkey,
+      passkeys: listPasskeys(db, req.user.id)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/passkeys/:id', (req, res, next) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    if (!name) throw new HttpError(400, 'Bitte geben Sie einen Namen für den Passkey an.');
+    const passkey = renamePasskey(db, req.user.id, req.params.id, name);
+    if (!passkey) throw new HttpError(404, 'Passkey wurde nicht gefunden.');
+    audit(req, 'passkey_renamed', { name: passkey.name });
+    res.set('Cache-Control', 'no-store').json({ passkey, passkeys: listPasskeys(db, req.user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/passkeys/:id', (req, res, next) => {
+  try {
+    const passkey = removePasskey(db, req.user.id, req.params.id);
+    if (!passkey) throw new HttpError(404, 'Passkey wurde nicht gefunden.');
+    clearPasskeyFailures(db, req.user.id);
+    audit(req, 'passkey_removed', { name: passkey.name });
+    const sessionsEnded = deleteUserSessions(db, req.user.id);
+    return req.session.destroy((error) => {
+      if (error) console.warn('Passkey-Sitzung konnte nicht verworfen werden.');
+      res.clearCookie('awo.sid');
+      res.set('Cache-Control', 'no-store').json({ ok: true, loggedOut: true, sessionsEnded });
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/admin-reset/:userId', (req, res, next) => {
   try {
     const actor = req.user;
@@ -205,17 +337,31 @@ router.post('/admin-reset/:userId', (req, res, next) => {
       }
     }
     const targetRow = getMfaRow(db, target.id);
-    if (!targetRow) throw new HttpError(409, 'Für dieses Konto ist keine MFA eingerichtet.');
+    const passkeyCount = countPasskeys(db, target.id);
+    if (!targetRow && passkeyCount === 0) {
+      throw new HttpError(409, 'Für dieses Konto sind keine MFA-Faktoren eingerichtet.');
+    }
     const hadMfa = isTotpEnabled(targetRow);
     resetMfa(db, target.id);
+    const passkeysRemoved = deleteUserPasskeys(db, target.id);
+    clearPasskeyFailures(db, target.id);
     const sessions = deleteUserSessions(db, target.id);
     writeAudit(db, {
       userId: actor.id,
       action: 'mfa_reset',
       entityType: 'user',
       entityId: target.id,
-      details: { hadTotp: hadMfa, sessionsEnded: sessions }
+      details: { hadTotp: hadMfa, passkeysRemoved, sessionsEnded: sessions }
     });
+    if (passkeysRemoved > 0) {
+      writeAudit(db, {
+        userId: actor.id,
+        action: 'passkey_reset',
+        entityType: 'user',
+        entityId: target.id,
+        details: { count: passkeysRemoved }
+      });
+    }
     res.set('Cache-Control', 'no-store').json({ ok: true });
   } catch (error) {
     next(error);

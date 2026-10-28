@@ -300,9 +300,29 @@ function applyState(state) {
           confirmedAt: state.security.confirmedAt || null,
           lastVerifiedAt: state.security.lastVerifiedAt || null,
           recoveryCodesRemaining: Number(state.security.recoveryCodesRemaining) || 0,
-          lockedUntil: state.security.lockedUntil || null
+          lockedUntil: state.security.lockedUntil || null,
+          passkeyEnabled: Boolean(state.security.passkeyEnabled),
+          passkeyCount: Number(state.security.passkeyCount) || 0,
+          passkeys: Array.isArray(state.security.passkeys)
+            ? state.security.passkeys.map((passkey) => ({
+                id: passkey.id,
+                name: passkey.name,
+                transports: Array.isArray(passkey.transports) ? passkey.transports : [],
+                createdAt: passkey.createdAt || null,
+                lastUsedAt: passkey.lastUsedAt || null
+              }))
+            : []
         }
-      : { totpEnabled: false, confirmedAt: null, lastVerifiedAt: null, recoveryCodesRemaining: 0, lockedUntil: null },
+      : {
+          totpEnabled: false,
+          confirmedAt: null,
+          lastVerifiedAt: null,
+          recoveryCodesRemaining: 0,
+          lockedUntil: null,
+          passkeyEnabled: false,
+          passkeyCount: 0,
+          passkeys: []
+        },
     driversForLinking: Array.isArray(state.driversForLinking) ? state.driversForLinking : [],
     bookingRequests: Array.isArray(state.bookingRequests) ? state.bookingRequests : [],
     ownTrips: state.ownTrips && typeof state.ownTrips === 'object'
@@ -862,6 +882,7 @@ function renderRoute(scrollToTop = true) {
   updateNavActive(ui.route);
   const view = $('#view');
   if (view) view.innerHTML = ROUTES[ui.route]();
+  updatePasskeySupport();
   if (ui.route === 'audit') loadAuditLog();
   else auditRequestSeq += 1;
   closeNotifications();
@@ -874,7 +895,15 @@ function renderCurrentView() {
   const view = $('#view');
   if (!view) return;
   view.innerHTML = ROUTES[ui.route]();
+  updatePasskeySupport();
   if (ui.route === 'audit') loadAuditLog();
+}
+
+function updatePasskeySupport() {
+  document.documentElement.classList.toggle(
+    'no-webauthn',
+    !(window.PublicKeyCredential && window.SimpleWebAuthnBrowser)
+  );
 }
 
 /* =========================================================
@@ -1390,6 +1419,9 @@ function dispatchAction(element) {
     case 'mfa-disable': openMfaDisableModal(); break;
     case 'mfa-regenerate': openMfaRegenerateModal(); break;
     case 'mfa-admin-reset': openMfaAdminResetConfirm(id); break;
+    case 'add-passkey': openAddPasskeyModal(); break;
+    case 'rename-passkey': openRenamePasskeyModal(id); break;
+    case 'delete-passkey': openDeletePasskeyConfirm(id); break;
     case 'set-color-mode': setColorMode(element.dataset.mode); break;
     case 'cycle-color-mode': cycleColorMode(); break;
     case 'smtp-test': testSmtpSettings(); break;

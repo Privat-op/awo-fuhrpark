@@ -153,8 +153,10 @@ button, input { font: inherit; }
   width: 50px;
   height: 50px;
   flex: 0 0 50px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   border-radius: 13px;
   color: var(--on-accent);
   background: rgba(255, 255, 255, .17);
@@ -520,4 +522,23 @@ button, input { font: inherit; }
   color: var(--ink);
   font-size: 10px;
   line-height: 1.5;
+}
+
+.login-passkey {
+  margin-bottom: 15px;
+}
+
+.login-passkey-button {
+  margin-bottom: 0;
+}
+
+.login-passkey-status {
+  margin-top: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--danger-border);
+  border-radius: 9px;
+  background: var(--danger-soft-bg);
+  color: var(--danger-ink);
+  font-size: 9.5px;
+  line-height: 1.45;
 }
