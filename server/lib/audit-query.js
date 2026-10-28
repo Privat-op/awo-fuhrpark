@@ -18,6 +18,7 @@ const ENTITY_LABELS = {
   user_policy: 'Benutzerrichtlinie',
   settings: 'Einstellungen',
   smtp: 'E-Mail-Versand',
+  cost_center: 'Kostenstelle',
   branding: 'Erscheinungsbild',
   logbook: 'Fahrtenbuch',
   data: 'Datenexport',
@@ -44,6 +45,9 @@ const ACTION_LABELS = {
   leasing_update: 'Leasingdaten aktualisiert',
   leasing_notification: 'Leasing-Benachrichtigung',
   smtp_test: 'SMTP-Test',
+  assign_cost_center: 'Kostenstelle zugeordnet',
+  activate: 'Aktiviert',
+  deactivate: 'Deaktiviert',
   read: 'Audit-Log gelesen'
 };
 
@@ -311,6 +315,7 @@ function targetVisibleFor(req, db, cache, entityType, entityId, row) {
   if (entityType === 'role' || entityType === 'role_object_permissions') return hasEffectivePermission(req, 'roles_manage');
   if (entityType === 'settings' || entityType === 'user_policy') return hasEffectivePermission(req, 'settings_manage');
   if (entityType === 'smtp') return Boolean(req.auth?.isAdmin || req.auth?.isSuperadmin);
+  if (entityType === 'cost_center') return hasEffectivePermission(req, 'cost_centers_view');
   if (entityType === 'branding') return hasEffectivePermission(req, 'branding_manage');
   if (entityType === 'audit') return hasEffectivePermission(req, 'audit_view_all') || req.user?.role === 'admin';
   return false;
@@ -318,6 +323,10 @@ function targetVisibleFor(req, db, cache, entityType, entityId, row) {
 
 function targetLabelFor(db, cache, entityType, entityId, visible) {
   if (!visible) return fallbackTargetLabel(entityType, entityId);
+  if (entityType === 'cost_center' && entityId) {
+    const row = db.prepare('SELECT code, name FROM cost_centers WHERE id = ?').get(entityId);
+    if (row) return `${row.code} · ${row.name}`;
+  }
   const target = OBJECT_TARGETS[entityType];
   if (!target || !entityId) return fallbackTargetLabel(entityType, entityId);
   const context = objectContext(db, cache, entityType, entityId);

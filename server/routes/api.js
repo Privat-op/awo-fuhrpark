@@ -46,6 +46,14 @@ const {
   publicObjectTypes
 } = require('../lib/permissions');
 const { SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID } = require('../lib/superadmin');
+const {
+  parseCostCenterPayload,
+  getCostCenter,
+  assertCostCenterAssignable,
+  resolveBookingCostCenter,
+  resolveCostCostCenter,
+  getCostCenterUsage
+} = require('../lib/cost-centers');
 const { leasingWarningForVehicle, triggerLeasingCheck } = require('../lib/leasing');
 const {
   loadSmtpConfig,
@@ -94,6 +102,43 @@ function getDriver(id) {
 
 function getCost(id) {
   return db.prepare('SELECT * FROM costs WHERE id = ?').get(id);
+}
+
+function requireCostCenterViewForSelection(req, id) {
+  if (id && !hasEffectivePermission(req, 'cost_centers_view')) {
+    throw new HttpError(403, 'Für die Auswahl einer Kostenstelle fehlt die Berechtigung „Kostenstellen ansehen“.');
+  }
+}
+
+function costCenterIdForPayload(req, body, existingId = null) {
+  const provided = Object.prototype.hasOwnProperty.call(body || {}, 'costCenterId');
+  const raw = provided ? body.costCenterId : existingId;
+  if (raw === undefined || raw === null || raw === '') return null;
+  const id = requiredString(raw, 'Kostenstelle', { max: 120 });
+  if (provided && id !== (existingId || null)) requireCostCenterViewForSelection(req, id);
+  return assertCostCenterAssignable(db, id, { existingId });
+}
+
+function resolveBookingCostCenterFromPayload(req, body, { driver = null, vehicle = null, user = null } = {}) {
+  const explicit = Object.prototype.hasOwnProperty.call(body || {}, 'costCenterId');
+  if (!explicit) {
+    return resolveBookingCostCenter(db, { explicit: false, driver, vehicle, user });
+  }
+  const raw = body.costCenterId;
+  const explicitId = raw === undefined || raw === null || raw === '' ? null : requiredString(raw, 'Kostenstelle', { max: 120 });
+  requireCostCenterViewForSelection(req, explicitId);
+  return resolveBookingCostCenter(db, { explicit: true, explicitId });
+}
+
+function resolveCostCostCenterFromPayload(req, body, { vehicle = null, user = null } = {}) {
+  const explicit = Object.prototype.hasOwnProperty.call(body || {}, 'costCenterId');
+  if (!explicit) {
+    return resolveCostCostCenter(db, { explicit: false, vehicle, user });
+  }
+  const raw = body.costCenterId;
+  const explicitId = raw === undefined || raw === null || raw === '' ? null : requiredString(raw, 'Kostenstelle', { max: 120 });
+  requireCostCenterViewForSelection(req, explicitId);
+  return resolveCostCostCenter(db, { explicit: true, explicitId });
 }
 
 const ADMIN_ROLE_ID = 'admin';
@@ -291,7 +336,8 @@ function syncVehicleStatus(vehicleId) {
 }
 
 function mapSessionUser(user) {
-  return mapUser(user);
+  const costCenter = user?.cost_center_id ? getCostCenter(user.cost_center_id) : null;
+  return mapUser(user, costCenter);
 }
 
 /* =========================================================
@@ -344,6 +390,9 @@ function localISODate(date) {
 router.get('/export/logbook.csv', requirePermission('logbook_export'), (req, res, next) => {
   try {
     const period = ['30', '90', 'all'].includes(String(req.query.period)) ? String(req.query.period) : '30';
+    const rawCostCenterFilter = req.query.costCenter;
+    const hasCostCenterFilter = rawCostCenterFilter !== undefined;
+    const costCenterFilter = rawCostCenterFilter === 'none' ? null : (rawCostCenterFilter ? String(rawCostCenterFilter) : null);
     const state = getState(db, req.user, req.auth);
     const today = todayISO();
     let cutoff = null;
@@ -355,15 +404,19 @@ router.get('/export/logbook.csv', requirePermission('logbook_export'), (req, res
     const trips = state.bookings
       .filter((booking) => booking.status === 'completed')
       .filter((booking) => !cutoff || booking.start.slice(0, 10) >= cutoff)
+      .filter((booking) => !hasCostCenterFilter || (costCenterFilter === null ? !booking.costCenterId : booking.costCenterId === costCenterFilter))
       .sort((a, b) => String(b.start).localeCompare(String(a.start)));
     const vehicles = new Map(state.vehicles.map((vehicle) => [vehicle.id, vehicle]));
     const drivers = new Map(state.drivers.map((driver) => [driver.id, driver]));
     const rows = [
-      ['Datum', 'Fahrzeug', 'Kennzeichen', 'Fahrer:in', 'Zweck', 'Von', 'Bis', 'Start-km', 'End-km', 'Distanz-km'],
+      ['Datum', 'Fahrzeug', 'Kennzeichen', 'Fahrer:in', 'Zweck', 'Von', 'Bis', 'Start-km', 'End-km', 'Distanz-km', 'Kostenstelle'],
       ...trips.map((trip) => {
         const vehicle = vehicles.get(trip.vehicleId);
         const driver = drivers.get(trip.driverId);
         const distance = Math.max(0, Number(trip.endKm || 0) - Number(trip.startKm || 0));
+        const costCenter = trip.costCenterCode
+          ? `${trip.costCenterCode} · ${trip.costCenterName || ''}`.trim()
+          : (trip.costCenterName || '');
         return [
           trip.start.slice(0, 10).split('-').reverse().join('.'),
           vehicle?.name || trip.vehicleName || '',
@@ -374,7 +427,8 @@ router.get('/export/logbook.csv', requirePermission('logbook_export'), (req, res
           trip.end.slice(11, 16),
           trip.startKm ?? '',
           trip.endKm ?? '',
-          distance
+          distance,
+          costCenter
         ];
       })
     ];
@@ -382,7 +436,7 @@ router.get('/export/logbook.csv', requirePermission('logbook_export'), (req, res
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="fahrtenbuch-${today}.csv"`);
     res.send(`\uFEFF${csv}`);
-    audit(req, 'export', 'logbook', 'csv', { period, count: trips.length });
+    audit(req, 'export', 'logbook', 'csv', { period, costCenter: costCenterFilter || null, count: trips.length });
   } catch (error) {
     next(error);
   }
@@ -501,6 +555,95 @@ router.post('/notifications/read', (req, res) => {
 });
 
 /* =========================================================
+   Kostenstellen
+   ========================================================= */
+router.post('/cost-centers', requirePermission('cost_centers_manage'), (req, res, next) => {
+  try {
+    const values = parseCostCenterPayload(req.body || {});
+    const duplicate = db.prepare('SELECT id FROM cost_centers WHERE code = ? COLLATE NOCASE').get(values.code);
+    if (duplicate) throw new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert bereits.');
+    const id = crypto.randomUUID();
+    const now = isoNow();
+    db.prepare(`
+      INSERT INTO cost_centers (id, code, name, description, active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, values.code, values.name, values.description, values.active ? 1 : 0, now, now);
+    audit(req, 'create', 'cost_center', id, values);
+    sendState(req, res, 201);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert bereits.'));
+    next(error);
+  }
+});
+
+router.patch('/cost-centers/:id', requirePermission('cost_centers_manage'), (req, res, next) => {
+  try {
+    const existing = getCostCenter(db, req.params.id);
+    if (!existing) throw new HttpError(404, 'Kostenstelle wurde nicht gefunden.');
+    const values = parseCostCenterPayload(req.body || {}, existing);
+    const duplicate = db.prepare('SELECT id FROM cost_centers WHERE code = ? COLLATE NOCASE AND id <> ?').get(values.code, existing.id);
+    if (duplicate) throw new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert bereits.');
+    const activeChanged = Boolean(existing.active) !== values.active;
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE cost_centers
+        SET code = ?, name = ?, description = ?, active = ?, updated_at = ?
+        WHERE id = ?
+      `).run(values.code, values.name, values.description, values.active ? 1 : 0, isoNow(), existing.id);
+      audit(req, 'update', 'cost_center', existing.id, {
+        code: values.code,
+        name: values.name,
+        active: values.active,
+        previousCode: existing.code,
+        previousName: existing.name,
+        previousActive: Boolean(existing.active)
+      });
+      if (activeChanged) {
+        audit(req, values.active ? 'activate' : 'deactivate', 'cost_center', existing.id, { code: values.code });
+      }
+    })();
+    sendState(req, res);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert bereits.'));
+    next(error);
+  }
+});
+
+router.post('/cost-centers/:id/deactivate', requirePermission('cost_centers_manage'), (req, res, next) => {
+  try {
+    const existing = getCostCenter(db, req.params.id);
+    if (!existing) throw new HttpError(404, 'Kostenstelle wurde nicht gefunden.');
+    if (existing.active) {
+      db.prepare('UPDATE cost_centers SET active = 0, updated_at = ? WHERE id = ?').run(isoNow(), existing.id);
+      audit(req, 'deactivate', 'cost_center', existing.id, { code: existing.code });
+    }
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/cost-centers/:id', requirePermission('cost_centers_manage'), (req, res, next) => {
+  try {
+    const existing = getCostCenter(db, req.params.id);
+    if (!existing) throw new HttpError(404, 'Kostenstelle wurde nicht gefunden.');
+    const usage = getCostCenterUsage(db, existing.id);
+    if (usage.total > 0) {
+      throw new HttpError(
+        409,
+        'Die Kostenstelle wird noch verwendet und kann nicht gelöscht werden. Deaktivieren Sie sie stattdessen.',
+        { usage }
+      );
+    }
+    db.prepare('DELETE FROM cost_centers WHERE id = ?').run(existing.id);
+    audit(req, 'delete', 'cost_center', existing.id, { code: existing.code, name: existing.name });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* =========================================================
    Fahrzeuge
    ========================================================= */
 function parseLeasingPayload(body, existing = null, mileage = 0) {
@@ -573,6 +716,7 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
   let imageFile = null;
   try {
     const values = parseVehiclePayload(req.body || {});
+    values.costCenterId = costCenterIdForPayload(req, req.body || {}, null);
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ?').get(values.plate);
     if (duplicate) throw new HttpError(409, `Das Kennzeichen ${values.plate} ist bereits vergeben.`);
     if (req.body?.imageData) imageFile = await storeVehicleImage(req.body.imageData);
@@ -583,18 +727,24 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
     if (activeBooking) values.status = 'in_use';
     db.prepare(`
       INSERT INTO vehicles
-        (id, name, plate, type, fuel, seats, location, department, status, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, name, plate, type, fuel, seats, location, department, status, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, cost_center_id, leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, values.name, values.plate, values.type, values.fuel, values.seats,
       values.location, values.department, values.status, values.mileage,
       values.blocked ? 1 : 0, values.blockedReason,
       values.nextService, values.tuv, values.insurance, todayISO(),
-      values.color, values.notes, imageFile,
+      values.color, values.notes, imageFile, values.costCenterId,
       values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
       now, now
     );
-    audit(req, 'create', 'vehicle', id, { name: values.name, plate: values.plate, blocked: values.blocked, blockedReason: values.blockedReason });
+    audit(req, 'create', 'vehicle', id, {
+      name: values.name,
+      plate: values.plate,
+      blocked: values.blocked,
+      blockedReason: values.blockedReason,
+      costCenterId: values.costCenterId
+    });
     if (values.blocked) audit(req, 'block', 'vehicle', id, { reason: values.blockedReason });
     if (values.leasingEnd) {
       audit(req, 'leasing_update', 'vehicle', id, {
@@ -619,6 +769,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
     const existing = ensureVehicleExists(req.params.id);
     assertCan(req, 'vehicles_manage', { vehicle: existing });
     const values = parseVehiclePayload(req.body || {}, existing);
+    values.costCenterId = costCenterIdForPayload(req, req.body || {}, existing.cost_center_id);
     const duplicate = db.prepare('SELECT id FROM vehicles WHERE UPPER(plate) = ? AND id <> ?').get(values.plate, existing.id);
     if (duplicate) throw new HttpError(409, `Das Kennzeichen ${values.plate} ist bereits vergeben.`);
 
@@ -634,13 +785,14 @@ router.patch('/vehicles/:id', async (req, res, next) => {
       || String(existing.leasing_start_km ?? '') !== String(values.leasingStartKm ?? '')
       || String(existing.leasing_km_limit ?? '') !== String(values.leasingKmLimit ?? '');
     const mileageChanged = Number(existing.mileage) !== Number(values.mileage);
+    const costCenterChanged = (existing.cost_center_id || null) !== (values.costCenterId || null);
 
     db.transaction(() => {
       db.prepare(`
         UPDATE vehicles SET
           name = ?, plate = ?, type = ?, fuel = ?, seats = ?, location = ?, department = ?,
           status = ?, mileage = ?, blocked = ?, blocked_reason = ?, next_service = ?, tuv = ?, insurance = ?, color = ?, notes = ?,
-          leasing_start = ?, leasing_end = ?, leasing_start_km = ?, leasing_km_limit = ?,
+          cost_center_id = ?, leasing_start = ?, leasing_end = ?, leasing_start_km = ?, leasing_km_limit = ?,
           image_file = ?, updated_at = ?
         WHERE id = ?
       `).run(
@@ -648,15 +800,22 @@ router.patch('/vehicles/:id', async (req, res, next) => {
         values.location, values.department, values.status, values.mileage,
         values.blocked ? 1 : 0, values.blockedReason,
         values.nextService, values.tuv, values.insurance, values.color, values.notes,
-        values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
+        values.costCenterId, values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
         imageFile, isoNow(), existing.id
       );
       audit(req, 'update', 'vehicle', existing.id, {
         name: values.name,
         plate: values.plate,
         blocked: values.blocked,
-        blockedReason: values.blockedReason
+        blockedReason: values.blockedReason,
+        costCenterId: values.costCenterId
       });
+      if (costCenterChanged) {
+        audit(req, 'assign_cost_center', 'vehicle', existing.id, {
+          costCenterId: values.costCenterId,
+          previousCostCenterId: existing.cost_center_id || null
+        });
+      }
       if (blockedChanged) {
         audit(req, values.blocked ? 'block' : 'unblock', 'vehicle', existing.id, {
           reason: values.blockedReason,
@@ -723,13 +882,14 @@ function parseDriverPayload(body) {
 router.post('/drivers', requirePermission('drivers_manage'), (req, res, next) => {
   try {
     const values = parseDriverPayload(req.body || {});
+    values.costCenterId = costCenterIdForPayload(req, req.body || {}, null);
     const id = crypto.randomUUID();
     const now = isoNow();
     db.prepare(`
-      INSERT INTO drivers (id, name, role, department, phone, email, license, status, color, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, values.name, values.role, values.department, values.phone, values.email, JSON.stringify(values.license), values.status, values.color, now, now);
-    audit(req, 'create', 'driver', id, { name: values.name });
+      INSERT INTO drivers (id, name, role, department, phone, email, license, status, color, cost_center_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, values.name, values.role, values.department, values.phone, values.email, JSON.stringify(values.license), values.status, values.color, values.costCenterId, now, now);
+    audit(req, 'create', 'driver', id, { name: values.name, costCenterId: values.costCenterId });
     sendState(req, res, 201);
   } catch (error) {
     next(error);
@@ -741,11 +901,21 @@ router.patch('/drivers/:id', (req, res, next) => {
     const existing = ensureDriverExists(req.params.id);
     assertCan(req, 'drivers_manage', { driver: existing });
     const values = parseDriverPayload(req.body || {});
-    db.prepare(`
-      UPDATE drivers SET name = ?, role = ?, department = ?, phone = ?, email = ?, license = ?, status = ?, color = ?, updated_at = ?
-      WHERE id = ?
-    `).run(values.name, values.role, values.department, values.phone, values.email, JSON.stringify(values.license), values.status, values.color, isoNow(), existing.id);
-    audit(req, 'update', 'driver', existing.id, { name: values.name });
+    values.costCenterId = costCenterIdForPayload(req, req.body || {}, existing.cost_center_id);
+    const costCenterChanged = (existing.cost_center_id || null) !== (values.costCenterId || null);
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE drivers SET name = ?, role = ?, department = ?, phone = ?, email = ?, license = ?, status = ?, color = ?, cost_center_id = ?, updated_at = ?
+        WHERE id = ?
+      `).run(values.name, values.role, values.department, values.phone, values.email, JSON.stringify(values.license), values.status, values.color, values.costCenterId, isoNow(), existing.id);
+      audit(req, 'update', 'driver', existing.id, { name: values.name, costCenterId: values.costCenterId });
+      if (costCenterChanged) {
+        audit(req, 'assign_cost_center', 'driver', existing.id, {
+          costCenterId: values.costCenterId,
+          previousCostCenterId: existing.cost_center_id || null
+        });
+      }
+    })();
     sendState(req, res);
   } catch (error) {
     next(error);
@@ -774,14 +944,15 @@ router.post('/bookings', (req, res, next) => {
     if (vehicle.status === 'maintenance') throw new HttpError(409, `${vehicle.name} befindet sich in Wartung.`);
     if (driver.status === 'away') throw new HttpError(409, `${driver.name} ist aktuell abwesend.`);
     assertBookingConflict(vehicle.id, driver.id, start, end, vehicle.name, driver.name);
+    const costCenterId = resolveBookingCostCenterFromPayload(req, body, { driver, vehicle, user: req.user });
 
     const id = crypto.randomUUID();
     const now = isoNow();
     db.prepare(`
-      INSERT INTO bookings (id, vehicle_id, driver_id, purpose, start_at, end_at, status, notes, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'planned', ?, ?, ?, ?)
-    `).run(id, vehicle.id, driver.id, purpose, start, end, optionalString(body.notes, { max: 1000 }), req.user.id, now, now);
-    audit(req, 'create', 'booking', id, { purpose, vehicleId, driverId, start, end });
+      INSERT INTO bookings (id, vehicle_id, driver_id, purpose, start_at, end_at, status, notes, cost_center_id, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'planned', ?, ?, ?, ?, ?)
+    `).run(id, vehicle.id, driver.id, purpose, start, end, optionalString(body.notes, { max: 1000 }), costCenterId, req.user.id, now, now);
+    audit(req, 'create', 'booking', id, { purpose, vehicleId, driverId, start, end, costCenterId });
     sendState(req, res, 201, { leasingWarning: leasingWarningForVehicle(vehicle) });
   } catch (error) {
     next(error);
@@ -903,16 +1074,17 @@ router.post('/booking-requests', (req, res, next) => {
     const end = combineDateTime(date, String(body.endTime || ''), 'Ende');
     if (end <= start) throw new HttpError(400, 'Das Ende der Buchungsanfrage muss nach dem Beginn liegen.');
     const conflict = getBookingConflict(vehicle.id, linkedDriver.id, start, end, vehicle.name, linkedDriver.name);
+    const costCenterId = resolveBookingCostCenterFromPayload(req, body, { driver: linkedDriver, vehicle, user: req.user });
     const id = crypto.randomUUID();
     const now = isoNow();
     db.transaction(() => {
       db.prepare(`
         INSERT INTO booking_requests
-          (id, vehicle_id, driver_id, requested_by, purpose, start_at, end_at, notes, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)
+          (id, vehicle_id, driver_id, requested_by, purpose, start_at, end_at, notes, cost_center_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)
       `).run(
         id, vehicle.id, linkedDriver.id, req.user.id, purpose, start, end,
-        optionalString(body.notes, { max: 1000 }), now, now
+        optionalString(body.notes, { max: 1000 }), costCenterId, now, now
       );
       audit(req, 'create', 'booking_request', id, {
         vehicleId: vehicle.id,
@@ -920,6 +1092,7 @@ router.post('/booking-requests', (req, res, next) => {
         purpose,
         start,
         end,
+        costCenterId,
         conflictWarning: conflict.hasConflict
       });
     })();
@@ -957,11 +1130,11 @@ router.post('/booking-requests/:id/approve', requirePermission('booking_requests
       bookingId = crypto.randomUUID();
       const now = isoNow();
       db.prepare(`
-        INSERT INTO bookings (id, vehicle_id, driver_id, purpose, start_at, end_at, status, notes, created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'planned', ?, ?, ?, ?)
+        INSERT INTO bookings (id, vehicle_id, driver_id, purpose, start_at, end_at, status, notes, cost_center_id, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'planned', ?, ?, ?, ?, ?)
       `).run(
         bookingId, vehicle.id, driver.id, request.purpose, request.start_at, request.end_at,
-        request.notes || '', req.user.id, now, now
+        request.notes || '', request.cost_center_id || null, req.user.id, now, now
       );
       const changed = db.prepare(`
         UPDATE booking_requests
@@ -975,6 +1148,7 @@ router.post('/booking-requests/:id/approve', requirePermission('booking_requests
         driverId: driver.id,
         start: request.start_at,
         end: request.end_at,
+        costCenterId: request.cost_center_id || null,
         requestId: request.id
       });
       audit(req, 'approve', 'booking_request', request.id, {
@@ -1072,18 +1246,19 @@ router.post('/trips', (req, res, next) => {
     const startKm = intValue(body.startKm, 'Startkilometerstand', { min: 0, max: 10_000_000, required: true });
     const endKm = intValue(body.endKm, 'Endkilometerstand', { min: 0, max: 10_000_000, required: true });
     if (endKm < startKm) throw new HttpError(400, 'Der Endkilometerstand muss größer oder gleich dem Startkilometerstand sein.');
+    const costCenterId = resolveBookingCostCenterFromPayload(req, body, { driver, vehicle, user: req.user });
 
     const transaction = db.transaction(() => {
       const id = crypto.randomUUID();
       const now = isoNow();
       db.prepare(`
-        INSERT INTO bookings (id, vehicle_id, driver_id, purpose, start_at, end_at, status, start_km, end_km, notes, created_by, completed_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, vehicle.id, driver.id, requiredString(body.purpose, 'Zweck der Fahrt', { max: 200 }), start, end, startKm, endKm, optionalString(body.notes, { max: 1000 }), req.user.id, date, now, now);
+        INSERT INTO bookings (id, vehicle_id, driver_id, purpose, start_at, end_at, status, start_km, end_km, notes, cost_center_id, created_by, completed_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, vehicle.id, driver.id, requiredString(body.purpose, 'Zweck der Fahrt', { max: 200 }), start, end, startKm, endKm, optionalString(body.notes, { max: 1000 }), costCenterId, req.user.id, date, now, now);
       if (endKm > vehicle.mileage) {
         db.prepare('UPDATE vehicles SET mileage = ?, updated_at = ? WHERE id = ?').run(endKm, now, vehicle.id);
       }
-      audit(req, 'create', 'trip', id, { vehicleId: vehicle.id, driverId: driver.id, startKm, endKm });
+      audit(req, 'create', 'trip', id, { vehicleId: vehicle.id, driverId: driver.id, startKm, endKm, costCenterId });
     });
     transaction();
     triggerLeasingCheck(db, { dataDir: DATA_DIR });
@@ -1130,10 +1305,11 @@ router.post('/maintenance/:id/done', (req, res, next) => {
       let costId = null;
       if (Number(item.cost) > 0) {
         costId = crypto.randomUUID();
+        const costCenterId = resolveCostCostCenter(db, { explicit: false, vehicle, user: req.user });
         db.prepare(`
-          INSERT INTO costs (id, vehicle_id, date, category, amount, note, created_by, created_at, updated_at)
-          VALUES (?, ?, ?, 'Wartung', ?, ?, ?, ?, ?)
-        `).run(costId, vehicle.id, todayISO(), Number(item.cost), `${item.title}${item.workshop ? ` · ${item.workshop}` : ''}`, req.user.id, now, now);
+          INSERT INTO costs (id, vehicle_id, date, category, amount, note, cost_center_id, created_by, created_at, updated_at)
+          VALUES (?, ?, ?, 'Wartung', ?, ?, ?, ?, ?, ?)
+        `).run(costId, vehicle.id, todayISO(), Number(item.cost), `${item.title}${item.workshop ? ` · ${item.workshop}` : ''}`, costCenterId, req.user.id, now, now);
       }
       if (vehicle.status === 'maintenance') {
         const stillOpen = db.prepare('SELECT 1 FROM maintenance WHERE vehicle_id = ? AND completed_at IS NULL AND id <> ? LIMIT 1').get(vehicle.id, item.id);
@@ -1161,19 +1337,20 @@ router.post('/costs', async (req, res, next) => {
     const category = oneOf(body.category, COST_CATEGORIES, 'Kostenart');
     const amount = numericValue(body.amount, 'Betrag', { min: 0.01, max: 10_000_000 });
     const note = optionalString(body.note, { max: 300 });
+    const costCenterId = resolveCostCostCenterFromPayload(req, body, { vehicle, user: req.user });
     if (body.receipt) receipt = await storeReceipt(body.receipt);
     const id = crypto.randomUUID();
     const now = isoNow();
     db.prepare(`
       INSERT INTO costs
-        (id, vehicle_id, date, category, amount, note, receipt_file, receipt_name, receipt_mime, receipt_size, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, vehicle_id, date, category, amount, note, cost_center_id, receipt_file, receipt_name, receipt_mime, receipt_size, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id, vehicle.id, date, category, amount, note,
+      id, vehicle.id, date, category, amount, note, costCenterId,
       receipt?.file || null, receipt?.name || null, receipt?.mime || null, receipt?.size || null,
       req.user.id, now, now
     );
-    audit(req, 'create', 'cost', id, { vehicleId: vehicle.id, category, amount });
+    audit(req, 'create', 'cost', id, { vehicleId: vehicle.id, category, amount, costCenterId });
     sendState(req, res, 201);
   } catch (error) {
     if (receipt?.file) deleteUpload(receipt.file);
@@ -1452,6 +1629,7 @@ router.post('/users', requirePermission('users_manage'), (req, res, next) => {
     const password = passwordValue(body.password);
     const driverId = body.driverId ? requiredString(body.driverId, 'Fahrer:in', { max: 120 }) : null;
     const ownTripsAccess = booleanValue(body.ownTripsAccess, true) ? 1 : 0;
+    const costCenterId = costCenterIdForPayload(req, body, null);
     if (driverId) {
       const driver = getDriver(driverId);
       if (!driver) throw new HttpError(400, 'Die ausgewählte Fahrer:in existiert nicht.');
@@ -1463,14 +1641,21 @@ router.post('/users', requirePermission('users_manage'), (req, res, next) => {
     const now = isoNow();
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO users (id, email, name, password_hash, role, active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(id, email, name, bcrypt.hashSync(password, 12), role, 1, now, now);
+        INSERT INTO users (id, email, name, password_hash, role, active, cost_center_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, email, name, bcrypt.hashSync(password, 12), role, 1, costCenterId, now, now);
       if (driverId) {
         db.prepare('UPDATE drivers SET user_id = ?, own_trips_access = ?, updated_at = ? WHERE id = ?')
           .run(id, ownTripsAccess, now, driverId);
       }
-      audit(req, 'create', 'user', id, { email, role, roleRank: getRoleRank(db, role), driverId, ownTripsAccess: driverId ? ownTripsAccess : null });
+      audit(req, 'create', 'user', id, {
+        email,
+        role,
+        roleRank: getRoleRank(db, role),
+        driverId,
+        ownTripsAccess: driverId ? ownTripsAccess : null,
+        costCenterId
+      });
       if (driverId) audit(req, 'link_driver', 'user', id, { driverId, ownTripsAccess });
     })();
     sendState(req, res, 201);
@@ -1498,6 +1683,8 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
     const duplicate = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?').get(email, existing.id);
     if (duplicate) throw new HttpError(409, 'Für diese E-Mail-Adresse existiert bereits ein Konto.');
     const password = body.password ? passwordValue(body.password) : null;
+    const costCenterId = costCenterIdForPayload(req, body, existing.cost_center_id);
+    const costCenterChanged = (existing.cost_center_id || null) !== (costCenterId || null);
 
     const currentDriver = db.prepare('SELECT * FROM drivers WHERE user_id = ?').get(existing.id) || null;
     let nextDriverId = currentDriver?.id || null;
@@ -1523,12 +1710,12 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
     db.transaction(() => {
       if (password) {
         db.prepare(`
-          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, password_hash = ?, updated_at = ? WHERE id = ?
-        `).run(email, name, role, active ? 1 : 0, deactivatedAt, bcrypt.hashSync(password, 12), now, existing.id);
+          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, password_hash = ?, cost_center_id = ?, updated_at = ? WHERE id = ?
+        `).run(email, name, role, active ? 1 : 0, deactivatedAt, bcrypt.hashSync(password, 12), costCenterId, now, existing.id);
       } else {
         db.prepare(`
-          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, updated_at = ? WHERE id = ?
-        `).run(email, name, role, active ? 1 : 0, deactivatedAt, now, existing.id);
+          UPDATE users SET email = ?, name = ?, role = ?, active = ?, deactivated_at = ?, cost_center_id = ?, updated_at = ? WHERE id = ?
+        `).run(email, name, role, active ? 1 : 0, deactivatedAt, costCenterId, now, existing.id);
       }
       if (role === 'admin') {
         db.prepare("UPDATE users SET permission_overrides = '{}', object_permissions = '{}' WHERE id = ?").run(existing.id);
@@ -1559,8 +1746,15 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
         active,
         passwordChanged: Boolean(password),
         driverId: nextDriverId,
-        ownTripsAccess: nextDriverId ? nextOwnTripsAccess : null
+        ownTripsAccess: nextDriverId ? nextOwnTripsAccess : null,
+        costCenterId
       });
+      if (costCenterChanged) {
+        audit(req, 'assign_cost_center', 'user', existing.id, {
+          costCenterId,
+          previousCostCenterId: existing.cost_center_id || null
+        });
+      }
       if (linkChanged) {
         audit(req, nextDriverId ? 'link_driver' : 'unlink_driver', 'user', existing.id, {
           driverId: nextDriverId || currentDriver?.id || null,

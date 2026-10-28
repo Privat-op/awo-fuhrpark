@@ -19,12 +19,31 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Fahrtenbuch mit Fahrtstart, Fahrtende und manueller Nachtragung
 - Wartungsplan mit automatischer Kostenübernahme bei Erledigung
 - Kostenverwaltung inklusive Beleg-Upload (JPG, PNG, PDF)
+- Kostenstellen als Stammdatum mit Zuordnung zu Fahrzeugen, Fahrer:innen und Benutzerkonten, Default-Übernahme in Buchungen/Kosten, Filtern, Summen und Export
 - Dashboard, Suche und Benachrichtigungen mit Gelesen-Status
 - **Globales Erscheinungsbild:** Allgemeines AWO-Theme mit offiziellem Logo oder neutrales Theme mit eigenem Anzeigenamen, optionalem Logo, Akzentfarbe, weiteren Farben und Sidebar-Stil inklusive Live-Vorschau
 - DATEV-unabhängiger JSON-Export und CSV-Export des Fahrtenbuchs; beide serverseitig berechtigungsgeprüft und audit-protokolliert
 - **Audit-Log für alle angemeldeten Nutzer:** serverseitig begrenzte Sicht (eigene Aktionen, Rangbereich oder alle Aktivitäten), Suche/Filter, Maskierung, Meta-Audit und Pagination
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
+
+## Release v0.8.0-dev (Paket 2)
+
+Paket 2 führt Kostenstellen ein. Der Stand ist **nicht released und nicht deployed**; QS und Freigabe stehen aus.
+
+- **Stammdaten:** Code (normalisiert, eindeutig), Bezeichnung, Beschreibung, Aktivstatus und Nutzungszähler.
+- **Zuordnung:** Fahrzeuge, Fahrer:innen und Benutzerkonten können eine Kostenstelle als Default tragen.
+- **Defaults:** Buchung/Anfrage: explizit > Fahrer:in > Fahrzeug > Benutzerkonto > NULL. Kosten: explizit > Fahrzeug > Benutzerkonto > NULL. Bestehende Buchungen/Kosten bleiben als Snapshot unverändert.
+- **Rechte:** `cost_centers_view` und `cost_centers_manage`; die Fuhrparkleitung erhält beide per Migration, Administrator automatisch. SMTP bleibt davon unberührt.
+- **Löschen:** nur ohne Referenzen; sonst 409 mit Hinweis auf Deaktivieren.
+- **Export:** JSON mit Kostenstellen-IDs/Code/Name; CSV-Fahrtenbuch mit Spalte `Kostenstelle` am Ende und optionalem Filter.
+- **Migration:** `user_version = 6`.
+
+Details: [Feature-Doku v0.8.0 Paket 2](FEATURE_DOKU_v0.8.0_Paket2.md).
+
+## Release v0.7.1
+
+UI-Fix: Der Info-Banner „Superadmin ist datei-verwaltet“ auf der Seite **Rollen & Rechte** wurde entfernt. Rollenverwaltung, Rechte, Objekt-Ausnahmen und der Systemschutz des Superadmins bleiben unverändert.
 
 ## Release v0.7.0 (Paket 1)
 
@@ -281,7 +300,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 5`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 6`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 
