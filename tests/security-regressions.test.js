@@ -110,8 +110,29 @@ async function apiJson(email, method, endpoint, body) {
   return { status: response.status, data, text };
 }
 
-function insertRole(id, name, rank, permissions) {
-  const now = new Date().toISOString();
+function vehiclePayload(overrides = {}) {
+  return {
+    name: 'Upload-Testfahrzeug',
+    plate: 'HB-U 1',
+    type: 'Pkw',
+    fuel: 'Diesel',
+    seats: 5,
+    status: 'available',
+    location: 'Hof',
+    department: 'Test',
+    mileage: 1000,
+    nextService: '',
+    tuv: '',
+    insurance: '',
+    notes: '',
+    color: '#2563eb',
+    blocked: false,
+    blockedReason: '',
+    ...overrides
+  };
+}
+
+function insertRole(id, name, rank, permissions) {  const now = new Date().toISOString();
   db.prepare(`
     INSERT INTO roles (id, name, permissions, object_permissions, is_system, rank, created_at, updated_at)
     VALUES (?, ?, ?, '{}', 0, ?, ?, ?)
@@ -216,4 +237,22 @@ test('QS-010: explizit leeres permissions-Feld entfernt Rechte weiterhin', async
   assert.equal(response.status, 200, response.text);
   const after = JSON.parse(db.prepare("SELECT permissions FROM roles WHERE id = 'role-qs010-clear'").get().permissions);
   assert.deepEqual(after, []);
+});
+
+test('QS-003: a 12 MB image payload passes the JSON parser and reaches the image limit check', async () => {
+  const created = await apiJson(MANAGER_EMAIL, 'POST', '/api/vehicles', vehiclePayload());
+  assert.equal(created.status, 201, created.text);
+  const vehicleId = created.data.vehicles.find((entry) => entry.plate === 'HB-U 1').id;
+
+  const atLimit = await apiJson(MANAGER_EMAIL, 'PATCH', `/api/vehicles/${vehicleId}`, vehiclePayload({
+    imageData: `data:image/jpeg;base64,${Buffer.alloc(12 * 1024 * 1024).toString('base64')}`
+  }));
+  assert.equal(atLimit.status, 400, '12-MB-Bild muss den JSON-Parser passieren');
+  assert.match(atLimit.data.error, /Bild konnte nicht verarbeitet werden/);
+
+  const aboveLimit = await apiJson(MANAGER_EMAIL, 'PATCH', `/api/vehicles/${vehicleId}`, vehiclePayload({
+    imageData: `data:image/jpeg;base64,${Buffer.alloc(12 * 1024 * 1024 + 1).toString('base64')}`
+  }));
+  assert.equal(aboveLimit.status, 400);
+  assert.match(aboveLimit.data.error, /max\. 12 MB/);
 });

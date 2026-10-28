@@ -207,7 +207,9 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false
 }));
-app.use(express.json({ limit: '12mb' }));
+// Base64 inflates image uploads by about one third, so the JSON limit must be
+// larger than the 12 MB binary limit enforced in server/lib/files.js.
+app.use(express.json({ limit: '24mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(express.static(PUBLIC_DIR, { index: false, etag: true, maxAge: 0 }));
 
