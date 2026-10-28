@@ -26,6 +26,10 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
 
+## Release v0.7.1
+
+UI-Fix: Der Info-Banner „Superadmin ist datei-verwaltet“ auf der Seite **Rollen & Rechte** wurde entfernt. Rollenverwaltung, Rechte, Objekt-Ausnahmen und der Systemschutz des Superadmins bleiben unverändert.
+
 ## Release v0.7.0 (Paket 1)
 
 Paket 1 führt die Leasingüberwachung und den E-Mail-Versand ein. Der Stand ist **QS-freigegeben (51/51 Checks, keine Findings)** und wird als v0.7.0 deployed. Paket 2 (Kostenstellen) und Paket 3 (Dark Mode) liegen ausschließlich als Design/Estimate vor.
