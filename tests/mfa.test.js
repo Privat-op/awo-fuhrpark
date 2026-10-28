@@ -558,6 +558,9 @@ test('Admin-Reset: strikt niedriger Rang erlaubt, Gleichrang/Self/Manager verbot
   assert.equal(recoveryUser.canResetMfa, true);
   const adminTwo = adminState.data.users.find((entry) => entry.id === 'admin-two');
   assert.equal(adminTwo.canResetMfa, false);
+  const withoutMfa = adminState.data.users.find((entry) => entry.id === 'viewer-self');
+  assert.equal(withoutMfa.mfaEnabled, false);
+  assert.equal(withoutMfa.canResetMfa, false);
 
   const audit = db.prepare("SELECT details FROM audit_logs WHERE action = 'mfa_reset' ORDER BY created_at").all();
   assert.ok(audit.length >= 2);

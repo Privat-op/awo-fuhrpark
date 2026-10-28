@@ -482,6 +482,7 @@ function getState(db, user, auth = null) {
   const mapStateUser = (row) => {
     const linkedDriver = driverByUserId.get(row.id) || null;
     const mfa = mfaByUserId.get(row.id) || null;
+    const mfaEnabled = Number(mfa?.totp_enabled) === 1;
     const targetRank = roleRankById.get(row.role) || 0;
     return {
       ...mapUser(row, costCenterFor(row), defaultColorMode),
@@ -489,10 +490,11 @@ function getState(db, user, auth = null) {
       driverId: linkedDriver?.id || null,
       driverName: linkedDriver?.name || '',
       ownTripsAccess: linkedDriver ? Number(linkedDriver.own_trips_access) !== 0 : null,
-      mfaEnabled: Number(mfa?.totp_enabled) === 1,
+      mfaEnabled,
       mfaConfirmedAt: mfa?.totp_confirmed_at || null,
       mfaLastVerifiedAt: mfa?.last_verified_at || null,
-      canResetMfa: isPrivileged
+      canResetMfa: mfaEnabled
+        && isPrivileged
         && row.id !== user.id
         && (isSuperadmin || (row.role !== 'admin' && targetRank < actorRank))
     };

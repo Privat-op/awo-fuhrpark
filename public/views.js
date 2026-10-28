@@ -1816,7 +1816,7 @@ function renderUsers() {
       : manageable
         ? `${canEditOverrides ? `<button class="table-action" type="button" title="Benutzer-Ausnahmen bearbeiten" aria-label="Benutzer-Ausnahmen bearbeiten" data-action="edit-user-permissions" data-id="${user.id}">${icon('filter')}</button>` : ''}
            <button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button>
-           ${user.canResetMfa ? `<button class="table-action danger" type="button" title="MFA zurücksetzen" aria-label="MFA zurücksetzen" data-action="mfa-admin-reset" data-id="${user.id}">${icon('shield')}</button>` : ''}
+           ${user.canResetMfa && user.mfaEnabled ? `<button class="table-action danger" type="button" title="MFA zurücksetzen" aria-label="MFA zurücksetzen" data-action="mfa-admin-reset" data-id="${user.id}">${icon('shield')}</button>` : ''}
            ${!user.active ? `<button class="table-action danger" type="button" title="Benutzerkonto anonymisieren" aria-label="Benutzerkonto anonymisieren" data-action="anonymize-user" data-id="${user.id}">${icon('user-x')}</button>` : ''}`
         : `<span class="table-action" title="Nur eigene oder niedrigere Ränge bearbeitbar" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`;
     return `
