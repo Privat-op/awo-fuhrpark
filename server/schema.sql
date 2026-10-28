@@ -1,5 +1,15 @@
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS cost_centers (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -9,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
   permission_overrides TEXT NOT NULL DEFAULT '{}',
   object_permissions TEXT NOT NULL DEFAULT '{}',
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
   last_login_at TEXT,
   deactivated_at TEXT,
   anonymized_at TEXT,
@@ -48,6 +59,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   color TEXT NOT NULL DEFAULT '#2563eb',
   notes TEXT NOT NULL DEFAULT '',
   image_file TEXT,
+  cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
   leasing_start TEXT,
   leasing_end TEXT,
   leasing_start_km INTEGER,
@@ -68,6 +80,7 @@ CREATE TABLE IF NOT EXISTS drivers (
   color TEXT NOT NULL DEFAULT '#2563eb',
   user_id TEXT UNIQUE REFERENCES users(id) ON DELETE SET NULL,
   own_trips_access INTEGER NOT NULL DEFAULT 1 CHECK (own_trips_access IN (0, 1)),
+  cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -83,6 +96,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   start_km INTEGER,
   end_km INTEGER,
   notes TEXT NOT NULL DEFAULT '',
+  cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
   created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   completed_at TEXT,
@@ -101,6 +115,7 @@ CREATE TABLE IF NOT EXISTS booking_requests (
   start_at TEXT NOT NULL,
   end_at TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
+  cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
   status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'approved', 'rejected', 'canceled')),
   decided_by TEXT REFERENCES users(id) ON DELETE SET NULL,
   decided_at TEXT,
@@ -132,6 +147,7 @@ CREATE TABLE IF NOT EXISTS costs (
   category TEXT NOT NULL,
   amount REAL NOT NULL CHECK (amount > 0),
   note TEXT NOT NULL DEFAULT '',
+  cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
   receipt_file TEXT,
   receipt_name TEXT,
   receipt_mime TEXT,

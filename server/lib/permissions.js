@@ -71,6 +71,8 @@ const PERMISSION_GROUPS = [
       { key: 'roles_manage', label: 'Rollen verwalten' },
       { key: 'settings_manage', label: 'Organisation bearbeiten' },
       { key: 'branding_manage', label: 'Erscheinungsbild verwalten' },
+      { key: 'cost_centers_view', label: 'Kostenstellen ansehen' },
+      { key: 'cost_centers_manage', label: 'Kostenstellen verwalten' },
       { key: 'export_data', label: 'Datenexport' }
     ]
   },
@@ -100,6 +102,7 @@ const IMPLICATIONS = {
   drivers_manage: ['drivers_view'],
   own_trips_request: ['own_trips_view'],
   own_trips_execute: ['own_trips_view'],
+  cost_centers_manage: ['cost_centers_view'],
   audit_view_all: ['audit_view']
 };
 
@@ -111,7 +114,7 @@ const DEFAULT_MANAGER_PERMISSIONS = [
   'costs_view', 'costs_manage',
   'drivers_view', 'drivers_manage',
   'users_manage', 'roles_manage',
-  'settings_manage', 'export_data',
+  'settings_manage', 'cost_centers_view', 'cost_centers_manage', 'export_data',
   'audit_view'
 ];
 

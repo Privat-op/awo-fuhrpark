@@ -23,6 +23,7 @@ const { uploadPath } = require('./lib/files');
 const { startAutoAnonymizer } = require('./lib/anonymize');
 const { migrateSuperadminSchema, ensureSuperadmin } = require('./lib/superadmin');
 const { migrateLeasingSchema } = require('./lib/leasing-schema');
+const { migrateCostCentersSchema } = require('./lib/cost-centers-schema');
 const { startLeasingScheduler } = require('./lib/leasing');
 const {
   ensureRoles,
@@ -113,6 +114,7 @@ ensureRoles(db);
 migrateAuditSchema(db);
 migrateSuperadminSchema(db);
 migrateLeasingSchema(db);
+migrateCostCentersSchema(db);
 bootstrap(db);
 try {
   ensureSuperadmin(db, { projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR });
