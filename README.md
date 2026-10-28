@@ -27,9 +27,9 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
 
-## Release v0.8.0-dev (Paket 2)
+## Release v0.8.0 (Paket 2)
 
-Paket 2 führt Kostenstellen ein. Der Stand ist **nicht released und nicht deployed**; QS und Freigabe stehen aus.
+Paket 2 führt Kostenstellen ein. Der Stand ist **QS-freigegeben (54/54 dynamische Checks + 9/9 Migrationstests, keine Findings)** und wird als v0.8.0 deployed.
 
 - **Stammdaten:** Code (normalisiert, eindeutig), Bezeichnung, Beschreibung, Aktivstatus und Nutzungszähler.
 - **Zuordnung:** Fahrzeuge, Fahrer:innen und Benutzerkonten können eine Kostenstelle als Default tragen.
