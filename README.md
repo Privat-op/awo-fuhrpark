@@ -26,9 +26,9 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
 
-## Release v0.7.0-dev (Paket 1)
+## Release v0.7.0 (Paket 1)
 
-Paket 1 führt die Leasingüberwachung und den E-Mail-Versand ein. Der Stand ist noch **nicht released und nicht deployed**; Paket 2 (Kostenstellen) und Paket 3 (Dark Mode) liegen ausschließlich als Design/Estimate vor.
+Paket 1 führt die Leasingüberwachung und den E-Mail-Versand ein. Der Stand ist **QS-freigegeben (51/51 Checks, keine Findings)** und wird als v0.7.0 deployed. Paket 2 (Kostenstellen) und Paket 3 (Dark Mode) liegen ausschließlich als Design/Estimate vor.
 
 - **Leasing:** Start/Ende, Startkilometer und Gesamt-Kilometerlimit pro Fahrzeug; Bestandsfahrzeuge ohne Leasing bleiben unverändert.
 - **Warnungen:** 80/90/100 % Kilometerverbrauch und 90/30 Tage vor Leasingende in Fahrzeugliste, Fahrzeugdetails, Dashboard/Benachrichtigungen und bei Buchungen – als Hinweis, ohne Blockade.
