@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="de" data-theme="{{THEME}}" data-sidebar="{{SIDEBAR_STYLE}}" data-color-mode="{{COLOR_MODE}}" data-color-mode-preference="{{COLOR_MODE}}" style="{{BRAND_STYLES}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="{{THEME_COLOR}}">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{LOGIN_PAGE_TITLE}}</title>
+  <link rel="icon" href="{{FAVICON}}">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+      function apply() {
+        var preference = root.getAttribute('data-color-mode-preference') || 'light';
+        var mode = preference === 'auto' ? (media && media.matches ? 'dark' : 'light') : preference;
+        root.setAttribute('data-color-mode', mode === 'dark' ? 'dark' : 'light');
+        root.style.colorScheme = mode === 'dark' ? 'dark' : 'light';
+      }
+      apply();
+      if (media) {
+        if (media.addEventListener) media.addEventListener('change', apply);
+        else if (media.addListener) media.addListener(apply);
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="/login.css?v=0.10.0-dev">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-brand-panel" aria-label="{{BRAND_NAME}} Fuhrparkmanagement">
+      <div class="brand-lockup">
+        <span class="brand-mark {{BRAND_MARK_CLASS}}">{{BRAND_MARK}}</span>
+        <span class="brand-copy">
+          <strong>{{BRAND_NAME}}</strong>
+          <span>{{BRAND_SUBTITLE}}</span>
+        </span>
+      </div>
+
+      <div class="brand-message">
+        <span class="brand-eyebrow">Sicherheitsprüfung</span>
+        <h1>Noch ein<br>Schritt.<br><em>Sicher.</em></h1>
+        <p>Ihr Konto ist durch einen zweiten Faktor geschützt. Bestätigen Sie die Anmeldung mit Ihrer Authenticator-App oder einem Recovery-Code.</p>
+      </div>
+
+      <ul class="feature-list">
+        <li><span class="feature-check">✓</span><span>Schutz auch bei bekanntem Passwort</span></li>
+        <li><span class="feature-check">✓</span><span>Einmalige Recovery-Codes als Rückfallweg</span></li>
+        <li><span class="feature-check">✓</span><span>Keine Weitergabe von Codes an Dritte</span></li>
+      </ul>
+
+      <p class="brand-footnote">Zugriff nur für autorisierte Mitarbeitende.</p>
+    </section>
+
+    <section class="login-form-panel">
+      <div class="login-card">
+        <div class="login-mobile-brand">
+          <span class="brand-mark {{BRAND_MARK_CLASS}}">{{BRAND_MARK}}</span>
+          <div><strong>{{BRAND_NAME}}</strong><span>{{BRAND_SUBTITLE}}</span></div>
+        </div>
+
+        <div class="login-heading">
+          <span class="login-eyebrow">Zwei-Faktor-Anmeldung</span>
+          <h2>Bestätigen</h2>
+          <p>Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.</p>
+        </div>
+
+        {{ERROR}}
+
+        <form action="/login/mfa" method="post" autocomplete="off">
+          <input type="hidden" name="_csrf" value="{{CSRF_TOKEN}}">
+          <div class="login-field">
+            <label for="code">Bestätigungscode</label>
+            <input id="code" name="code" type="text" inputmode="text" autocomplete="one-time-code" placeholder="123456" maxlength="32" autocapitalize="characters" spellcheck="false" required autofocus>
+            <p class="login-field-hint">Alternativ können Sie einen Ihrer Recovery-Codes eingeben.</p>
+          </div>
+          <label class="login-check">
+            <input type="checkbox" name="useRecovery" value="1">
+            <span>Recovery-Code verwenden</span>
+          </label>
+          <button class="login-button" type="submit">Anmeldung bestätigen</button>
+        </form>
+
+        <form action="/login/mfa/cancel" method="post" class="login-cancel-form">
+          <input type="hidden" name="_csrf" value="{{CSRF_TOKEN}}">
+          <button class="login-cancel-button" type="submit">Abbrechen und zur Anmeldung zurück</button>
+        </form>
+
+        <div class="login-help">
+          <strong>Code oder Gerät verloren?</strong>
+          <span>Wenden Sie sich an die Fuhrparkleitung oder die IT, um MFA zurücksetzen zu lassen.</span>
+        </div>
+
+        <p class="login-account-hint">{{EMAIL}}</p>
+      </div>
+
+      <footer class="login-footer">
+        <span>© <span id="year">2026</span> {{LOGIN_FOOTER_BRAND}}</span>
+        <span>Internes System · {{LOGIN_FOOTER_BRAND}}</span>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

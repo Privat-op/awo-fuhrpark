@@ -67,6 +67,8 @@ const {
 
 const router = express.Router();
 
+router.use('/security', require('./security'));
+
 const VEHICLE_TYPES = ['Pkw', 'Transporter', 'Bus'];
 const FUEL_TYPES = ['Diesel', 'Benzin', 'Elektro', 'Hybrid'];
 const VEHICLE_STATUSES = ['available', 'in_use', 'maintenance'];

@@ -1,6 +1,6 @@
 {
   "name": "awo-fuhrpark",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "private": true,
   "description": "Serverfähiges Fuhrparkmanagement für die AWO Bremerhaven",
   "main": "server/index.js",
@@ -24,6 +24,7 @@
     "express-session": "^1.19.0",
     "helmet": "^8.3.0",
     "nodemailer": "^10.2.1",
+    "qrcode": "^1.5.4",
     "sharp": "^0.35.5"
   }
 }

@@ -27,6 +27,15 @@ const { migrateLeasingSchema } = require('./lib/leasing-schema');
 const { migrateCostCentersSchema } = require('./lib/cost-centers-schema');
 const { migrateColorModeSchema } = require('./lib/color-mode-schema');
 const { normalizeColorMode } = require('./lib/color-mode');
+const { migrateMfaSchema } = require('./lib/mfa-schema');
+const { getMfaKey } = require('./lib/mfa-crypto');
+const {
+  getMfaRow,
+  isTotpEnabled,
+  isLocked,
+  verifyTotpForUser,
+  verifyRecoveryForUser
+} = require('./lib/mfa');
 const { startLeasingScheduler } = require('./lib/leasing');
 const {
   ensureRoles,
@@ -59,6 +68,7 @@ if (!sessionSecret || sessionSecret.length < 32) {
 }
 
 const loginTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'login.html'), 'utf8');
+const loginMfaTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'login-mfa.html'), 'utf8');
 const indexTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'index.html'), 'utf8');
 
 function inlineScriptHashes(templates) {
@@ -72,7 +82,7 @@ function inlineScriptHashes(templates) {
   return [...hashes];
 }
 
-const themeScriptHashes = inlineScriptHashes([loginTemplate, indexTemplate]);
+const themeScriptHashes = inlineScriptHashes([loginTemplate, loginMfaTemplate, indexTemplate]);
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -117,6 +127,21 @@ function renderLogin(req, res, { status = 200, error = '', email = '' } = {}) {
     .send(html);
 }
 
+function renderLoginMfa(req, res, { status = 200, error = '', email = '' } = {}) {
+  const csrfToken = ensureCsrfToken(req);
+  const errorMarkup = error ? `<div class="login-error" role="alert">${escapeHtml(error)}</div>` : '';
+  const { settings, branding } = currentBranding();
+  const colorMode = normalizeColorMode(settings?.default_color_mode, 'light');
+  const html = applyBrandingTemplate(loginMfaTemplate, branding, colorMode)
+    .replaceAll('{{CSRF_TOKEN}}', escapeHtml(csrfToken))
+    .replaceAll('{{ERROR}}', errorMarkup)
+    .replaceAll('{{EMAIL}}', escapeHtml(email));
+  res.status(status)
+    .set('Cache-Control', 'no-store')
+    .type('html')
+    .send(html);
+}
+
 function renderApp(req, res) {
   const { settings, branding } = currentBranding();
   const userMode = normalizeColorMode(req.user?.color_mode, '');
@@ -136,6 +161,8 @@ migrateSuperadminSchema(db);
 migrateLeasingSchema(db);
 migrateCostCentersSchema(db);
 migrateColorModeSchema(db);
+migrateMfaSchema(db);
+getMfaKey(DATA_DIR);
 bootstrap(db);
 try {
   ensureSuperadmin(db, { projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR });
@@ -229,6 +256,14 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true
 });
 
+const mfaLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 40,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true
+});
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 900,
@@ -237,15 +272,22 @@ const apiLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'Zu viele Anfragen. Bitte warten Sie einen Moment.' })
 });
 
+const MFA_PENDING_TTL_MS = 10 * 60 * 1000;
+const MFA_ERROR_MESSAGE = 'Der Bestätigungscode ist nicht gültig. Bitte versuchen Sie es erneut.';
+
+function csrfMatches(req, value) {
+  return Boolean(req.session?.csrfToken && value && safeEqual(req.session.csrfToken, value));
+}
+
 app.get('/login', (req, res) => {
   if (req.session?.userId) return res.redirect('/');
+  if (req.session?.mfaPendingUserId) return res.redirect('/login/mfa');
   return renderLogin(req, res);
 });
 
 app.post('/login', loginLimiter, async (req, res, next) => {
   try {
-    const providedToken = String(req.body?._csrf || '');
-    if (!req.session?.csrfToken || !providedToken || !safeEqual(req.session.csrfToken, providedToken)) {
+    if (!csrfMatches(req, String(req.body?._csrf || ''))) {
       return renderLogin(req, res, { status: 403, error: 'Die Anmeldung ist abgelaufen. Bitte versuchen Sie es erneut.' });
     }
     const email = String(req.body?.email || '').trim().toLowerCase();
@@ -257,21 +299,169 @@ app.post('/login', loginLimiter, async (req, res, next) => {
       return renderLogin(req, res, { status: 401, error: 'E-Mail-Adresse oder Passwort ist nicht korrekt.', email });
     }
 
+    const mfaEnabled = isTotpEnabled(getMfaRow(db, user.id));
+    await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
+    req.session.csrfToken = randomToken();
+
+    if (mfaEnabled) {
+      req.session.mfaPendingUserId = user.id;
+      req.session.mfaPendingAt = Date.now();
+      await new Promise((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()));
+      return res.redirect(303, '/login/mfa');
+    }
+
     const now = new Date().toISOString();
     db.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').run(now, now, user.id);
-    writeAudit(db, { userId: user.id, action: 'login', entityType: 'user', entityId: user.id, details: { email } });
-
-    await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
     req.session.userId = user.id;
-    req.session.csrfToken = randomToken();
     await new Promise((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()));
+    writeAudit(db, { userId: user.id, action: 'login', entityType: 'user', entityId: user.id, details: { email } });
     return res.redirect(303, '/');
   } catch (error) {
     return next(error);
   }
 });
 
+app.get('/login/mfa', (req, res) => {
+  if (req.session?.userId) return res.redirect('/');
+  const pendingUserId = req.session?.mfaPendingUserId;
+  if (!pendingUserId) return res.redirect('/login');
+  if (Date.now() - Number(req.session.mfaPendingAt || 0) > MFA_PENDING_TTL_MS) {
+    return req.session.destroy(() => {
+      res.clearCookie('awo.sid');
+      res.redirect('/login');
+    });
+  }
+  const user = db.prepare('SELECT id, email FROM users WHERE id = ? AND active = 1').get(pendingUserId);
+  if (!user) {
+    return req.session.destroy(() => {
+      res.clearCookie('awo.sid');
+      res.redirect('/login');
+    });
+  }
+  return renderLoginMfa(req, res, { email: user.email });
+});
+
+app.post('/login/mfa', mfaLimiter, async (req, res, next) => {
+  try {
+    const pendingUserId = req.session?.mfaPendingUserId;
+    if (!pendingUserId) return res.redirect('/login');
+    if (!csrfMatches(req, String(req.body?._csrf || ''))) {
+      return renderLoginMfa(req, res, { status: 403, error: 'Die Anmeldung ist abgelaufen. Bitte versuchen Sie es erneut.' });
+    }
+    if (Date.now() - Number(req.session.mfaPendingAt || 0) > MFA_PENDING_TTL_MS) {
+      return req.session.destroy(() => {
+        res.clearCookie('awo.sid');
+        res.redirect('/login');
+      });
+    }
+    const user = db.prepare('SELECT * FROM users WHERE id = ? AND active = 1').get(pendingUserId);
+    const row = user ? getMfaRow(db, user.id) : null;
+    if (!user || !isTotpEnabled(row)) {
+      return req.session.destroy(() => {
+        res.clearCookie('awo.sid');
+        res.redirect('/login');
+      });
+    }
+
+    const useRecovery = ['1', 'true', 'on'].includes(String(req.body?.useRecovery || '').toLowerCase());
+    const code = String(req.body?.code || '');
+    if (isLocked(row)) {
+      writeAudit(db, {
+        userId: user.id,
+        action: 'mfa_verify_failed',
+        entityType: 'user',
+        entityId: user.id,
+        details: { method: useRecovery ? 'recovery' : 'totp', reason: 'locked' }
+      });
+      return renderLoginMfa(req, res, {
+        status: 429,
+        error: 'Zu viele Fehlversuche. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.',
+        email: user.email
+      });
+    }
+
+    const result = useRecovery
+      ? verifyRecoveryForUser(db, user.id, code, { dataDir: DATA_DIR })
+      : verifyTotpForUser(db, row, code, { dataDir: DATA_DIR });
+
+    if (!result.valid) {
+      writeAudit(db, {
+        userId: user.id,
+        action: 'mfa_verify_failed',
+        entityType: 'user',
+        entityId: user.id,
+        details: { method: useRecovery ? 'recovery' : 'totp', reason: result.reason || 'invalid' }
+      });
+      if (result.justLocked) {
+        writeAudit(db, {
+          userId: user.id,
+          action: 'mfa_locked',
+          entityType: 'user',
+          entityId: user.id,
+          details: { method: useRecovery ? 'recovery' : 'totp', lockedUntil: result.lockedUntil || null }
+        });
+      }
+      const locked = result.justLocked || result.reason === 'locked';
+      return renderLoginMfa(req, res, {
+        status: locked ? 429 : 401,
+        error: locked
+          ? 'Zu viele Fehlversuche. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.'
+          : MFA_ERROR_MESSAGE,
+        email: user.email
+      });
+    }
+
+    if (useRecovery) {
+      writeAudit(db, {
+        userId: user.id,
+        action: 'mfa_recovery_used',
+        entityType: 'user',
+        entityId: user.id,
+        details: { context: 'login' }
+      });
+    }
+
+    await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
+    const now = new Date().toISOString();
+    req.session.userId = user.id;
+    req.session.mfaVerifiedAt = now;
+    req.session.csrfToken = randomToken();
+    await new Promise((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()));
+    db.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').run(now, now, user.id);
+    writeAudit(db, {
+      userId: user.id,
+      action: 'mfa_verify_success',
+      entityType: 'user',
+      entityId: user.id,
+      details: { method: useRecovery ? 'recovery' : 'totp' }
+    });
+    writeAudit(db, {
+      userId: user.id,
+      action: 'login',
+      entityType: 'user',
+      entityId: user.id,
+      details: { email: user.email }
+    });
+    return res.redirect(303, '/');
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/login/mfa/cancel', (req, res) => {
+  if (!csrfMatches(req, String(req.body?._csrf || ''))) return res.redirect('/login');
+  req.session.destroy((error) => {
+    if (error) console.warn('MFA-Sitzung konnte nicht verworfen werden:', error.message);
+    res.clearCookie('awo.sid');
+    res.redirect(303, '/login');
+  });
+});
+
 function requireAuth(req, res, next) {
+  if (!req.session?.userId && req.session?.mfaPendingUserId) {
+    if (wantsJson(req)) return res.status(401).json({ error: 'Die MFA-Bestätigung ist noch ausstehend.' });
+    return res.redirect('/login/mfa');
+  }
   if (!req.session?.userId) {
     if (wantsJson(req)) return res.status(401).json({ error: 'Nicht angemeldet.' });
     return res.redirect('/login');
