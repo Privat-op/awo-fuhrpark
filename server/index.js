@@ -423,11 +423,8 @@ app.post('/forgot-password', passwordResetRequestLimiter, async (req, res, next)
       });
     }
     const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
-    try {
-      await requestPasswordReset(db, { email, dataDir: DATA_DIR, baseUrl });
-    } catch {
-      console.warn('Passwort-Reset konnte nicht verarbeitet werden.');
-    }
+    requestPasswordReset(db, { email, dataDir: DATA_DIR, baseUrl })
+      .catch(() => console.warn('Passwort-Reset konnte nicht verarbeitet werden.'));
     return renderForgotPassword(req, res, { notice: PASSWORD_RESET_NOTICE, email });
   } catch (error) {
     return next(error);
