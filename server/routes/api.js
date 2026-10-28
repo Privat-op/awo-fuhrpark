@@ -1482,7 +1482,9 @@ router.post('/smtp/test', requireAdmin, async (req, res, next) => {
     } catch (error) {
       const code = sanitizeSmtpError(error);
       audit(req, 'smtp_test', 'smtp', '1', { ok: false, errorCode: code });
-      throw new HttpError(400, smtpErrorMessage(code, error));
+      throw new HttpError(400, smtpErrorMessage(code, error, {
+        hasCredentials: Boolean(config.username && config.password)
+      }));
     }
     audit(req, 'smtp_test', 'smtp', '1', { ok: true });
     res.json({ ok: true });

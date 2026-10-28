@@ -198,10 +198,16 @@ function sanitizeSmtpError(error) {
   return raw ? raw.toUpperCase() : 'SMTP_ERROR';
 }
 
-function smtpErrorMessage(code, error) {
+function smtpErrorMessage(code, error, options = {}) {
   const responseCode = Number(error?.responseCode) || 0;
   if (responseCode === 530 || responseCode === 535) {
     return 'Der SMTP-Server verlangt eine Anmeldung. Bitte SMTP-Benutzer und Passwort hinterlegen.';
+  }
+  if (code === 'ECONNECTION' && !error?.errno) {
+    const base = 'Der SMTP-Server hat die Verbindung abgebrochen.';
+    return options.hasCredentials === false
+      ? `${base} Es ist kein SMTP-Benutzer hinterlegt – der Server verlangt für den Versand eine Anmeldung.`
+      : `${base} Bitte Host, Port, TLS und Zugangsdaten prüfen.`;
   }
   const known = {
     EAUTH: 'Anmeldung am SMTP-Server fehlgeschlagen. Bitte Benutzer und Passwort prüfen.',

@@ -33,6 +33,28 @@ test('smtpErrorMessage: 530 und 535 werden als Anmeldefehler erklart', () => {
   assert.match(auth, /Anmeldung/);
 });
 
+test('smtpErrorMessage: abgebrochene Verbindung ohne Zugangsdaten nennt die Anmeldung', () => {
+  const error = { code: 'ECONNECTION', command: 'CONN', message: 'Connection closed unexpectedly' };
+  const message = smtpErrorMessage('ECONNECTION', error, { hasCredentials: false });
+  assert.match(message, /Verbindung abgebrochen/);
+  assert.match(message, /kein SMTP-Benutzer/);
+  assert.match(message, /Anmeldung/);
+});
+
+test('smtpErrorMessage: abgebrochene Verbindung mit Zugangsdaten nennt Host, Port und TLS', () => {
+  const error = { code: 'ECONNECTION', command: 'CONN', message: 'Connection closed unexpectedly' };
+  const message = smtpErrorMessage('ECONNECTION', error, { hasCredentials: true });
+  assert.match(message, /Verbindung abgebrochen/);
+  assert.match(message, /Host, Port, TLS/);
+  assert.doesNotMatch(message, /kein SMTP-Benutzer/);
+});
+
+test('smtpErrorMessage: echte Verbindungsfehler bleiben bei der Verbindungsmeldung', () => {
+  const error = { code: 'ECONNECTION', errno: 'ECONNREFUSED', message: 'connect ECONNREFUSED' };
+  const message = smtpErrorMessage('ECONNECTION', error, { hasCredentials: false });
+  assert.equal(message, 'Verbindung zum SMTP-Server fehlgeschlagen.');
+});
+
 test('smtpErrorMessage: bekannte Fehlercodes bleiben erhalten', () => {
   assert.match(smtpErrorMessage('ECONNECTION'), /Verbindung/);
   assert.match(smtpErrorMessage('ETIMEDOUT'), /Zeit/);
