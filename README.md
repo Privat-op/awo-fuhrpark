@@ -22,14 +22,28 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Kostenstellen als Stammdatum mit Zuordnung zu Fahrzeugen, Fahrer:innen und Benutzerkonten, Default-Übernahme in Buchungen/Kosten, Filtern, Summen und Export
 - Dashboard, Suche und Benachrichtigungen mit Gelesen-Status
 - **Globales Erscheinungsbild:** Allgemeines AWO-Theme mit offiziellem Logo oder neutrales Theme mit eigenem Anzeigenamen, optionalem Logo, Akzentfarbe, weiteren Farben und Sidebar-Stil inklusive Live-Vorschau
+- **Farbschema:** Hell, Dunkel oder Automatik pro Nutzerkonto, globaler Default durch die Administration, konsistente Dark-Mode-Tokens für AWO und neutral, Login und Druckansicht
 - DATEV-unabhängiger JSON-Export und CSV-Export des Fahrtenbuchs; beide serverseitig berechtigungsgeprüft und audit-protokolliert
 - **Audit-Log für alle angemeldeten Nutzer:** serverseitig begrenzte Sicht (eigene Aktionen, Rangbereich oder alle Aktivitäten), Suche/Filter, Maskierung, Meta-Audit und Pagination
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
 
-## Release v0.8.0-dev (Paket 2)
+## Release v0.9.0-dev (Paket 3)
 
-Paket 2 führt Kostenstellen ein. Der Stand ist **nicht released und nicht deployed**; QS und Freigabe stehen aus.
+Paket 3 führt den Dark Mode ein. Der Stand ist **nicht released und nicht deployed**; QS und Freigabe stehen aus.
+
+- **Drei Modi:** `light`, `dark` und `auto` pro Nutzerkonto; `NULL` folgt dem globalen Default `light`.
+- **Globaler Default:** in den Einstellungen durch `settings_manage` änderbar; die Loginseite nutzt ausschließlich diesen Default.
+- **Kein Flackern:** serverseitiges `data-color-mode` und ein Inline-Bootstrap nur für `auto` vor dem Stylesheet; Media-Query-Listener aktualisiert ohne Reload.
+- **Darstellung:** semantische Light-/Dark-Tokens für AWO und neutral, Tabellen, Karten, Formulare, Modale, Charts, Toasts, Leerzustände und Login; Fokusringe und `prefers-reduced-motion` bleiben erhalten.
+- **Druck:** Druck/PDF erzwingt immer das helle Farbschema.
+- **Migration:** `user_version = 7`.
+
+Details: [Feature-Doku v0.9.0 Paket 3](FEATURE_DOKU_v0.9.0_Paket3.md).
+
+## Release v0.8.0 (Paket 2)
+
+Paket 2 führt Kostenstellen ein. Der Stand ist **QS-freigegeben (54/54 dynamische Checks + 9/9 Migrationstests, keine Findings)** und wird als v0.8.0 deployed.
 
 - **Stammdaten:** Code (normalisiert, eindeutig), Bezeichnung, Beschreibung, Aktivstatus und Nutzungszähler.
 - **Zuordnung:** Fahrzeuge, Fahrer:innen und Benutzerkonten können eine Kostenstelle als Default tragen.
@@ -300,7 +314,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 6`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 7`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 

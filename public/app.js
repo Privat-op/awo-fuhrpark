@@ -283,7 +283,7 @@ function applyState(state) {
   if (!state || typeof state !== 'object') throw new Error('Der Server hat keine gültigen Daten geliefert.');
   db = {
     meta: state.meta || { version: 1, seededAt: null },
-    settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', accentColor: '#0f766e', sidebarStyle: 'dark', pageBackground: '#f4f5f7', surfaceColor: '#ffffff', textColor: '#191c23', mutedColor: '#737a88', borderColor: '#e7e9ee', autoAnonymizeDays: 0, logoUrl: null },
+    settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', accentColor: '#0f766e', sidebarStyle: 'dark', pageBackground: '#f4f5f7', surfaceColor: '#ffffff', textColor: '#191c23', mutedColor: '#737a88', borderColor: '#e7e9ee', defaultColorMode: 'light', autoAnonymizeDays: 0, logoUrl: null },
     vehicles: Array.isArray(state.vehicles) ? state.vehicles : [],
     drivers: Array.isArray(state.drivers) ? state.drivers : [],
     costCenters: Array.isArray(state.costCenters) ? state.costCenters : [],
@@ -589,6 +589,78 @@ function applyBranding() {
   if (favicon) favicon.setAttribute('href', branding.favicon);
 }
 
+const COLOR_MODES = ['light', 'dark', 'auto'];
+let colorModeMediaQuery = null;
+
+function isColorMode(value) {
+  return COLOR_MODES.includes(String(value || ''));
+}
+
+function activeColorModePreference() {
+  const userMode = currentUser?.colorMode;
+  if (isColorMode(userMode)) return userMode;
+  const defaultMode = db?.settings?.defaultColorMode;
+  return isColorMode(defaultMode) ? defaultMode : 'light';
+}
+
+function resolveColorMode(preference) {
+  if (preference !== 'auto') return preference === 'dark' ? 'dark' : 'light';
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function updateColorModeControls(preference) {
+  $$('[data-color-mode-option]').forEach((button) => {
+    const active = button.dataset.colorModeOption === preference;
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    button.classList.toggle('is-active', active);
+  });
+}
+
+function bindColorModeMedia() {
+  if (colorModeMediaQuery || !window.matchMedia) return;
+  colorModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  const handle = () => {
+    if (activeColorModePreference() === 'auto') applyColorMode('auto');
+  };
+  if (colorModeMediaQuery.addEventListener) colorModeMediaQuery.addEventListener('change', handle);
+  else if (colorModeMediaQuery.addListener) colorModeMediaQuery.addListener(handle);
+}
+
+function applyColorMode(preference = activeColorModePreference()) {
+  const normalized = isColorMode(preference) ? preference : 'light';
+  const resolved = resolveColorMode(normalized);
+  const root = document.documentElement;
+  root.dataset.colorMode = resolved;
+  root.dataset.colorModePreference = normalized;
+  root.style.colorScheme = resolved;
+  updateColorModeControls(normalized);
+  bindColorModeMedia();
+}
+
+async function setColorMode(mode) {
+  if (!isColorMode(mode)) return;
+  const previousUser = currentUser ? { ...currentUser } : null;
+  const previousMode = activeColorModePreference();
+  if (currentUser) currentUser = { ...currentUser, colorMode: mode };
+  applyColorMode(mode);
+  try {
+    const response = await apiFetch('/api/me/preferences', {
+      method: 'PATCH',
+      body: { colorMode: mode }
+    });
+    if (response?.user) currentUser = { ...currentUser, ...response.user };
+    applyColorMode();
+    if (ui.route === 'einstellungen') renderCurrentView();
+    toast('Farbschema gespeichert', mode === 'auto'
+      ? 'Die Anwendung folgt jetzt der Systemeinstellung.'
+      : `Die Anwendung verwendet jetzt das ${mode === 'dark' ? 'dunkle' : 'helle'} Farbschema.`);
+  } catch (error) {
+    if (previousUser) currentUser = previousUser;
+    applyColorMode(previousMode);
+    toast('Farbschema konnte nicht gespeichert werden', error.message, 'error');
+  }
+}
+
 function updateNavigationVisibility() {
   $$('.nav-item').forEach((item) => {
     const route = item.dataset.route;
@@ -603,6 +675,7 @@ function updateNavigationVisibility() {
 function updateChrome() {
   if (!db) return;
   applyBranding();
+  applyColorMode();
   const userName = $('#userName');
   const userRole = $('#userRole');
   const userAvatar = $('#userAvatar');
@@ -1231,6 +1304,7 @@ function dispatchAction(element) {
     case 'export-data': exportData(); break;
     case 'logout': logout(); break;
     case 'change-password': openPasswordModal(); break;
+    case 'set-color-mode': setColorMode(element.dataset.mode); break;
     case 'smtp-test': testSmtpSettings(); break;
     case 'unlink-admin-driver': unlinkAdminDriver(); break;
     case 'remove-branding-logo': removeBrandingLogoPreview(); break;
@@ -1455,6 +1529,13 @@ function bindEvents() {
     dispatchAction(actionElement);
   });
 
+  document.querySelector('.topbar')?.addEventListener('click', (event) => {
+    const actionElement = event.target.closest('[data-action]');
+    if (!actionElement) return;
+    event.preventDefault();
+    dispatchAction(actionElement);
+  });
+
   view?.addEventListener('input', (event) => {
     if (event.target.id === 'vehicleSearch') {
       ui.vehicleQuery = event.target.value;
@@ -1654,7 +1735,8 @@ function bindEvents() {
             orgName,
             location: String(data.get('location') || '').trim(),
             phone: String(data.get('phone') || '').trim(),
-            email: String(data.get('email') || '').trim()
+            email: String(data.get('email') || '').trim(),
+            defaultColorMode: String(data.get('defaultColorMode') || db.settings.defaultColorMode || 'light')
           }
         });
         applyServerState(state);
