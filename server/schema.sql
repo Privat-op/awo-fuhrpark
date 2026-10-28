@@ -238,6 +238,25 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS user_passkeys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  credential_id TEXT NOT NULL UNIQUE,
+  public_key TEXT NOT NULL,
+  counter INTEGER NOT NULL DEFAULT 0,
+  transports TEXT NOT NULL DEFAULT '[]',
+  name TEXT NOT NULL DEFAULT 'Passkey',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_used_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS passkey_attempts (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS smtp_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   host TEXT NOT NULL DEFAULT '',
@@ -279,3 +298,4 @@ CREATE INDEX IF NOT EXISTS idx_notification_deliveries_status ON notification_de
 CREATE INDEX IF NOT EXISTS idx_user_mfa_enabled ON user_mfa (totp_enabled);
 CREATE INDEX IF NOT EXISTS idx_mfa_recovery_user ON mfa_recovery_codes (user_id, used_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens (user_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_user_passkeys_user ON user_passkeys (user_id, created_at);

@@ -29,6 +29,7 @@ const { migrateColorModeSchema } = require('./lib/color-mode-schema');
 const { normalizeColorMode } = require('./lib/color-mode');
 const { migrateMfaSchema } = require('./lib/mfa-schema');
 const { migratePasswordResetSchema } = require('./lib/password-reset-schema');
+const { migratePasskeySchema } = require('./lib/passkey-schema');
 const { requestPasswordReset, resetPasswordWithToken, validatePasswordResetToken } = require('./lib/password-reset');
 const { getMfaKey } = require('./lib/mfa-crypto');
 const {
@@ -38,6 +39,18 @@ const {
   verifyTotpForUser,
   verifyRecoveryForUser
 } = require('./lib/mfa');
+const {
+  getWebAuthnConfig,
+  countPasskeys,
+  buildAuthenticationOptions,
+  verifyAuthentication,
+  storeAuthenticationChallenge,
+  takeAuthenticationChallenge,
+  isPasskeyLocked,
+  lockRemainingMs,
+  registerPasskeyFailure,
+  clearPasskeyFailures
+} = require('./lib/webauthn');
 const { startLeasingScheduler } = require('./lib/leasing');
 const { startMaintenanceReminderScheduler } = require('./lib/maintenance-reminders');
 const {
@@ -57,6 +70,15 @@ const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const VIEWS_DIR = path.join(__dirname, 'views');
+let passkeyBrowserBundle = null;
+try {
+  passkeyBrowserBundle = path.join(
+    path.dirname(require.resolve('@simplewebauthn/browser')),
+    '..', 'dist', 'bundle', 'index.umd.min.js'
+  );
+} catch {
+  passkeyBrowserBundle = null;
+}
 const isProduction = process.env.NODE_ENV === 'production';
 const cookieSecure = process.env.COOKIE_SECURE === 'true';
 const trustProxy = process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true';
@@ -175,19 +197,39 @@ function renderResetPassword(req, res, { status = 200, error = '', notice = '', 
     .send(html);
 }
 
-function renderLoginMfa(req, res, { status = 200, error = '', email = '' } = {}) {
+function renderLoginMfa(req, res, {
+  status = 200,
+  error = '',
+  email = '',
+  passkeyEnabled = false,
+  totpEnabled = true
+} = {}) {
   const csrfToken = ensureCsrfToken(req);
   const errorMarkup = error ? `<div class="login-error" role="alert">${escapeHtml(error)}</div>` : '';
   const { settings, branding } = currentBranding();
   const colorMode = normalizeColorMode(settings?.default_color_mode, 'light');
+  const factorHint = passkeyEnabled && !totpEnabled
+    ? 'Bestätigen Sie die Anmeldung mit Ihrem hinterlegten Passkey.'
+    : 'Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein oder nutzen Sie einen Passkey.';
   const html = applyBrandingTemplate(loginMfaTemplate, branding, colorMode)
     .replaceAll('{{CSRF_TOKEN}}', escapeHtml(csrfToken))
     .replaceAll('{{ERROR}}', errorMarkup)
+    .replaceAll('{{PASSKEY_ENABLED}}', passkeyEnabled ? '1' : '0')
+    .replaceAll('{{TOTP_HIDDEN}}', totpEnabled ? '' : 'hidden')
+    .replaceAll('{{FACTOR_HINT}}', escapeHtml(factorHint))
     .replaceAll('{{EMAIL}}', escapeHtml(email));
   res.status(status)
     .set('Cache-Control', 'no-store')
     .type('html')
     .send(html);
+}
+
+function loginMfaFactors(userId) {
+  const row = getMfaRow(db, userId);
+  return {
+    totpEnabled: isTotpEnabled(row),
+    passkeyEnabled: getWebAuthnConfig().enabled && countPasskeys(db, userId) > 0
+  };
 }
 
 function renderApp(req, res) {
@@ -211,6 +253,7 @@ migrateCostCentersSchema(db);
 migrateColorModeSchema(db);
 migrateMfaSchema(db);
 migratePasswordResetSchema(db);
+migratePasskeySchema(db);
 getMfaKey(DATA_DIR);
 bootstrap(db);
 try {
@@ -267,6 +310,12 @@ app.use(express.json({ limit: '24mb' }));
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 app.use(express.static(PUBLIC_DIR, { index: false, etag: true, maxAge: 0 }));
 
+app.get('/vendor/simplewebauthn-browser.js', (req, res) => {
+  if (!passkeyBrowserBundle) return res.status(404).type('text').send('WebAuthn-Browserbibliothek nicht gefunden.');
+  res.set('Cache-Control', 'public, max-age=86400');
+  return res.type('application/javascript').sendFile(passkeyBrowserBundle);
+});
+
 app.use(session({
   store: new SQLiteSessionStore(db, { defaultTtlMs: 8 * 60 * 60 * 1000 }),
   name: 'awo.sid',
@@ -318,6 +367,17 @@ const mfaLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   skipSuccessfulRequests: true
+});
+
+const passkeyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  handler: (req, res) => res.status(429).json({
+    error: 'Zu viele Passkey-Anfragen. Bitte warten Sie einen Moment.'
+  })
 });
 
 const passwordResetRequestLimiter = rateLimit({
@@ -380,7 +440,7 @@ app.post('/login', loginLimiter, async (req, res, next) => {
       return renderLogin(req, res, { status: 401, error: 'E-Mail-Adresse oder Passwort ist nicht korrekt.', email });
     }
 
-    const mfaEnabled = isTotpEnabled(getMfaRow(db, user.id));
+    const mfaEnabled = isTotpEnabled(getMfaRow(db, user.id)) || countPasskeys(db, user.id) > 0;
     await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
     req.session.csrfToken = randomToken();
 
@@ -511,7 +571,14 @@ app.get('/login/mfa', (req, res) => {
       res.redirect('/login');
     });
   }
-  return renderLoginMfa(req, res, { email: user.email });
+  const factors = loginMfaFactors(user.id);
+  if (!factors.totpEnabled && !factors.passkeyEnabled) {
+    return req.session.destroy(() => {
+      res.clearCookie('awo.sid');
+      res.redirect('/login');
+    });
+  }
+  return renderLoginMfa(req, res, { email: user.email, ...factors });
 });
 
 app.post('/login/mfa', mfaLimiter, async (req, res, next) => {
@@ -519,7 +586,13 @@ app.post('/login/mfa', mfaLimiter, async (req, res, next) => {
     const pendingUserId = req.session?.mfaPendingUserId;
     if (!pendingUserId) return res.redirect('/login');
     if (!csrfMatches(req, String(req.body?._csrf || ''))) {
-      return renderLoginMfa(req, res, { status: 403, error: 'Die Anmeldung ist abgelaufen. Bitte versuchen Sie es erneut.' });
+      const pending = db.prepare('SELECT id FROM users WHERE id = ? AND active = 1').get(pendingUserId);
+      const factors = pending ? loginMfaFactors(pending.id) : { totpEnabled: true, passkeyEnabled: false };
+      return renderLoginMfa(req, res, {
+        status: 403,
+        error: 'Die Anmeldung ist abgelaufen. Bitte versuchen Sie es erneut.',
+        ...factors
+      });
     }
     if (Date.now() - Number(req.session.mfaPendingAt || 0) > MFA_PENDING_TTL_MS) {
       return req.session.destroy(() => {
@@ -528,8 +601,15 @@ app.post('/login/mfa', mfaLimiter, async (req, res, next) => {
       });
     }
     const user = db.prepare('SELECT * FROM users WHERE id = ? AND active = 1').get(pendingUserId);
-    const row = user ? getMfaRow(db, user.id) : null;
-    if (!user || !isTotpEnabled(row)) {
+    if (!user) {
+      return req.session.destroy(() => {
+        res.clearCookie('awo.sid');
+        res.redirect('/login');
+      });
+    }
+    const row = getMfaRow(db, user.id);
+    const factors = loginMfaFactors(user.id);
+    if (!factors.totpEnabled && !factors.passkeyEnabled) {
       return req.session.destroy(() => {
         res.clearCookie('awo.sid');
         res.redirect('/login');
@@ -549,7 +629,8 @@ app.post('/login/mfa', mfaLimiter, async (req, res, next) => {
       return renderLoginMfa(req, res, {
         status: 429,
         error: 'Zu viele Fehlversuche. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.',
-        email: user.email
+        email: user.email,
+        ...factors
       });
     }
 
@@ -580,7 +661,8 @@ app.post('/login/mfa', mfaLimiter, async (req, res, next) => {
         error: locked
           ? 'Zu viele Fehlversuche. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.'
           : MFA_ERROR_MESSAGE,
-        email: user.email
+        email: user.email,
+        ...factors
       });
     }
 
@@ -628,6 +710,111 @@ app.post('/login/mfa/cancel', (req, res) => {
     res.clearCookie('awo.sid');
     res.redirect(303, '/login');
   });
+});
+
+function pendingPasskeyUser(req) {
+  if (req.session?.userId || !req.session?.mfaPendingUserId) return null;
+  return db.prepare('SELECT * FROM users WHERE id = ? AND active = 1').get(req.session.mfaPendingUserId) || null;
+}
+
+function passkeyLoginError(res, status = 401) {
+  return res.set('Cache-Control', 'no-store').status(status).json({
+    error: 'Die Passkey-Anmeldung ist nicht möglich. Bitte verwenden Sie TOTP oder einen Recovery-Code.'
+  });
+}
+
+app.post('/api/auth/passkey/options', passkeyLimiter, csrfProtection, async (req, res, next) => {
+  try {
+    const config = getWebAuthnConfig();
+    if (!config.enabled) {
+      return res.status(503).json({ error: 'Passkeys sind auf dieser Installation nicht konfiguriert.' });
+    }
+    const user = pendingPasskeyUser(req);
+    if (!user) return res.status(400).json({ error: 'Es steht keine Passkey-Anmeldung an.' });
+    if (isPasskeyLocked(db, user.id)) {
+      return res.status(429).json({
+        error: 'Zu viele Passkey-Versuche. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.',
+        retryAfter: lockRemainingMs(db, user.id)
+      });
+    }
+    const result = await buildAuthenticationOptions(db, user.id, config);
+    if (!result.options) return res.status(400).json({ error: 'Für dieses Konto ist kein Passkey hinterlegt.' });
+    storeAuthenticationChallenge(req, result.challenge, user.id);
+    return res.set('Cache-Control', 'no-store').json({ options: result.options });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/auth/passkey/verify', passkeyLimiter, csrfProtection, async (req, res, next) => {
+  try {
+    const config = getWebAuthnConfig();
+    if (!config.enabled) {
+      return res.status(503).json({ error: 'Passkeys sind auf dieser Installation nicht konfiguriert.' });
+    }
+    const user = pendingPasskeyUser(req);
+    if (!user) return res.status(400).json({ error: 'Es steht keine Passkey-Anmeldung an.' });
+    if (isPasskeyLocked(db, user.id)) {
+      return res.status(429).json({
+        error: 'Zu viele Passkey-Versuche. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.',
+        retryAfter: lockRemainingMs(db, user.id)
+      });
+    }
+    const challenge = takeAuthenticationChallenge(req, user.id);
+    if (!challenge) return passkeyLoginError(res, 400);
+    const response = req.body?.response;
+    if (!response || typeof response !== 'object') return passkeyLoginError(res, 400);
+
+    let result;
+    try {
+      result = await verifyAuthentication(db, user.id, response, challenge, config);
+    } catch {
+      result = { valid: false, reason: 'invalid' };
+    }
+    if (!result.valid) {
+      const failure = registerPasskeyFailure(db, user.id);
+      writeAudit(db, {
+        userId: user.id,
+        action: 'passkey_login_failed',
+        entityType: 'user',
+        entityId: user.id,
+        details: { reason: result.reason || 'invalid' }
+      });
+      if (failure.lockedUntil) {
+        return res.status(429).json({
+          error: 'Zu viele Passkey-Versuche. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.',
+          retryAfter: lockRemainingMs(db, user.id)
+        });
+      }
+      return passkeyLoginError(res);
+    }
+
+    clearPasskeyFailures(db, user.id);
+    await new Promise((resolve, reject) => req.session.regenerate((error) => error ? reject(error) : resolve()));
+    const now = new Date().toISOString();
+    req.session.userId = user.id;
+    req.session.mfaVerifiedAt = now;
+    req.session.csrfToken = randomToken();
+    await new Promise((resolve, reject) => req.session.save((error) => error ? reject(error) : resolve()));
+    db.prepare('UPDATE users SET last_login_at = ?, updated_at = ? WHERE id = ?').run(now, now, user.id);
+    writeAudit(db, {
+      userId: user.id,
+      action: 'passkey_login_success',
+      entityType: 'user',
+      entityId: user.id,
+      details: { method: 'passkey' }
+    });
+    writeAudit(db, {
+      userId: user.id,
+      action: 'login',
+      entityType: 'user',
+      entityId: user.id,
+      details: { email: user.email }
+    });
+    return res.set('Cache-Control', 'no-store').json({ ok: true, redirect: '/' });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 function requireAuth(req, res, next) {
