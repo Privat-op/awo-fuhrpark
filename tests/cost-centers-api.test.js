@@ -285,8 +285,8 @@ after(async () => {
   try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* Windows-Sperre */ }
 });
 
-test('Migration 6, Manager-Rechte und Kostenstellen-Tabellen sind aktiv', () => {
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 7);
+test('Migration 8, Manager-Rechte und Kostenstellen-Tabellen sind aktiv', () => {
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 8);
   const columns = db.prepare('PRAGMA table_info(vehicles)').all().map((column) => column.name);
   assert.ok(columns.includes('cost_center_id'));
   const managerPermissions = JSON.parse(db.prepare("SELECT permissions FROM roles WHERE id = 'manager'").get().permissions);
