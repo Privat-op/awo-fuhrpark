@@ -66,6 +66,7 @@
         </div>
 
         {{ERROR}}
+        {{NOTICE}}
 
         <form action="/login" method="post" autocomplete="on">
           <input type="hidden" name="_csrf" value="{{CSRF_TOKEN}}">
@@ -82,7 +83,7 @@
 
         <div class="login-help">
           <strong>Zugang vergessen?</strong>
-          <span>Wenden Sie sich an die Fuhrparkleitung oder die IT.</span>
+          <span><a class="login-link" href="/forgot-password">Passwort zurücksetzen</a> oder wenden Sie sich an die Fuhrparkleitung bzw. die IT.</span>
         </div>
       </div>
 

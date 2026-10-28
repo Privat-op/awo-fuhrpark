@@ -28,6 +28,8 @@ const { migrateCostCentersSchema } = require('./lib/cost-centers-schema');
 const { migrateColorModeSchema } = require('./lib/color-mode-schema');
 const { normalizeColorMode } = require('./lib/color-mode');
 const { migrateMfaSchema } = require('./lib/mfa-schema');
+const { migratePasswordResetSchema } = require('./lib/password-reset-schema');
+const { requestPasswordReset, resetPasswordWithToken, validatePasswordResetToken } = require('./lib/password-reset');
 const { getMfaKey } = require('./lib/mfa-crypto');
 const {
   getMfaRow,
@@ -69,6 +71,8 @@ if (!sessionSecret || sessionSecret.length < 32) {
 
 const loginTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'login.html'), 'utf8');
 const loginMfaTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'login-mfa.html'), 'utf8');
+const forgotPasswordTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'forgot-password.html'), 'utf8');
+const resetPasswordTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'reset-password.html'), 'utf8');
 const indexTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'index.html'), 'utf8');
 
 function inlineScriptHashes(templates) {
@@ -82,7 +86,13 @@ function inlineScriptHashes(templates) {
   return [...hashes];
 }
 
-const themeScriptHashes = inlineScriptHashes([loginTemplate, loginMfaTemplate, indexTemplate]);
+const themeScriptHashes = inlineScriptHashes([
+  loginTemplate,
+  loginMfaTemplate,
+  forgotPasswordTemplate,
+  resetPasswordTemplate,
+  indexTemplate
+]);
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -112,7 +122,11 @@ function applyBrandingTemplate(template, branding, colorMode = 'light') {
     .replaceAll('{{FAVICON}}', escapeHtml(branding.favicon));
 }
 
-function renderLogin(req, res, { status = 200, error = '', email = '' } = {}) {
+function noticeMarkup(notice) {
+  return notice ? `<div class="login-notice" role="status">${escapeHtml(notice)}</div>` : '';
+}
+
+function renderLogin(req, res, { status = 200, error = '', email = '', notice = '' } = {}) {
   const csrfToken = ensureCsrfToken(req);
   const errorMarkup = error ? `<div class="login-error" role="alert">${escapeHtml(error)}</div>` : '';
   const { settings, branding } = currentBranding();
@@ -120,7 +134,40 @@ function renderLogin(req, res, { status = 200, error = '', email = '' } = {}) {
   const html = applyBrandingTemplate(loginTemplate, branding, colorMode)
     .replaceAll('{{CSRF_TOKEN}}', escapeHtml(csrfToken))
     .replaceAll('{{ERROR}}', errorMarkup)
+    .replaceAll('{{NOTICE}}', noticeMarkup(notice))
     .replaceAll('{{EMAIL}}', escapeHtml(email));
+  res.status(status)
+    .set('Cache-Control', 'no-store')
+    .type('html')
+    .send(html);
+}
+
+function renderForgotPassword(req, res, { status = 200, error = '', notice = '', email = '' } = {}) {
+  const csrfToken = ensureCsrfToken(req);
+  const errorMarkup = error ? `<div class="login-error" role="alert">${escapeHtml(error)}</div>` : '';
+  const { settings, branding } = currentBranding();
+  const colorMode = normalizeColorMode(settings?.default_color_mode, 'light');
+  const html = applyBrandingTemplate(forgotPasswordTemplate, branding, colorMode)
+    .replaceAll('{{CSRF_TOKEN}}', escapeHtml(csrfToken))
+    .replaceAll('{{ERROR}}', errorMarkup)
+    .replaceAll('{{NOTICE}}', noticeMarkup(notice))
+    .replaceAll('{{EMAIL}}', escapeHtml(email));
+  res.status(status)
+    .set('Cache-Control', 'no-store')
+    .type('html')
+    .send(html);
+}
+
+function renderResetPassword(req, res, { status = 200, error = '', notice = '', token = '' } = {}) {
+  const csrfToken = ensureCsrfToken(req);
+  const errorMarkup = error ? `<div class="login-error" role="alert">${escapeHtml(error)}</div>` : '';
+  const { settings, branding } = currentBranding();
+  const colorMode = normalizeColorMode(settings?.default_color_mode, 'light');
+  const html = applyBrandingTemplate(resetPasswordTemplate, branding, colorMode)
+    .replaceAll('{{CSRF_TOKEN}}', escapeHtml(csrfToken))
+    .replaceAll('{{ERROR}}', errorMarkup)
+    .replaceAll('{{NOTICE}}', noticeMarkup(notice))
+    .replaceAll('{{TOKEN}}', escapeHtml(token));
   res.status(status)
     .set('Cache-Control', 'no-store')
     .type('html')
@@ -162,6 +209,7 @@ migrateLeasingSchema(db);
 migrateCostCentersSchema(db);
 migrateColorModeSchema(db);
 migrateMfaSchema(db);
+migratePasswordResetSchema(db);
 getMfaKey(DATA_DIR);
 bootstrap(db);
 try {
@@ -266,6 +314,29 @@ const mfaLimiter = rateLimit({
   skipSuccessfulRequests: true
 });
 
+const passwordResetRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (req, res) => renderForgotPassword(req, res, {
+    status: 429,
+    error: 'Zu viele Anfragen. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.'
+  })
+});
+
+const passwordResetSubmitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (req, res) => renderResetPassword(req, res, {
+    status: 429,
+    error: 'Zu viele Anfragen. Bitte warten Sie 15 Minuten und versuchen Sie es erneut.',
+    token: String(req.body?.token || '')
+  })
+});
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 900,
@@ -276,6 +347,7 @@ const apiLimiter = rateLimit({
 
 const MFA_PENDING_TTL_MS = 10 * 60 * 1000;
 const MFA_ERROR_MESSAGE = 'Der Bestätigungscode ist nicht gültig. Bitte versuchen Sie es erneut.';
+const PASSWORD_RESET_NOTICE = 'Wenn ein Konto mit dieser E-Mail-Adresse existiert, wurde ein Link zum Zurücksetzen versendet.';
 
 function csrfMatches(req, value) {
   return Boolean(req.session?.csrfToken && value && safeEqual(req.session.csrfToken, value));
@@ -284,7 +356,8 @@ function csrfMatches(req, value) {
 app.get('/login', (req, res) => {
   if (req.session?.userId) return res.redirect('/');
   if (req.session?.mfaPendingUserId) return res.redirect('/login/mfa');
-  return renderLogin(req, res);
+  const notice = String(req.query.reset || '') === '1' ? 'Ihr Passwort wurde geändert. Bitte melden Sie sich neu an.' : '';
+  return renderLogin(req, res, { notice });
 });
 
 app.post('/login', loginLimiter, async (req, res, next) => {
@@ -321,6 +394,101 @@ app.post('/login', loginLimiter, async (req, res, next) => {
   } catch (error) {
     return next(error);
   }
+});
+
+app.get('/forgot-password', (req, res) => {
+  return renderForgotPassword(req, res);
+});
+
+app.post('/forgot-password', passwordResetRequestLimiter, async (req, res, next) => {
+  try {
+    if (!csrfMatches(req, String(req.body?._csrf || ''))) {
+      return renderForgotPassword(req, res, {
+        status: 403,
+        error: 'Die Anfrage ist abgelaufen. Bitte versuchen Sie es erneut.'
+      });
+    }
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return renderForgotPassword(req, res, {
+        status: 400,
+        error: 'Bitte geben Sie eine gültige E-Mail-Adresse ein.',
+        email
+      });
+    }
+    const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    try {
+      await requestPasswordReset(db, { email, dataDir: DATA_DIR, baseUrl });
+    } catch {
+      console.warn('Passwort-Reset konnte nicht verarbeitet werden.');
+    }
+    return renderForgotPassword(req, res, { notice: PASSWORD_RESET_NOTICE, email });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/reset-password', (req, res) => {
+  const token = String(req.query.token || '');
+  const check = token ? validatePasswordResetToken(db, token) : { valid: false };
+  if (!check.valid) {
+    return renderResetPassword(req, res, {
+      status: 400,
+      error: 'Der Link ist ungültig oder abgelaufen. Bitte fordern Sie einen neuen Link an.'
+    });
+  }
+  return renderResetPassword(req, res, { token });
+});
+
+app.post('/reset-password', passwordResetSubmitLimiter, (req, res) => {
+  const token = String(req.body?.token || '');
+  if (!csrfMatches(req, String(req.body?._csrf || ''))) {
+    return renderResetPassword(req, res, {
+      status: 403,
+      error: 'Die Anfrage ist abgelaufen. Bitte versuchen Sie es erneut.',
+      token
+    });
+  }
+  const newPassword = String(req.body?.newPassword || '');
+  const confirmPassword = String(req.body?.confirmPassword || '');
+  if (newPassword.length < 10 || newPassword.length > 200) {
+    return renderResetPassword(req, res, {
+      status: 400,
+      error: 'Das Passwort muss mindestens 10 Zeichen lang sein.',
+      token
+    });
+  }
+  if (newPassword !== confirmPassword) {
+    return renderResetPassword(req, res, {
+      status: 400,
+      error: 'Die Passwörter stimmen nicht überein.',
+      token
+    });
+  }
+
+  let result;
+  try {
+    result = resetPasswordWithToken(db, token, newPassword);
+  } catch {
+    console.warn('Passwort-Reset konnte nicht abgeschlossen werden.');
+    return renderResetPassword(req, res, {
+      status: 500,
+      error: 'Das Passwort konnte nicht geändert werden. Bitte fordern Sie einen neuen Link an.',
+      token
+    });
+  }
+  if (!result.ok) {
+    return renderResetPassword(req, res, {
+      status: 400,
+      error: 'Der Link ist ungültig oder abgelaufen. Bitte fordern Sie einen neuen Link an.',
+      token
+    });
+  }
+  return req.session.destroy((error) => {
+    if (error) console.warn('Reset-Sitzung konnte nicht verworfen werden.');
+    res.clearCookie('awo.sid');
+    return res.redirect(303, '/login?reset=1');
+  });
 });
 
 app.get('/login/mfa', (req, res) => {
