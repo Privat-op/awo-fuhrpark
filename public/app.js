@@ -614,6 +614,15 @@ function updateColorModeControls(preference) {
     button.setAttribute('aria-pressed', active ? 'true' : 'false');
     button.classList.toggle('is-active', active);
   });
+  const toggle = $('#colorModeToggle');
+  if (toggle) {
+    const iconName = preference === 'dark' ? '#i-moon' : preference === 'auto' ? '#i-monitor' : '#i-sun';
+    toggle.querySelector('use')?.setAttribute('href', iconName);
+    const label = preference === 'dark' ? 'Dunkel' : preference === 'auto' ? 'Automatik' : 'Hell';
+    const next = preference === 'light' ? 'Dunkel' : preference === 'dark' ? 'Automatik' : 'Hell';
+    toggle.setAttribute('aria-label', `Farbschema: ${label}. Klicken für ${next}.`);
+    toggle.setAttribute('title', `Farbschema: ${label} – klicken für ${next}`);
+  }
 }
 
 function bindColorModeMedia() {
@@ -659,6 +668,12 @@ async function setColorMode(mode) {
     applyColorMode(previousMode);
     toast('Farbschema konnte nicht gespeichert werden', error.message, 'error');
   }
+}
+
+function cycleColorMode() {
+  const current = activeColorModePreference();
+  const next = current === 'light' ? 'dark' : current === 'dark' ? 'auto' : 'light';
+  setColorMode(next);
 }
 
 function updateNavigationVisibility() {
@@ -1305,6 +1320,7 @@ function dispatchAction(element) {
     case 'logout': logout(); break;
     case 'change-password': openPasswordModal(); break;
     case 'set-color-mode': setColorMode(element.dataset.mode); break;
+    case 'cycle-color-mode': cycleColorMode(); break;
     case 'smtp-test': testSmtpSettings(); break;
     case 'unlink-admin-driver': unlinkAdminDriver(); break;
     case 'remove-branding-logo': removeBrandingLogoPreview(); break;

@@ -138,20 +138,21 @@ test('CSS-Token-Vertrag: Light/Dark, color-scheme, Fokus und Print', () => {
   assert.match(body, /background:\s*var\(--bg\)/);
 });
 
-test('UI enthält Header- und Einstellungs-Umschalter mit ARIA und Icons', () => {
+test('UI enthält kompakten Header-Umschalter und Einstellungs-Umschalter mit ARIA und Icons', () => {
   const index = read('server/views/index.html');
   const views = read('public/views.js');
   const app = read('public/app.js');
   assert.match(index, /data-color-mode="\{\{COLOR_MODE\}\}"/);
   assert.match(index, /data-color-mode-preference="\{\{COLOR_MODE\}\}"/);
-  assert.match(index, /aria-label="Farbschema"/);
-  assert.match(index, /data-color-mode-option="light"/);
-  assert.match(index, /data-color-mode-option="dark"/);
-  assert.match(index, /data-color-mode-option="auto"/);
+  assert.match(index, /id="colorModeToggle"/);
+  assert.match(index, /data-action="cycle-color-mode"/);
+  assert.match(index, /aria-label="Farbschema wechseln"/);
+  assert.doesNotMatch(index, /data-color-mode-option="light"/);
   assert.ok(index.indexOf('<script>') < index.indexOf('styles.css'), 'Bootstrap vor CSS');
   assert.match(views, /function renderColorModeSwitch\(/);
   assert.match(views, /data-action="set-color-mode"/);
   assert.match(app, /async function setColorMode\(/);
+  assert.match(app, /function cycleColorMode\(/);
   assert.match(app, /data-color-mode-option/);
 });
 
