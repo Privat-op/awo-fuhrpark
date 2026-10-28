@@ -345,6 +345,22 @@ test('SMTP-Konfiguration ist admin-only, Passwort erscheint nicht in State oder 
   assert.ok(auditView.data.items.some((item) => item.entityType === 'smtp'), 'SMTP-Audit muss für Admin sichtbar sein');
 });
 
+test('SMTP-Test nennt die konkrete Ursache bei deaktivierter Konfiguration', async () => {
+  const disabled = await apiJson(ADMIN_EMAIL, 'PATCH', '/api/smtp', {
+    enabled: false,
+    host: 'smtp.invalid',
+    port: 587,
+    secure: false,
+    username: '',
+    fromAddress: 'fuhrpark@example.invalid'
+  });
+  assert.equal(disabled.status, 200, disabled.text);
+
+  const result = await apiJson(ADMIN_EMAIL, 'POST', '/api/smtp/test', {});
+  assert.equal(result.status, 400, result.text);
+  assert.equal(result.data.error, 'SMTP ist nicht aktiviert.');
+});
+
 test('Buchung liefert Leasing-Warnung, blockiert aber nicht', async () => {
   const response = await apiJson(ADMIN_EMAIL, 'POST', '/api/bookings', {
     vehicleId: 'vehicle-1',

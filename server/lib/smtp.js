@@ -193,19 +193,29 @@ async function sendMail({ config, to, subject, text, transportFactory }) {
 }
 
 function sanitizeSmtpError(error) {
-  const raw = String(error?.code || error?.name || 'SMTP_ERROR').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
+  const name = error?.name && error.name !== 'Error' ? error.name : '';
+  const raw = String(error?.code || name || 'SMTP_ERROR').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40);
   return raw ? raw.toUpperCase() : 'SMTP_ERROR';
 }
 
-function smtpErrorMessage(code) {
+function smtpErrorMessage(code, error) {
+  const responseCode = Number(error?.responseCode) || 0;
+  if (responseCode === 530 || responseCode === 535) {
+    return 'Der SMTP-Server verlangt eine Anmeldung. Bitte SMTP-Benutzer und Passwort hinterlegen.';
+  }
   const known = {
-    EAUTH: 'Anmeldung am SMTP-Server fehlgeschlagen.',
+    EAUTH: 'Anmeldung am SMTP-Server fehlgeschlagen. Bitte Benutzer und Passwort prüfen.',
     ECONNECTION: 'Verbindung zum SMTP-Server fehlgeschlagen.',
     ETIMEDOUT: 'Zeitüberschreitung beim SMTP-Versand.',
     ESOCKET: 'SMTP-Verbindung wurde unerwartet beendet.',
     EENVELOPE: 'Der SMTP-Server hat die Absender- oder Empfängeradresse abgelehnt.'
   };
-  return known[code] || 'Der SMTP-Versand ist fehlgeschlagen.';
+  if (known[code]) return known[code];
+  if (code === 'SMTP_ERROR') {
+    const message = String(error?.message || '').trim();
+    if (message) return message.slice(0, 200);
+  }
+  return 'Der SMTP-Versand ist fehlgeschlagen.';
 }
 
 module.exports = {
