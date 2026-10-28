@@ -1499,6 +1499,23 @@ function renderSmtpCard() {
     </form>`;
 }
 
+function renderColorModeSwitch() {
+  const preference = currentUser?.colorMode || db.settings.defaultColorMode || 'light';
+  const options = [
+    ['light', 'Hell', 'sun', 'Helles Farbschema'],
+    ['dark', 'Dunkel', 'moon', 'Dunkles Farbschema'],
+    ['auto', 'Auto', 'monitor', 'Automatik folgt der Systemeinstellung']
+  ];
+  return `
+    <div class="color-mode-setting">
+      <div class="color-mode-setting-head"><strong>Farbschema</strong><span>Gilt für Ihr Konto</span></div>
+      <div class="color-mode-switch" role="group" aria-label="Farbschema">
+        ${options.map(([mode, label, iconName, ariaLabel]) => `<button class="color-mode-option" type="button" data-action="set-color-mode" data-mode="${mode}" data-color-mode-option="${mode}" aria-pressed="${preference === mode ? 'true' : 'false'}" aria-label="${ariaLabel}" title="${ariaLabel}">${icon(iconName)}<span>${label}</span></button>`).join('')}
+      </div>
+      <p class="field-hint">${preference === 'auto' ? 'Automatik folgt der Systemeinstellung des Geräts.' : `Aktuell: ${preference === 'dark' ? 'Dunkel' : 'Hell'}.`}</p>
+    </div>`;
+}
+
 function renderCostCentersCard() {
   if (!can('cost_centers_view')) return '';
   const canManage = can('cost_centers_manage');
@@ -1602,6 +1619,15 @@ function renderSettings() {
               <label for="orgEmail">E-Mail Fuhrpark</label>
               <input class="input" id="orgEmail" name="email" type="email" value="${esc(db.settings.email)}">
             </div>
+            <div class="field field-full">
+              <label for="defaultColorMode">Standard-Farbschema</label>
+              <select class="select" id="defaultColorMode" name="defaultColorMode">
+                <option value="light" ${db.settings.defaultColorMode === 'light' ? 'selected' : ''}>Hell</option>
+                <option value="dark" ${db.settings.defaultColorMode === 'dark' ? 'selected' : ''}>Dunkel</option>
+                <option value="auto" ${db.settings.defaultColorMode === 'auto' ? 'selected' : ''}>Automatik (Systemeinstellung)</option>
+              </select>
+              <p class="field-hint">Gilt für Nutzer:innen ohne eigene Auswahl und für die Anmeldeseite.</p>
+            </div>
           </div>
           <div class="info-banner" style="margin-top:16px">
             ${icon('shield')}
@@ -1632,7 +1658,7 @@ function renderSettings() {
           </div>
           <div class="version-box">
             <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-            <span class="version-badge">Server-MVP 0.8.0-dev</span>
+            <span class="version-badge">Server-MVP 0.9.0-dev</span>
           </div>
         </div>
       </section>` : ''
@@ -1653,6 +1679,7 @@ function renderSettings() {
                 <span class="badge badge-red no-dot">${esc(roleDisplay)}</span>
               </div>
             </div>
+            ${renderColorModeSwitch()}
             <div class="setting-actions">
               ${capabilities.isSuperadmin
                 ? `<span class="text-muted">${icon('lock')} Passwort ausschließlich über die Superadmin-Datei und Neustart änderbar.</span>`
