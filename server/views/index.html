@@ -225,17 +225,9 @@
           <span class="avatar avatar-red" id="userAvatar">–</span>
           <span class="user-meta"><strong id="userName">Wird geladen …</strong><span id="userRole">Angemeldet</span></span>
         </div>
-        <div class="color-mode-switch" role="group" aria-label="Farbschema">
-          <button class="color-mode-option" type="button" data-action="set-color-mode" data-mode="light" data-color-mode-option="light" aria-pressed="false" aria-label="Helles Farbschema" title="Helles Farbschema">
-            <svg class="icon"><use href="#i-sun"></use></svg><span>Hell</span>
-          </button>
-          <button class="color-mode-option" type="button" data-action="set-color-mode" data-mode="dark" data-color-mode-option="dark" aria-pressed="false" aria-label="Dunkles Farbschema" title="Dunkles Farbschema">
-            <svg class="icon"><use href="#i-moon"></use></svg><span>Dunkel</span>
-          </button>
-          <button class="color-mode-option" type="button" data-action="set-color-mode" data-mode="auto" data-color-mode-option="auto" aria-pressed="false" aria-label="Automatik folgt der Systemeinstellung" title="Automatik folgt der Systemeinstellung">
-            <svg class="icon"><use href="#i-monitor"></use></svg><span>Auto</span>
-          </button>
-        </div>
+        <button class="icon-btn color-mode-toggle" id="colorModeToggle" type="button" data-action="cycle-color-mode" aria-label="Farbschema wechseln" title="Farbschema wechseln">
+          <svg class="icon"><use href="#i-sun"></use></svg>
+        </button>
         <a class="icon-btn settings-btn" href="#/einstellungen" title="Einstellungen öffnen" aria-label="Einstellungen öffnen">
           <svg class="icon"><use href="#i-settings"></use></svg>
         </a>
