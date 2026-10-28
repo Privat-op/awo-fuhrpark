@@ -17,6 +17,7 @@ const ENTITY_LABELS = {
   user_permissions: 'Benutzer-Ausnahmen',
   user_policy: 'Benutzerrichtlinie',
   settings: 'Einstellungen',
+  smtp: 'E-Mail-Versand',
   branding: 'Erscheinungsbild',
   logbook: 'Fahrtenbuch',
   data: 'Datenexport',
@@ -40,6 +41,9 @@ const ACTION_LABELS = {
   cancel: 'Storniert',
   change_password: 'Passwort geändert',
   anonymize: 'Anonymisiert',
+  leasing_update: 'Leasingdaten aktualisiert',
+  leasing_notification: 'Leasing-Benachrichtigung',
+  smtp_test: 'SMTP-Test',
   read: 'Audit-Log gelesen'
 };
 
@@ -306,6 +310,7 @@ function targetVisibleFor(req, db, cache, entityType, entityId, row) {
   if (entityType === 'user') return hasEffectivePermission(req, 'users_manage');
   if (entityType === 'role' || entityType === 'role_object_permissions') return hasEffectivePermission(req, 'roles_manage');
   if (entityType === 'settings' || entityType === 'user_policy') return hasEffectivePermission(req, 'settings_manage');
+  if (entityType === 'smtp') return Boolean(req.auth?.isAdmin || req.auth?.isSuperadmin);
   if (entityType === 'branding') return hasEffectivePermission(req, 'branding_manage');
   if (entityType === 'audit') return hasEffectivePermission(req, 'audit_view_all') || req.user?.role === 'admin';
   return false;

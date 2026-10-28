@@ -22,6 +22,8 @@ const { getBranding } = require('./lib/branding');
 const { uploadPath } = require('./lib/files');
 const { startAutoAnonymizer } = require('./lib/anonymize');
 const { migrateSuperadminSchema, ensureSuperadmin } = require('./lib/superadmin');
+const { migrateLeasingSchema } = require('./lib/leasing-schema');
+const { startLeasingScheduler } = require('./lib/leasing');
 const {
   ensureRoles,
   getRolePermissions,
@@ -110,6 +112,7 @@ initSchema();
 ensureRoles(db);
 migrateAuditSchema(db);
 migrateSuperadminSchema(db);
+migrateLeasingSchema(db);
 bootstrap(db);
 try {
   ensureSuperadmin(db, { projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR });
@@ -120,6 +123,11 @@ try {
   startAutoAnonymizer();
 } catch (error) {
   console.warn('Automatische Anonymisierung konnte nicht gestartet werden:', error.message);
+}
+try {
+  startLeasingScheduler(db, { dataDir: DATA_DIR });
+} catch (error) {
+  console.warn('Leasing-Prüfung konnte nicht gestartet werden:', error.message);
 }
 
 app.disable('x-powered-by');

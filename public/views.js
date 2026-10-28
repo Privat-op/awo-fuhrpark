@@ -135,6 +135,51 @@ function vehicleCountText(count) {
   return `${count} von ${total} Fahrzeugen`;
 }
 
+function leasingCardMarkup(vehicle) {
+  const leasing = vehicle.leasing;
+  if (!leasing || !Array.isArray(leasing.warnings) || !leasing.warnings.length) return '';
+  const warning = leasing.warnings[0];
+  const critical = leasing.status === 'critical';
+  return `
+    <div class="leasing-strip ${critical ? 'is-critical' : 'is-warning'}">
+      <span class="leasing-strip-icon">${icon(warning.kind === 'end' ? 'calendar' : 'gauge')}</span>
+      <div class="leasing-strip-copy">
+        <strong>${esc(warning.title)}</strong>
+        <span>${esc(warning.text)}</span>
+      </div>
+    </div>`;
+}
+
+function leasingDetailMarkup(vehicle) {
+  const leasing = vehicle.leasing;
+  if (!leasing) return '';
+  const warnings = Array.isArray(leasing.warnings) ? leasing.warnings : [];
+  const warningMarkup = warnings.length
+    ? warnings.map((warning) => `<div class="info-banner ${warning.severity === 'danger' ? 'is-danger' : ''}" style="margin-bottom:10px">${icon('alert')}<div><strong>${esc(warning.title)}</strong><p>${esc(warning.text)}</p></div></div>`).join('')
+    : '';
+  const progress = leasing.percent === null ? null : Math.min(100, Math.max(0, leasing.percent));
+  return `
+    ${warningMarkup}
+    <div class="leasing-detail">
+      <div class="leasing-detail-head">
+        <div>
+          <strong>Leasingüberwachung</strong>
+          <span>${leasing.start ? `Beginn ${formatDate(leasing.start)} · ` : ''}Ende ${formatDate(leasing.end)}${leasing.daysRemaining !== null ? ` (${leasing.daysRemaining < 0 ? `${Math.abs(leasing.daysRemaining)} Tage überfällig` : `in ${leasing.daysRemaining} Tagen`})` : ''}</span>
+        </div>
+        ${leasing.kmLimit ? `<span class="badge badge-${leasing.status === 'critical' ? 'red' : leasing.status === 'warning' ? 'amber' : 'green'} no-dot">${formatDecimal(leasing.percent, 1)} %</span>` : ''}
+      </div>
+      ${leasing.kmLimit ? `
+        <div class="leasing-meter" role="img" aria-label="${esc(`Leasing-Kilometer zu ${formatDecimal(leasing.percent, 1)} Prozent verbraucht`)}">
+          <span class="leasing-meter-fill ${leasing.status === 'critical' ? 'is-critical' : leasing.status === 'warning' ? 'is-warning' : ''}" style="width:${progress}%"></span>
+        </div>
+        <div class="leasing-facts">
+          <span><strong>${formatKm(leasing.usedKm)}</strong> verbraucht</span>
+          <span><strong>${leasing.remainingKm < 0 ? `−${formatKm(Math.abs(leasing.remainingKm))}` : formatKm(leasing.remainingKm)}</strong> Rest</span>
+          <span><strong>${formatKm(leasing.kmLimit)}</strong> Limit</span>
+        </div>` : ''}
+    </div>`;
+}
+
 function renderVehicleCard(vehicle) {
   const status = VEHICLE_STATUS[vehicle.status] || VEHICLE_STATUS.available;
   const tuvDays = daysUntil(vehicle.tuv);
@@ -169,6 +214,7 @@ function renderVehicleCard(vehicle) {
           ${blocked ? '<span class="badge badge-red no-dot">Dauerhaft gesperrt</span>' : bookedToday ? `<span class="badge badge-blue no-dot">Heute gebucht</span>` : ''}
         </div>
         ${blocked ? `<div class="info-banner" style="margin:12px 0 0;padding:10px 12px">${icon('alert')}<div><strong>Sperre aktiv</strong><p>${esc(vehicle.blockedReason || 'Keine Begründung hinterlegt.')}</p></div></div>` : ''}
+        ${leasingCardMarkup(vehicle)}
         <div class="vehicle-specs">
           <div class="spec">${icon('fuel')}<div><span class="spec-label">Kraftstoff</span><span class="spec-value">${esc(vehicle.fuel)}</span></div></div>
           <div class="spec">${icon('seat')}<div><span class="spec-label">Sitzplätze</span><span class="spec-value">${vehicle.seats} Plätze</span></div></div>
@@ -1351,10 +1397,69 @@ function renderAdminDriverProfileCard() {
     </form>`;
 }
 
+function renderSmtpCard() {
+  const isAdmin = Boolean(capabilities.isAdmin || capabilities.isSuperadmin);
+  const smtp = db.smtp;
+  if (!isAdmin || !smtp) return '';
+  return `
+    <form class="card settings-card" id="smtpForm" autocomplete="off">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">E-Mail-Versand</h3><p class="card-sub">SMTP für Leasing-Warnungen. Nur für Administrator:innen sichtbar.</p></div>
+        <span class="badge badge-${smtp.enabled ? 'green' : 'gray'} no-dot">${smtp.enabled ? 'Aktiv' : 'Inaktiv'}</span>
+      </div>
+      <div class="card-body">
+        <div class="info-banner" style="margin-bottom:16px">
+          ${icon('lock')}
+          <div><strong>Passwort getrennt gespeichert</strong><p>Das SMTP-Passwort liegt ausschließlich in einer geschützten Datei im Datenverzeichnis. Es erscheint nicht im State, im Export oder in Audit-Einträgen.</p></div>
+        </div>
+        <div class="form-grid">
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" id="smtpEnabled" name="smtpEnabled" ${smtp.enabled ? 'checked' : ''}> E-Mail-Versand aktivieren</label>
+            <p class="field-hint">Ohne Aktivierung werden keine Leasing-Benachrichtigungen versendet.</p>
+          </div>
+          <div class="field">
+            <label for="smtpHost">SMTP-Host</label>
+            <input class="input" id="smtpHost" name="smtpHost" type="text" value="${esc(smtp.host)}" maxlength="255" placeholder="smtp.example.org">
+          </div>
+          <div class="field">
+            <label for="smtpPort">Port</label>
+            <input class="input" id="smtpPort" name="smtpPort" type="number" min="1" max="65535" value="${Number(smtp.port) || 587}">
+          </div>
+          <div class="field">
+            <label class="check-row"><input type="checkbox" id="smtpSecure" name="smtpSecure" ${smtp.secure ? 'checked' : ''}> Implizites TLS (meist Port 465)</label>
+          </div>
+          <div class="field">
+            <label for="smtpFrom">Absenderadresse</label>
+            <input class="input" id="smtpFrom" name="smtpFrom" type="email" value="${esc(smtp.fromAddress)}" maxlength="200" placeholder="fuhrpark@example.org">
+          </div>
+          <div class="field">
+            <label for="smtpUsername">Benutzername <span class="optional">optional</span></label>
+            <input class="input" id="smtpUsername" name="smtpUsername" type="text" value="${esc(smtp.username)}" maxlength="200" autocomplete="username">
+          </div>
+          <div class="field">
+            <label for="smtpPassword">Passwort <span class="optional">optional</span></label>
+            <input class="input" id="smtpPassword" name="smtpPassword" type="password" value="" maxlength="500" autocomplete="new-password" placeholder="${smtp.passwordSet ? 'Gespeichert – leer lassen zum Beibehalten' : 'Noch kein Passwort gespeichert'}">
+          </div>
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" id="smtpClearPassword" name="smtpClearPassword"> Gespeichertes Passwort entfernen</label>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">${smtp.ready ? 'Konfiguration vollständig.' : smtp.enabled ? 'Konfiguration unvollständig.' : 'Versand ist deaktiviert.'}</span>
+        <div class="setting-actions">
+          <button class="btn btn-ghost btn-sm" type="button" data-action="smtp-test">${icon('mail')} Test-E-Mail</button>
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+        </div>
+      </div>
+    </form>`;
+}
+
 function renderSettings() {
   const roleDisplay = currentUser?.roleName || roleLabel(currentUser?.role);
   const canEditSettings = can('settings_manage');
   const canManageBranding = can('branding_manage');
+  const canManageSmtp = Boolean(capabilities.isAdmin || capabilities.isSuperadmin);
   const canExport = can('export_data');
   const canManageUsers = can('users_manage');
   const canManageRoles = can('roles_manage');
@@ -1384,6 +1489,7 @@ function renderSettings() {
           : 'Konto';
   const adminSections = [
     canManageBranding ? renderBrandingCard() : '',
+    canManageSmtp ? renderSmtpCard() : '',
     canEditSettings ? `
       <form class="card settings-card" id="settingsForm">
         <div class="card-head bordered">
@@ -1439,7 +1545,7 @@ function renderSettings() {
           </div>
           <div class="version-box">
             <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-            <span class="version-badge">Server-MVP 0.6.2</span>
+            <span class="version-badge">Server-MVP 0.7.0-dev</span>
           </div>
         </div>
       </section>` : ''
