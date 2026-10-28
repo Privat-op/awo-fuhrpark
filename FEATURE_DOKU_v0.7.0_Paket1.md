@@ -1,9 +1,9 @@
 # AWO Fuhrparkmanagement – Feature-Doku v0.7.0 Paket 1
 
 **Stand:** 28.10.2026  
-**Branch:** `feature/v070-leasing-email`  
-**Basis:** `main` / `df819ff` (v0.6.2)  
-**Status:** implementiert, lokal getestet, **nicht deployed**  
+**Branch:** `main` (Release v0.7.0)  
+**Basis:** `df819ff` (v0.6.2)  
+**Status:** QS-freigegeben (51/51 Checks, keine Findings), Release v0.7.0  
 **Nicht enthalten:** Kostenstellen (Paket 2) und Dark Mode (Paket 3) – nur Design/Estimate.
 
 ## 1. Ziel

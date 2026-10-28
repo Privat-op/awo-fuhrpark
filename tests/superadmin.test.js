@@ -805,7 +805,7 @@ test('Rollenmigration ist bei Namenskollision und Wiederholung sicher', () => {
   }
 });
 
-test('UI enthält Schloss, Superadmin-Hinweis und keinen Passwortwechsel für Superadmin', () => {
+test('UI enthält Schloss und keinen Superadmin-Banner; kein Passwortwechsel für Superadmin', () => {
   const views = fs.readFileSync(path.join(ROOT, 'public', 'views.js'), 'utf8');
   const modals = fs.readFileSync(path.join(ROOT, 'public', 'modals.js'), 'utf8');
   const app = fs.readFileSync(path.join(ROOT, 'public', 'app.js'), 'utf8');
@@ -813,7 +813,8 @@ test('UI enthält Schloss, Superadmin-Hinweis und keinen Passwortwechsel für Su
   assert.match(index, /id="i-lock"/);
   assert.match(views, /role\.id === 'superadmin'/);
   assert.match(views, /Datei-verwaltet/);
-  assert.match(views, /Superadmin ist datei-verwaltet/);
+  assert.doesNotMatch(views, /Superadmin ist datei-verwaltet/);
+  assert.doesNotMatch(views, /Superadmin-Datei und einen Neustart/);
   assert.match(modals, /Superadmin-Passwort/);
   assert.match(app, /isSuperadmin/);
   assert.doesNotMatch(modals, /data-action="create-superadmin"/);
