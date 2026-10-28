@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="de" data-theme="{{THEME}}" data-sidebar="{{SIDEBAR_STYLE}}" style="{{BRAND_STYLES}}">
+<html lang="de" data-theme="{{THEME}}" data-sidebar="{{SIDEBAR_STYLE}}" data-color-mode="{{COLOR_MODE}}" data-color-mode-preference="{{COLOR_MODE}}" style="{{BRAND_STYLES}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,7 +7,24 @@
   <meta name="robots" content="noindex, nofollow">
   <title>{{LOGIN_PAGE_TITLE}}</title>
   <link rel="icon" href="{{FAVICON}}">
-  <link rel="stylesheet" href="/login.css?v=0.5.2">
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+      function apply() {
+        var preference = root.getAttribute('data-color-mode-preference') || 'light';
+        var mode = preference === 'auto' ? (media && media.matches ? 'dark' : 'light') : preference;
+        root.setAttribute('data-color-mode', mode === 'dark' ? 'dark' : 'light');
+        root.style.colorScheme = mode === 'dark' ? 'dark' : 'light';
+      }
+      apply();
+      if (media) {
+        if (media.addEventListener) media.addEventListener('change', apply);
+        else if (media.addListener) media.addListener(apply);
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="/login.css?v=0.9.0-dev">
 </head>
 <body>
   <main class="login-shell">

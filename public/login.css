@@ -5,13 +5,19 @@
   --awo-glow: rgba(226, 0, 26, .2);
   --awo-glow-strong: rgba(226, 0, 26, .26);
   --ink: #181c23;
-  --muted: #737a87;
+  --muted: #5f6774;
   --line: #e5e8ed;
   --surface: #ffffff;
   --bg: #f4f5f7;
   --green: #15845a;
   --danger: #c91d2c;
+  --on-accent: #fff;
+  --subtle: #68707d;
+  --danger-border: #f0c7cb;
+  --danger-soft-bg: #fff4f5;
+  --danger-ink: #a01b27;
   --font: "Segoe UI", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
 }
 
 :root[data-theme="neutral"] {
@@ -20,6 +26,36 @@
   --awo-soft: #e8f7f4;
   --awo-glow: rgba(15, 118, 110, .2);
   --awo-glow-strong: rgba(15, 118, 110, .26);
+}
+
+:root[data-color-mode="dark"] {
+  color-scheme: dark;
+  --bg: #111418 !important;
+  --surface: #191d23 !important;
+  --surface-2: #20252d !important;
+  --ink: #f2f4f7 !important;
+  --ink-2: #d5dae2 !important;
+  --muted: #a7b0bd !important;
+  --subtle: #b7c0cc !important;
+  --line: #2d343e !important;
+  --on-accent: #fff !important;
+  --green: #4ade80 !important;
+  --danger: #f87171 !important;
+  --danger-border: #5a2a30 !important;
+  --danger-soft-bg: #2a171a !important;
+  --danger-ink: #fca5a5 !important;
+  --awo-glow: rgba(255, 90, 106, .28) !important;
+  --awo-glow-strong: rgba(255, 90, 106, .36) !important;
+}
+
+:root[data-theme="awo"][data-color-mode="dark"] {
+  --awo: #ff5a6a !important;
+  --awo-dark: #ff7d88 !important;
+  --awo-soft: #3a1b21 !important;
+}
+
+:root[data-theme="neutral"][data-color-mode="dark"] {
+  --awo-soft: rgba(255, 255, 255, .1) !important;
 }
 
 *,
@@ -51,7 +87,7 @@ button, input { font: inherit; }
   display: flex;
   flex-direction: column;
   padding: 42px clamp(38px, 5vw, 76px) 34px;
-  color: #fff;
+  color: var(--on-accent);
   overflow: hidden;
   background:
     radial-gradient(circle at 82% 16%, rgba(255, 255, 255, .12), transparent 25%),
@@ -120,7 +156,7 @@ button, input { font: inherit; }
   display: grid;
   place-items: center;
   border-radius: 13px;
-  color: #fff;
+  color: var(--on-accent);
   background: rgba(255, 255, 255, .17);
   border: 1px solid rgba(255, 255, 255, .26);
   box-shadow: 0 10px 25px rgba(70, 0, 7, .22);
@@ -151,7 +187,7 @@ button, input { font: inherit; }
   width: 100%;
   height: 100%;
   border-radius: inherit;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--awo);
   font-size: 15px;
   font-weight: 800;
@@ -226,7 +262,7 @@ button, input { font: inherit; }
   display: grid;
   place-items: center;
   border-radius: 50%;
-  color: #fff;
+  color: var(--on-accent);
   background: rgba(255, 255, 255, .16);
   font-size: 9px;
   font-weight: 700;
@@ -248,7 +284,7 @@ button, input { font: inherit; }
   padding: 42px 28px 24px;
   background:
     radial-gradient(circle at 100% 0%, rgba(226, 0, 26, .045), transparent 26%),
-    #f6f7f9;
+    var(--bg);
 }
 
 .login-card {
@@ -288,10 +324,10 @@ button, input { font: inherit; }
 .login-error {
   margin-bottom: 17px;
   padding: 11px 12px;
-  border: 1px solid #f0c7cb;
+  border: 1px solid var(--danger-border);
   border-radius: 9px;
-  color: #a01b27;
-  background: #fff4f5;
+  color: var(--danger-ink);
+  background: var(--danger-soft-bg);
   font-size: 10.5px;
   line-height: 1.45;
 }
@@ -300,7 +336,7 @@ button, input { font: inherit; }
 .login-field label {
   display: block;
   margin-bottom: 6px;
-  color: #454b57;
+  color: var(--ink-2);
   font-size: 10.5px;
   font-weight: 650;
 }
@@ -308,18 +344,18 @@ button, input { font: inherit; }
   width: 100%;
   height: 45px;
   padding: 0 13px;
-  border: 1px solid #dce1e7;
+  border: 1px solid var(--line);
   border-radius: 9px;
   color: var(--ink);
-  background: #fcfcfd;
+  background: var(--surface-2);
   outline: none;
   font-size: 12.5px;
   transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
 }
-.login-field input::placeholder { color: #a1a8b3; }
+.login-field input::placeholder { color: var(--subtle); }
 .login-field input:focus {
   border-color: var(--awo);
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 0 0 3px var(--awo-soft);
 }
 
@@ -329,7 +365,7 @@ button, input { font: inherit; }
   margin-top: 7px;
   border: 0;
   border-radius: 9px;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--awo);
   box-shadow: 0 8px 20px var(--awo-glow);
   font-size: 12px;
@@ -346,10 +382,10 @@ button, input { font: inherit; }
   gap: 1px;
   margin-top: 22px;
   padding-top: 17px;
-  border-top: 1px solid #f0f2f5;
+  border-top: 1px solid var(--line-soft);
 }
-.login-help strong { color: #565d69; font-size: 9.5px; font-weight: 650; }
-.login-help span { color: #9aa1ac; font-size: 9px; }
+.login-help strong { color: var(--ink-2); font-size: 9.5px; font-weight: 650; }
+.login-help span { color: var(--subtle); font-size: 9px; }
 
 .login-footer {
   width: 100%;
@@ -358,7 +394,7 @@ button, input { font: inherit; }
   justify-content: space-between;
   gap: 12px;
   margin-top: 24px;
-  color: #9ba2ad;
+  color: var(--subtle);
   font-size: 9px;
 }
 
@@ -372,7 +408,7 @@ button, input { font: inherit; }
     padding: 30px 18px 18px;
     background:
       radial-gradient(circle at 50% -10%, var(--awo-soft), transparent 34%),
-      #f6f7f9;
+      var(--bg);
   }
   .login-card { max-width: 430px; padding: 28px; }
   .login-mobile-brand {
@@ -381,14 +417,14 @@ button, input { font: inherit; }
     gap: 10px;
     margin-bottom: 28px;
     padding-bottom: 18px;
-    border-bottom: 1px solid #f0f2f5;
+    border-bottom: 1px solid var(--line-soft);
   }
   .login-mobile-brand .brand-mark {
     width: 42px;
     height: 42px;
     flex-basis: 42px;
     border: 0;
-    color: #fff;
+    color: var(--on-accent);
     background: var(--awo);
     box-shadow: 0 7px 18px var(--awo-glow);
   }
@@ -397,7 +433,7 @@ button, input { font: inherit; }
   .login-mobile-brand div { display: flex; flex-direction: column; }
   .login-mobile-brand strong { font-size: 12.5px; }
   .login-mobile-brand div > span { color: var(--muted); font-size: 10px; }
-  .login-mobile-brand .brand-initials { color: #fff; font-size: 13px; }
+  .login-mobile-brand .brand-initials { color: var(--on-accent); font-size: 13px; }
 }
 
 @media (max-width: 520px) {
