@@ -2791,6 +2791,7 @@ p, h1, h2, h3, h4 { margin: 0; }
   .search-kbd { display: none; }
   .user-meta { display: none; }
   .user-chip { padding: 3px; border: 0; }
+  .color-mode-toggle { display: none; }
   .view { padding: 21px 16px 36px; }
   .page-head { align-items: flex-start; }
   .page-head h2 { font-size: 23px; }
