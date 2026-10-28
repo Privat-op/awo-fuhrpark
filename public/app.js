@@ -20,7 +20,9 @@ let ui = {
   maintenanceFilter: 'all',
   costCategory: 'all',
   costVehicle: 'all',
+  costCenter: 'all',
   logPeriod: '30',
+  logCostCenter: 'all',
   auditQuery: '',
   auditActor: '',
   auditAction: '',
@@ -253,6 +255,12 @@ function getAlerts() {
   return items.sort((a, b) => (rank[a.severity] - rank[b.severity]) || ((a.days ?? 0) - (b.days ?? 0)) || a.title.localeCompare(b.title, 'de'));
 }
 
+function getLogbookTrips(period = ui.logPeriod) {
+  if (ui.logCostCenter === 'all') return getCompletedBookings(period);
+  if (ui.logCostCenter === 'none') return getCompletedBookings(period).filter((trip) => !trip.costCenterId);
+  return getCompletedBookings(period).filter((trip) => trip.costCenterId === ui.logCostCenter);
+}
+
 function getCompletedBookings(period = ui.logPeriod) {
   const today = todayISO();
   let cutoff = null;
@@ -278,6 +286,7 @@ function applyState(state) {
     settings: state.settings || { orgName: 'Ihre Organisation', brandName: '', location: '', email: '', phone: '', theme: 'awo', accentColor: '#0f766e', sidebarStyle: 'dark', pageBackground: '#f4f5f7', surfaceColor: '#ffffff', textColor: '#191c23', mutedColor: '#737a88', borderColor: '#e7e9ee', autoAnonymizeDays: 0, logoUrl: null },
     vehicles: Array.isArray(state.vehicles) ? state.vehicles : [],
     drivers: Array.isArray(state.drivers) ? state.drivers : [],
+    costCenters: Array.isArray(state.costCenters) ? state.costCenters : [],
     bookings: Array.isArray(state.bookings) ? state.bookings : [],
     maintenance: Array.isArray(state.maintenance) ? state.maintenance : [],
     costs: Array.isArray(state.costs) ? state.costs : [],
@@ -1138,13 +1147,14 @@ async function exportLogbook() {
     toast('Keine Berechtigung', 'Für den Fahrtenbuch-Export fehlt die erforderliche Berechtigung.', 'error');
     return;
   }
-  if (!getCompletedBookings(ui.logPeriod).length) {
+  if (!getLogbookTrips().length) {
     toast('Keine Fahrten', 'Im ausgewählten Zeitraum gibt es keine Einträge.', 'info');
     return;
   }
   try {
+    const costCenterQuery = ui.logCostCenter !== 'all' ? `&costCenter=${encodeURIComponent(ui.logCostCenter)}` : '';
     await downloadServerExport(
-      `/api/export/logbook.csv?period=${encodeURIComponent(ui.logPeriod)}`,
+      `/api/export/logbook.csv?period=${encodeURIComponent(ui.logPeriod)}${costCenterQuery}`,
       `fahrtenbuch-${todayISO()}.csv`
     );
     toast('Fahrtenbuch exportiert', 'Die CSV-Datei wurde serverseitig erstellt und heruntergeladen.');
@@ -1177,6 +1187,10 @@ function dispatchAction(element) {
     case 'cancel-booking-request': cancelOwnBookingRequest(id); break;
     case 'new-vehicle': openVehicleModal(); break;
     case 'new-driver': openDriverModal(); break;
+    case 'new-cost-center': openCostCenterModal(); break;
+    case 'edit-cost-center': openCostCenterModal(id); break;
+    case 'toggle-cost-center-active': toggleCostCenterActive(id); break;
+    case 'delete-cost-center': deleteCostCenter(id); break;
     case 'new-maintenance': openMaintenanceModal(); break;
     case 'new-cost': openCostModal(); break;
     case 'new-log': openLogModal(); break;
@@ -1473,8 +1487,14 @@ function bindEvents() {
     } else if (event.target.id === 'costVehicleFilter') {
       ui.costVehicle = event.target.value;
       renderCurrentView();
+    } else if (event.target.id === 'costCenterFilter') {
+      ui.costCenter = event.target.value;
+      renderCurrentView();
     } else if (event.target.id === 'logPeriod') {
       ui.logPeriod = event.target.value;
+      renderCurrentView();
+    } else if (event.target.id === 'logCostCenterFilter') {
+      ui.logCostCenter = event.target.value;
       renderCurrentView();
     } else if (event.target.id === 'auditPageSize') {
       const pageSize = Number(event.target.value);

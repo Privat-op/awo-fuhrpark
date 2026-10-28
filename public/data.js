@@ -40,6 +40,44 @@ const CATEGORY_META = {
 
 const COST_CATEGORIES = Object.keys(CATEGORY_META);
 
+function costCenterById(id) {
+  return (db.costCenters || []).find((costCenter) => costCenter.id === id) || null;
+}
+
+function isActiveCostCenter(id) {
+  return Boolean(id) && Boolean(costCenterById(id)?.active);
+}
+
+function costCenterLabel(id) {
+  const costCenter = costCenterById(id);
+  return costCenter ? `${costCenter.code} · ${costCenter.name}` : '';
+}
+
+function defaultBookingCostCenterId({ driver = null, vehicle = null, user = null } = {}) {
+  return [driver?.costCenterId, vehicle?.costCenterId, user?.costCenterId]
+    .find((id) => isActiveCostCenter(id)) || '';
+}
+
+function defaultCostCostCenterId({ vehicle = null, user = null } = {}) {
+  return [vehicle?.costCenterId, user?.costCenterId]
+    .find((id) => isActiveCostCenter(id)) || '';
+}
+
+function costCenterOptionsMarkup(selectedId = '', { noneLabel = 'Keine Kostenstelle', includeInactiveSelected = true } = {}) {
+  const selected = selectedId || '';
+  const options = (db.costCenters || [])
+    .filter((costCenter) => costCenter.active || (includeInactiveSelected && costCenter.id === selected))
+    .map((costCenter) => `<option value="${esc(costCenter.id)}" ${costCenter.id === selected ? 'selected' : ''}>${esc(costCenter.code)} · ${esc(costCenter.name)}${costCenter.active ? '' : ' · inaktiv'}</option>`)
+    .join('');
+  return `<option value="">${noneLabel}</option>${options}`;
+}
+
+function costCenterBadge(entity, emptyLabel = 'Ohne Kostenstelle') {
+  if (!entity?.costCenterId) return `<span class="badge badge-gray no-dot">${esc(emptyLabel)}</span>`;
+  const label = entity.costCenterCode ? `${entity.costCenterCode}${entity.costCenterName ? ` · ${entity.costCenterName}` : ''}` : 'Kostenstelle';
+  return `<span class="badge badge-gray no-dot" title="${esc(entity.costCenterName || '')}">${esc(label)}</span>`;
+}
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 

@@ -209,6 +209,7 @@ function renderVehicleCard(vehicle) {
               <span class="plate">${esc(vehicle.plate)}</span>
               <span>·</span>
               <span>${esc(vehicle.department)}</span>
+              ${vehicle.costCenterCode ? `<span>·</span><span>${esc(vehicle.costCenterCode)}</span>` : ''}
             </div>
           </div>
           ${blocked ? '<span class="badge badge-red no-dot">Dauerhaft gesperrt</span>' : bookedToday ? `<span class="badge badge-blue no-dot">Heute gebucht</span>` : ''}
@@ -941,6 +942,8 @@ function renderCosts() {
   let filteredCosts = [...db.costs];
   if (ui.costCategory !== 'all') filteredCosts = filteredCosts.filter((cost) => cost.category === ui.costCategory);
   if (ui.costVehicle !== 'all') filteredCosts = filteredCosts.filter((cost) => cost.vehicleId === ui.costVehicle);
+  if (ui.costCenter === 'none') filteredCosts = filteredCosts.filter((cost) => !cost.costCenterId);
+  else if (ui.costCenter !== 'all') filteredCosts = filteredCosts.filter((cost) => cost.costCenterId === ui.costCenter);
   filteredCosts.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
   const costRows = filteredCosts.map((cost) => {
@@ -959,6 +962,7 @@ function renderCosts() {
           <span class="badge no-dot" style="color:${category.color};background:${hexToRgba(category.color, 0.1)}">${esc(cost.category)}</span>
           <span class="table-sub">${esc(cost.note || 'Betriebskosten')}</span>
         </td>
+        <td>${costCenterBadge(cost)}</td>
         <td class="num"><span class="money">${formatMoney(cost.amount, 2)}</span></td>
         <td>
           <div class="table-actions">
@@ -986,6 +990,28 @@ function renderCosts() {
       </div>
       <div class="hbar-track"><div class="hbar-fill" style="width:${Math.round((row.amount / maxVehicle) * 100)}%;--bar-color:${row.vehicle.color}"></div></div>
     </div>`).join('');
+
+  const costCenterTotals = new Map();
+  for (const cost of entries) {
+    const key = cost.costCenterId || '';
+    const entry = costCenterTotals.get(key) || {
+      id: key,
+      label: cost.costCenterCode ? `${cost.costCenterCode} · ${cost.costCenterName || ''}`.trim() : 'Ohne Kostenstelle',
+      amount: 0
+    };
+    entry.amount += Number(cost.amount);
+    costCenterTotals.set(key, entry);
+  }
+  const costCenterRankingRows = [...costCenterTotals.values()].sort((a, b) => b.amount - a.amount);
+  const maxCostCenter = costCenterRankingRows.length ? Math.max(...costCenterRankingRows.map((row) => row.amount)) : 0;
+  const costCenterRanking = costCenterRankingRows.length ? costCenterRankingRows.slice(0, 8).map((row) => `
+    <div class="hbar-item">
+      <div class="hbar-head">
+        <span>${esc(row.label)}</span>
+        <strong>${formatMoney(row.amount)}</strong>
+      </div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${Math.round((row.amount / Math.max(maxCostCenter, 1)) * 100)}%;--bar-color:#0f8f8a"></div></div>
+    </div>`).join('') : emptyState('receipt', 'Keine Kostenstellen', 'Ordnen Sie Kostenpositionen einer Kostenstelle zu, um die Auswertung zu sehen.', '', true);
 
   return `
     ${pageHead('Controlling', 'Kosten', 'Betriebskosten der letzten sechs Monate transparent aufbereitet.',
@@ -1035,9 +1061,14 @@ function renderCosts() {
             <option value="all">Alle Fahrzeuge</option>
             ${db.vehicles.map((vehicle) => `<option value="${vehicle.id}" ${ui.costVehicle === vehicle.id ? 'selected' : ''}>${esc(vehicle.name)} · ${esc(vehicle.plate)}</option>`).join('')}
           </select>
+          ${can('cost_centers_view') ? `<select class="select select-sm" id="costCenterFilter" aria-label="Kostenstelle filtern">
+            <option value="all">Alle Kostenstellen</option>
+            <option value="none" ${ui.costCenter === 'none' ? 'selected' : ''}>Ohne Kostenstelle</option>
+            ${(db.costCenters || []).map((costCenter) => `<option value="${costCenter.id}" ${ui.costCenter === costCenter.id ? 'selected' : ''}>${esc(costCenter.code)} · ${esc(costCenter.name)}${costCenter.active ? '' : ' · inaktiv'}</option>`).join('')}
+          </select>` : ''}
         </div>
         ${filteredCosts.length ? `<div class="table-wrap is-scroll"><table class="data-table">
-          <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Kostenart / Beschreibung</th><th class="num">Betrag</th><th class="num"></th></tr></thead>
+          <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Kostenart / Beschreibung</th><th>Kostenstelle</th><th class="num">Betrag</th><th class="num"></th></tr></thead>
           <tbody>${costRows}</tbody>
         </table></div>` : emptyState('receipt', 'Keine Kosten gefunden', 'Ändern Sie die Filter oder erfassen Sie eine neue Kostenposition.', '', true)}
         <div class="card-footer">
@@ -1051,7 +1082,13 @@ function renderCosts() {
         <div class="card-body"><div class="hbar-list">${vehicleRanking}</div></div>
         <div class="card-footer"><span class="text-muted">Höchster Wert: ${formatMoney(maxVehicle)}</span><a class="link-arrow" href="#/fahrzeuge">Flotte ${icon('arrow-right')}</a></div>
       </section>
-    </div>`;
+    </div>
+
+    <section class="card mt-18">
+      <div class="card-head"><div><h3 class="card-title">Kosten nach Kostenstelle</h3><p class="card-sub">Betriebskosten der letzten 6 Monate</p></div></div>
+      <div class="card-body"><div class="hbar-list">${costCenterRanking}</div></div>
+      <div class="card-footer"><span class="text-muted">Höchster Wert: ${formatMoney(maxCostCenter)}</span>${can('cost_centers_view') ? `<a class="link-arrow" href="#/einstellungen">Kostenstellen ${icon('arrow-right')}</a>` : ''}</div>
+    </section>`;
 }
 
 /* =========================================================
@@ -1060,7 +1097,7 @@ function renderCosts() {
 function renderLogbook() {
   const canManageLog = can('logbook_manage');
   const canExportLog = can('logbook_export');
-  const trips = getCompletedBookings(ui.logPeriod);
+  const trips = getLogbookTrips();
   const distance = trips.reduce((sum, trip) => sum + Math.max(0, Number(trip.endKm || 0) - Number(trip.startKm || 0)), 0);
   const average = trips.length ? distance / trips.length : 0;
   const vehiclesUsed = new Set(trips.map((trip) => trip.vehicleId)).size;
@@ -1075,6 +1112,7 @@ function renderLogbook() {
         <td><div class="table-vehicle">${vehicleDot(vehicle)}<div><span class="table-main">${esc(vehicle ? vehicle.name : '—')}</span><span class="table-sub">${esc(vehicle ? vehicle.plate : '')}</span></div></div></td>
         <td><div class="table-person">${driverAvatar(driver, 'avatar-sm')}<span>${esc(driver ? driver.name : '—')}</span></div></td>
         <td><span class="table-main">${esc(trip.purpose)}</span><span class="table-sub">${formatTimeRange(trip.start, trip.end)}</span></td>
+        <td>${costCenterBadge(trip)}</td>
         <td><span class="table-main">${formatNumber(trip.startKm)}</span><span class="table-sub">bis ${formatNumber(trip.endKm)} km</span></td>
         <td class="num"><span class="money">${formatNumber(km)} km</span></td>
         <td><div class="table-actions"><button class="table-action" type="button" title="Details ansehen" aria-label="Details ansehen" data-action="booking-details" data-id="${trip.id}">${icon('info')}</button></div></td>
@@ -1097,6 +1135,11 @@ function renderLogbook() {
       <div class="card-head bordered">
         <div><h3 class="card-title">Fahrtenübersicht</h3><p class="card-sub">${trips.length} abgeschlossene Fahrten · ${formatNumber(distance)} km</p></div>
         <div class="card-head-side">
+          ${can('cost_centers_view') ? `<select class="select select-sm" id="logCostCenterFilter" style="width:auto" aria-label="Kostenstelle filtern">
+            <option value="all">Alle Kostenstellen</option>
+            <option value="none" ${ui.logCostCenter === 'none' ? 'selected' : ''}>Ohne Kostenstelle</option>
+            ${(db.costCenters || []).map((costCenter) => `<option value="${costCenter.id}" ${ui.logCostCenter === costCenter.id ? 'selected' : ''}>${esc(costCenter.code)} · ${esc(costCenter.name)}${costCenter.active ? '' : ' · inaktiv'}</option>`).join('')}
+          </select>` : ''}
           <select class="select select-sm" id="logPeriod" style="width:auto" aria-label="Zeitraum auswählen">
             <option value="30" ${ui.logPeriod === '30' ? 'selected' : ''}>Letzte 30 Tage</option>
             <option value="90" ${ui.logPeriod === '90' ? 'selected' : ''}>Letzte 90 Tage</option>
@@ -1105,7 +1148,7 @@ function renderLogbook() {
         </div>
       </div>
       ${trips.length ? `<div class="table-wrap"><table class="data-table">
-        <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Fahrer:in</th><th>Zweck / Zeit</th><th>Kilometerstand</th><th class="num">Distanz</th><th class="num"></th></tr></thead>
+        <thead><tr><th>Datum</th><th>Fahrzeug</th><th>Fahrer:in</th><th>Zweck / Zeit</th><th>Kostenstelle</th><th>Kilometerstand</th><th class="num">Distanz</th><th class="num"></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : emptyState('book', 'Keine Fahrten im Zeitraum', 'Wählen Sie einen anderen Zeitraum oder tragen Sie eine Fahrt nach.', canManageLog ? '<button class="btn btn-soft btn-sm" type="button" data-action="new-log">Fahrt nachtragen</button>' : '')}
       <div class="table-footer">
@@ -1137,6 +1180,7 @@ function renderDrivers() {
             <h3>${esc(driver.name)}</h3>
             <p>${esc(driver.role)} · ${esc(driver.department)}</p>
             <span class="badge badge-${status.badge}">${status.label}</span>
+            ${costCenterBadge(driver, 'Keine Kostenstelle')}
           </div>
           ${canOn('driver', driver.id, 'drivers_manage') ? `<button class="table-action" type="button" title="Fahrer:in bearbeiten" aria-label="Fahrer:in bearbeiten" data-action="edit-driver" data-id="${driver.id}">${icon('edit')}</button>` : ''}
         </div>
@@ -1455,11 +1499,50 @@ function renderSmtpCard() {
     </form>`;
 }
 
+function renderCostCentersCard() {
+  if (!can('cost_centers_view')) return '';
+  const canManage = can('cost_centers_manage');
+  const centers = db.costCenters || [];
+  const rows = centers.map((costCenter) => {
+    const usage = costCenter.usage || {};
+    const usageTotal = Number(usage.total) || 0;
+    return `
+      <tr>
+        <td><span class="badge badge-gray no-dot">${esc(costCenter.code)}</span></td>
+        <td><span class="table-main">${esc(costCenter.name)}</span><span class="table-sub">${esc(costCenter.description || 'Keine Beschreibung')}</span></td>
+        <td>${costCenter.active ? '<span class="badge badge-green no-dot">Aktiv</span>' : '<span class="badge badge-gray no-dot">Inaktiv</span>'}</td>
+        <td><span class="table-main">${usageTotal}</span><span class="table-sub">${usageTotal === 1 ? 'Verwendung' : 'Verwendungen'}</span></td>
+        <td>
+          <div class="table-actions">
+            ${canManage ? `<button class="table-action" type="button" title="Kostenstelle bearbeiten" aria-label="Kostenstelle bearbeiten" data-action="edit-cost-center" data-id="${costCenter.id}">${icon('edit')}</button>` : ''}
+            ${canManage ? `<button class="table-action" type="button" title="${costCenter.active ? 'Kostenstelle deaktivieren' : 'Kostenstelle aktivieren'}" aria-label="${costCenter.active ? 'Kostenstelle deaktivieren' : 'Kostenstelle aktivieren'}" data-action="toggle-cost-center-active" data-id="${costCenter.id}">${icon(costCenter.active ? 'x' : 'check-circle')}</button>` : ''}
+            ${canManage && usageTotal === 0 ? `<button class="table-action danger" type="button" title="Kostenstelle löschen" aria-label="Kostenstelle löschen" data-action="delete-cost-center" data-id="${costCenter.id}">${icon('trash')}</button>` : ''}
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+  return `
+    <section class="card" id="costCentersCard">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Kostenstellen</h3><p class="card-sub">Stammdaten, Zuordnungen und Nutzung verwalten.</p></div>
+        ${canManage ? `<button class="btn btn-primary btn-sm" type="button" data-action="new-cost-center">${icon('plus')} Kostenstelle anlegen</button>` : '<span class="badge badge-gray no-dot">Nur lesen</span>'}
+      </div>
+      <div class="card-body">
+        ${centers.length ? `<div class="table-wrap"><table class="data-table">
+          <thead><tr><th>Code</th><th>Bezeichnung</th><th>Status</th><th>Nutzung</th><th class="num"></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>` : emptyState('receipt', 'Noch keine Kostenstellen', 'Legen Sie Kostenstellen an, um Fahrzeuge, Fahrer:innen, Buchungen und Kosten zuzuordnen.', canManage ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-cost-center">Kostenstelle anlegen</button>' : '')}
+      </div>
+      <div class="card-footer"><span class="text-muted">Löschen ist nur ohne Zuordnungen möglich; sonst bitte deaktivieren.</span></div>
+    </section>`;
+}
+
 function renderSettings() {
   const roleDisplay = currentUser?.roleName || roleLabel(currentUser?.role);
   const canEditSettings = can('settings_manage');
   const canManageBranding = can('branding_manage');
   const canManageSmtp = Boolean(capabilities.isAdmin || capabilities.isSuperadmin);
+  const canViewCostCenters = can('cost_centers_view');
   const canExport = can('export_data');
   const canManageUsers = can('users_manage');
   const canManageRoles = can('roles_manage');
@@ -1470,6 +1553,7 @@ function renderSettings() {
   const adminAreas = [
     canEditSettings ? 'Organisation' : '',
     canManageBranding ? 'Erscheinungsbild' : '',
+    canViewCostCenters ? 'Kostenstellen' : '',
     canExport ? 'Datenexport' : '',
     canManageUsers ? 'Benutzer' : '',
     canManageRoles ? 'Rollen' : ''
@@ -1486,8 +1570,11 @@ function renderSettings() {
         ? 'Datenexport'
         : canManageBranding
           ? 'Erscheinungsbild'
-          : 'Konto';
+          : canViewCostCenters
+            ? 'Kostenstellen'
+            : 'Konto';
   const adminSections = [
+    canViewCostCenters ? renderCostCentersCard() : '',
     canManageBranding ? renderBrandingCard() : '',
     canManageSmtp ? renderSmtpCard() : '',
     canEditSettings ? `
@@ -1545,7 +1632,7 @@ function renderSettings() {
           </div>
           <div class="version-box">
             <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-            <span class="version-badge">Server-MVP 0.7.0-dev</span>
+            <span class="version-badge">Server-MVP 0.8.0-dev</span>
           </div>
         </div>
       </section>` : ''
@@ -1662,6 +1749,7 @@ function renderUsers() {
         <td>
           <span class="badge badge-${user.role === 'admin' ? 'red' : 'blue'}">${esc(roleLabel(user.role))}</span>
           <span class="table-sub">Rang ${formatNumber(user.roleRank || roleRankOf(user.role))}</span>
+          ${user.costCenterId ? costCenterBadge(user) : ''}
           ${overrideCount ? `<span class="badge badge-violet no-dot">${overrideCount} Ausnahmen</span>` : ''}
           ${user.driverId ? `<span class="badge badge-${user.ownTripsAccess ? 'green' : 'gray'} no-dot">Fahrer:in: ${esc(user.driverName)}${user.ownTripsAccess ? '' : ' · ohne Standardzugriff'}</span>` : ''}
         </td>
