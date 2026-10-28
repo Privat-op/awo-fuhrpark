@@ -513,7 +513,7 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 | `npm run verify-backup -- --db <pfad> --data <dir>` | SQLite-Integrität, Fremdschlüssel, Kerntabellen, Uploads und `mfa.key` prüfen; Exit-Code für Monitoring. |
 | `npm run healthcheck -- --url <healthz> [--db <pfad>] [--disk <pfad>]` | HTTP-Health, optionale DB- und freie-Speicher-Prüfung; Exit-Code für Monitoring. |
 | `npm run backup:offsite -- --source <dir> --target <rclone-ziel>` | Offsite-Copy über `rclone`; ohne `OFFSITE_TARGET` No-op, `--dry-run` zeigt nur den Befehl. Keine Credentials im Repo. |
-| `npm run loadtest -- --url <url> --confirm` | Leichter HTTP-Lasttest gegen lokale/dedizierte Testinstanzen; Produktionsziele sind ohne `--allow-remote` gesperrt. |
+| `npm run loadtest -- --url <url> --confirm` | Leichter HTTP-Lasttest gegen lokale/dedizierte Testinstanzen; Produktionsziele sind ohne `--allow-remote` gesperrt. Alternativ `k6 run scripts/loadtest.k6.js` mit `TARGET_URL`. |
 
 Beispiele:
 

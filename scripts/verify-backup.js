@@ -8,8 +8,8 @@ const Database = require('better-sqlite3');
 const ROOT = path.join(__dirname, '..');
 const CORE_TABLES = [
   'users', 'roles', 'settings', 'vehicles', 'drivers', 'bookings', 'maintenance', 'costs',
-  'audit_logs', 'sessions', 'notification_deliveries', 'user_mfa', 'user_passkeys',
-  'password_reset_tokens', 'user_sso'
+  'audit_logs', 'sessions', 'notification_deliveries', 'user_mfa', 'mfa_recovery_codes',
+  'user_passkeys', 'passkey_attempts', 'password_reset_tokens', 'user_sso'
 ];
 
 function arg(name, fallback = '') {
