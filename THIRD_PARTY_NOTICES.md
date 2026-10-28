@@ -9,3 +9,7 @@ Datei: `public/branding/awo-logo.svg`
 - Markenrecht: „AWO“ und das AWO-Logo sind eingetragene Wort-/Bildmarken der Arbeiterwohlfahrt. Die Verwendung setzt die erforderliche Berechtigung voraus.
 
 Das Logo wird ausschließlich im AWO-Theme verwendet. Im neutralen Theme wird es nicht ausgeliefert.
+
+## Nodemailer
+
+Paket: `nodemailer` (MIT-Lizenz), eingesetzt für den optionalen SMTP-Versand von Leasing-Benachrichtigungen. Weitere Informationen: https://nodemailer.com/

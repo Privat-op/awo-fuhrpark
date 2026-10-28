@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS vehicles (
   color TEXT NOT NULL DEFAULT '#2563eb',
   notes TEXT NOT NULL DEFAULT '',
   image_file TEXT,
+  leasing_start TEXT,
+  leasing_end TEXT,
+  leasing_start_km INTEGER,
+  leasing_km_limit INTEGER,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -185,6 +189,31 @@ CREATE TABLE IF NOT EXISTS sessions (
   expire INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS smtp_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  host TEXT NOT NULL DEFAULT '',
+  port INTEGER NOT NULL DEFAULT 587,
+  secure INTEGER NOT NULL DEFAULT 0 CHECK (secure IN (0, 1)),
+  username TEXT NOT NULL DEFAULT '',
+  from_address TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  dedupe_key TEXT NOT NULL UNIQUE,
+  channel TEXT NOT NULL DEFAULT 'email',
+  vehicle_id TEXT,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TEXT,
+  error_code TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_bookings_vehicle_time ON bookings (vehicle_id, start_at, end_at);
 CREATE INDEX IF NOT EXISTS idx_bookings_driver_time ON bookings (driver_id, start_at, end_at);
 CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings (status);
@@ -197,3 +226,4 @@ CREATE INDEX IF NOT EXISTS idx_costs_vehicle ON costs (vehicle_id);
 CREATE INDEX IF NOT EXISTS idx_maintenance_due ON maintenance (due_date);
 CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions (expire);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs (created_at);
+CREATE INDEX IF NOT EXISTS idx_notification_deliveries_status ON notification_deliveries (status, last_attempt_at);

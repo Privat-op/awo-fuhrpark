@@ -100,6 +100,16 @@ function openConfirm({ title = 'Sind Sie sicher?', text = '', confirmLabel = 'Be
 /* =========================================================
    Buchungen
    ========================================================= */
+function leasingBookingHintMarkup(vehicle) {
+  const leasing = vehicle?.leasing;
+  if (!leasing || !Array.isArray(leasing.warnings) || !leasing.warnings.length) return '';
+  return leasing.warnings.map((warning) => `
+    <div class="info-banner ${warning.severity === 'danger' ? 'is-danger' : ''}" style="margin-top:10px">
+      ${icon('alert')}
+      <div><strong>${esc(warning.title)}</strong><p>${esc(warning.text)}</p></div>
+    </div>`).join('');
+}
+
 function openBookingModal(prefill = {}) {
   if (!can('bookings_create')) {
     toast('Keine Berechtigung', 'Ihre Rolle darf keine Buchungen anlegen.', 'error');
@@ -151,6 +161,7 @@ function openBookingModal(prefill = {}) {
               ${vehicleOptions}
             </select>
             <p class="field-hint">Bitte prüfen Sie den Status und die Verfügbarkeit des Fahrzeugs.</p>
+            <div id="bookingLeasingHint" hidden></div>
           </div>
           <div class="field field-full">
             <label for="bookingDriver">Fahrer:in <span class="optional">*</span></label>
@@ -186,6 +197,17 @@ function openBookingModal(prefill = {}) {
   });
 
   const form = $('#bookingForm');
+  const vehicleSelect = $('#bookingVehicle');
+  const leasingHint = $('#bookingLeasingHint');
+  const refreshLeasingHint = () => {
+    if (!leasingHint) return;
+    const markup = leasingBookingHintMarkup(getVehicle(vehicleSelect?.value));
+    leasingHint.innerHTML = markup;
+    leasingHint.hidden = !markup;
+  };
+  vehicleSelect?.addEventListener('change', refreshLeasingHint);
+  refreshLeasingHint();
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearFormError(form);
@@ -219,10 +241,12 @@ function openBookingModal(prefill = {}) {
         method: 'POST',
         body: { vehicleId, driverId, date: bookingDate, startTime: from, endTime: to, purpose: bookingPurpose, notes }
       });
+      const leasingWarning = state.leasingWarning;
       applyServerState(state);
       closeModal(false);
       renderCurrentView();
       toast('Buchung angelegt', `${vehicle ? vehicle.name : 'Fahrzeug'} · ${formatDate(bookingDate)}, ${from}–${to} Uhr`);
+      if (leasingWarning) toast('Leasing-Hinweis', leasingWarning, 'info');
     } catch (error) {
       showFormError(form, error.message);
     } finally {
@@ -271,6 +295,7 @@ function openBookingRequestModal(prefill = {}) {
           <div class="field field-full">
             <label for="requestVehicle">Fahrzeug <span class="optional">*</span></label>
             <select class="select" id="requestVehicle" name="vehicleId" required>${vehicleOptions}</select>
+            <div id="requestLeasingHint" hidden></div>
           </div>
           <div class="field">
             <label for="requestDate">Datum <span class="optional">*</span></label>
@@ -300,6 +325,18 @@ function openBookingRequestModal(prefill = {}) {
   });
 
   const form = $('#bookingRequestForm');
+  const requestVehicleSelect = $('#requestVehicle');
+  const requestLeasingHint = $('#requestLeasingHint');
+  const refreshRequestLeasingHint = () => {
+    if (!requestLeasingHint) return;
+    const vehicle = vehicles.find((entry) => entry.id === requestVehicleSelect?.value);
+    const markup = leasingBookingHintMarkup(vehicle);
+    requestLeasingHint.innerHTML = markup;
+    requestLeasingHint.hidden = !markup;
+  };
+  requestVehicleSelect?.addEventListener('change', refreshRequestLeasingHint);
+  refreshRequestLeasingHint();
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearFormError(form);
@@ -337,11 +374,13 @@ function openBookingRequestModal(prefill = {}) {
         }
       });
       const warning = state.requestWarning;
+      const leasingWarning = state.leasingWarning;
       applyServerState(state);
       closeModal(false);
       renderCurrentView();
       toast('Buchungsanfrage gesendet', `${vehicle ? vehicle.name : 'Fahrzeug'} · ${formatDate(bookingDate)}, ${from}–${to} Uhr`);
       if (warning) toast('Hinweis zur Verfügbarkeit', warning, 'info');
+      if (leasingWarning) toast('Leasing-Hinweis', leasingWarning, 'info');
     } catch (error) {
       showFormError(form, error.message);
     } finally {
@@ -531,10 +570,12 @@ function openEndTripModal(bookingId) {
         method: 'POST',
         body: { endKm }
       });
+      const leasingWarning = state.leasingWarning;
       applyServerState(state);
       closeModal(false);
       renderCurrentView();
       toast('Fahrt abgeschlossen', `${formatNumber(endKm - startKm)} km wurden dem Fahrtenbuch hinzugefügt.`);
+      if (leasingWarning) toast('Leasing-Hinweis', leasingWarning, 'info');
     } catch (error) {
       showFormError(form, error.message);
     } finally {
@@ -622,9 +663,11 @@ function openVehicleModal(vehicleId = null) {
   const defaults = {
     name: '', plate: '', type: 'Pkw', fuel: 'Diesel', seats: 5, status: 'available',
     location: '', department: '', mileage: 0, nextService: addDays(todayISO(), 90),
-    tuv: addDays(todayISO(), 365), insurance: '', notes: '', image: '', blocked: false, blockedReason: ''
+    tuv: addDays(todayISO(), 365), insurance: '', notes: '', image: '', blocked: false, blockedReason: '',
+    leasing: null
   };
   const vehicle = existing || defaults;
+  const leasing = vehicle.leasing || {};
   const title = existing ? 'Fahrzeug bearbeiten' : 'Fahrzeug anlegen';
   let pendingImage = vehicle.image || '';
   let newImageData = null;
@@ -714,6 +757,26 @@ function openVehicleModal(vehicleId = null) {
           <div class="field">
             <label for="vehicleTuv">Nächste HU/AU</label>
             <input class="input" id="vehicleTuv" name="tuv" type="date" value="${esc(vehicle.tuv)}">
+          </div>
+          <div class="form-section-title">Leasing</div>
+          <div class="field">
+            <label for="vehicleLeasingStart">Leasingbeginn <span class="optional">optional</span></label>
+            <input class="input" id="vehicleLeasingStart" name="leasingStart" type="date" value="${esc(leasing.start || '')}">
+          </div>
+          <div class="field">
+            <label for="vehicleLeasingEnd">Leasingende</label>
+            <input class="input" id="vehicleLeasingEnd" name="leasingEnd" type="date" value="${esc(leasing.end || '')}">
+          </div>
+          <div class="field">
+            <label for="vehicleLeasingStartKm">Startkilometer</label>
+            <input class="input" id="vehicleLeasingStartKm" name="leasingStartKm" type="number" min="0" step="1" value="${leasing.startKm ?? ''}" placeholder="Kilometerstand bei Leasingbeginn">
+          </div>
+          <div class="field">
+            <label for="vehicleLeasingKmLimit">Gesamt-Kilometerlimit</label>
+            <input class="input" id="vehicleLeasingKmLimit" name="leasingKmLimit" type="number" min="1" step="1" value="${leasing.kmLimit ?? ''}" placeholder="z. B. 120000">
+          </div>
+          <div class="field field-full">
+            <p class="field-hint">Leasingende und Kilometerlimit gemeinsam hinterlegen. Ohne Angaben bleibt das Fahrzeug außerhalb der Leasingüberwachung; bestehende Daten bleiben unverändert.</p>
           </div>
           <div class="form-section-title">Dauerhafte Sperre</div>
           <div class="field field-full">
@@ -830,6 +893,10 @@ function openVehicleModal(vehicleId = null) {
       nextService: String(data.get('nextService') || ''),
       tuv: String(data.get('tuv') || ''),
       notes: String(data.get('notes') || '').trim(),
+      leasingStart: String(data.get('leasingStart') || ''),
+      leasingEnd: String(data.get('leasingEnd') || ''),
+      leasingStartKm: data.get('leasingStartKm') === '' ? '' : Number(data.get('leasingStartKm')),
+      leasingKmLimit: data.get('leasingKmLimit') === '' ? '' : Number(data.get('leasingKmLimit')),
       blocked: data.get('blocked') === 'on',
       blockedReason: String(data.get('blockedReason') || '').trim(),
       color: existing?.color,
@@ -872,6 +939,10 @@ function vehicleMutationPayload(vehicle, overrides = {}) {
     insurance: vehicle.insurance || '',
     notes: vehicle.notes || '',
     color: vehicle.color,
+    leasingStart: vehicle.leasing?.start || '',
+    leasingEnd: vehicle.leasing?.end || '',
+    leasingStartKm: vehicle.leasing?.startKm ?? '',
+    leasingKmLimit: vehicle.leasing?.kmLimit ?? '',
     blocked: Boolean(vehicle.blocked),
     blockedReason: vehicle.blockedReason || '',
     ...overrides
@@ -1005,12 +1076,15 @@ function openVehicleDetails(vehicleId) {
         </div>
       </div>
       ${blocked ? `<div class="info-banner" style="margin-bottom:16px">${icon('alert')}<div><strong>Dauerhafte Sperre aktiv</strong><p>${esc(vehicle.blockedReason || 'Keine Begründung hinterlegt.')} Neue Buchungen und Buchungsanfragen sind gesperrt; bestehende Buchungen bleiben unverändert.</p></div></div>` : ''}
+      ${leasingDetailMarkup(vehicle)}
       <div class="detail-stats">
         <div class="detail-stat"><span>${icon('gauge')} Kilometerstand</span><strong>${formatKm(vehicle.mileage)}</strong></div>
         <div class="detail-stat"><span>${icon('shield')} HU/AU</span><strong>${formatDate(vehicle.tuv)}${tuvDays < 0 ? ` · ${Math.abs(tuvDays)} Tage überfällig` : ''}</strong></div>
         <div class="detail-stat"><span>${icon('wrench')} Inspektion</span><strong>${formatDate(vehicle.nextService)}</strong></div>
         <div class="detail-stat"><span>${icon('fuel')} Kraftstoff</span><strong>${esc(vehicle.fuel)}</strong></div>
         <div class="detail-stat"><span>${icon('seat')} Sitzplätze</span><strong>${vehicle.seats}</strong></div>
+        ${vehicle.leasing?.kmLimit ? `<div class="detail-stat"><span>${icon('calendar')} Leasing-Restkm</span><strong>${vehicle.leasing.remainingKm < 0 ? `−${formatKm(Math.abs(vehicle.leasing.remainingKm))}` : formatKm(vehicle.leasing.remainingKm)}</strong></div>` : ''}
+        ${vehicle.leasing?.end ? `<div class="detail-stat"><span>${icon('calendar')} Leasingende</span><strong>${formatDate(vehicle.leasing.end)}</strong></div>` : ''}
         ${showCosts ? `<div class="detail-stat"><span>${icon('receipt')} Kosten 6 Monate</span><strong>${formatMoney(costTotal)}</strong></div>` : ''}
       </div>
       <div class="detail-section">
@@ -2406,10 +2480,12 @@ function openLogModal() {
           notes: String(data.get('notes') || '').trim()
         }
       });
+      const leasingWarning = state.leasingWarning;
       applyServerState(state);
       closeModal(false);
       renderCurrentView();
       toast('Fahrt nachgetragen', `${formatNumber(endKm - startKm)} km wurden dokumentiert.`);
+      if (leasingWarning) toast('Leasing-Hinweis', leasingWarning, 'info');
     } catch (error) {
       showFormError(form, error.message);
     } finally {

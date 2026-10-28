@@ -233,6 +233,22 @@ function getAlerts() {
       days
     });
   });
+  db.vehicles.forEach((vehicle) => {
+    const leasing = vehicle.leasing;
+    if (!leasing || !Array.isArray(leasing.warnings)) return;
+    leasing.warnings.forEach((warning) => {
+      items.push({
+        id: `leasing-${vehicle.id}-${warning.key}`,
+        readKey: `leasing-${vehicle.id}-${warning.key}`,
+        severity: warning.severity === 'danger' ? 'danger' : 'warning',
+        icon: warning.kind === 'end' ? 'calendar' : 'gauge',
+        title: warning.title,
+        text: warning.text,
+        route: 'fahrzeuge',
+        days: warning.kind === 'end' ? leasing.daysRemaining : null
+      });
+    });
+  });
   const rank = { danger: 0, warning: 1, info: 2 };
   return items.sort((a, b) => (rank[a.severity] - rank[b.severity]) || ((a.days ?? 0) - (b.days ?? 0)) || a.title.localeCompare(b.title, 'de'));
 }
@@ -268,6 +284,7 @@ function applyState(state) {
     notificationReads: Array.isArray(state.notificationReads) ? state.notificationReads : [],
     users: Array.isArray(state.users) ? state.users : [],
     roles: Array.isArray(state.roles) ? state.roles : [],
+    smtp: state.smtp && typeof state.smtp === 'object' ? state.smtp : null,
     driversForLinking: Array.isArray(state.driversForLinking) ? state.driversForLinking : [],
     bookingRequests: Array.isArray(state.bookingRequests) ? state.bookingRequests : [],
     ownTrips: state.ownTrips && typeof state.ownTrips === 'object'
@@ -1136,6 +1153,19 @@ async function exportLogbook() {
   }
 }
 
+async function testSmtpSettings() {
+  if (!capabilities.isAdmin && !capabilities.isSuperadmin) {
+    toast('Keine Berechtigung', 'SMTP-Einstellungen sind Administrator:innen vorbehalten.', 'error');
+    return;
+  }
+  try {
+    await apiFetch('/api/smtp/test', { method: 'POST' });
+    toast('Test-E-Mail versendet', 'Bitte prüfen Sie das Postfach der angemeldeten Administrator:in.');
+  } catch (error) {
+    toast('SMTP-Test fehlgeschlagen', error.message, 'error');
+  }
+}
+
 function dispatchAction(element) {
   const action = element.dataset.action;
   const id = element.dataset.id;
@@ -1187,6 +1217,7 @@ function dispatchAction(element) {
     case 'export-data': exportData(); break;
     case 'logout': logout(); break;
     case 'change-password': openPasswordModal(); break;
+    case 'smtp-test': testSmtpSettings(); break;
     case 'unlink-admin-driver': unlinkAdminDriver(); break;
     case 'remove-branding-logo': removeBrandingLogoPreview(); break;
     case 'set-brand-accent': setBrandAccent(element.dataset.color); break;
@@ -1544,6 +1575,42 @@ function bindEvents() {
         toast('Erscheinungsbild gespeichert', 'Das Theme gilt jetzt für alle Nutzer:innen.');
       } catch (error) {
         toast('Erscheinungsbild konnte nicht gespeichert werden', error.message, 'error');
+      } finally {
+        if (submitButton) submitButton.disabled = false;
+      }
+      return;
+    }
+
+    if (form.id === 'smtpForm') {
+      event.preventDefault();
+      const data = new FormData(form);
+      const password = String(data.get('smtpPassword') || '');
+      const clearPassword = data.get('smtpClearPassword') === 'on';
+      if (password && clearPassword) {
+        toast('Passwort nicht eindeutig', 'Bitte entweder ein neues Passwort setzen oder das gespeicherte entfernen.', 'error');
+        return;
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      try {
+        const state = await apiFetch('/api/smtp', {
+          method: 'PATCH',
+          body: {
+            enabled: data.get('smtpEnabled') === 'on',
+            host: String(data.get('smtpHost') || '').trim(),
+            port: Number(data.get('smtpPort')) || 587,
+            secure: data.get('smtpSecure') === 'on',
+            username: String(data.get('smtpUsername') || '').trim(),
+            fromAddress: String(data.get('smtpFrom') || '').trim(),
+            ...(password ? { password } : {}),
+            clearPassword
+          }
+        });
+        applyServerState(state);
+        if (ui.route === 'einstellungen') renderCurrentView();
+        toast('SMTP-Einstellungen gespeichert', 'Die Konfiguration wurde aktualisiert.');
+      } catch (error) {
+        toast('Speichern fehlgeschlagen', error.message, 'error');
       } finally {
         if (submitButton) submitButton.disabled = false;
       }

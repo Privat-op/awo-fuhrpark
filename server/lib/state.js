@@ -1,5 +1,8 @@
 ﻿'use strict';
 
+const { calculateLeasingState } = require('./leasing');
+const { getPublicSmtpConfig } = require('./smtp');
+
 function mapVehicle(row) {
   const version = encodeURIComponent(row.updated_at || '');
   return {
@@ -21,6 +24,7 @@ function mapVehicle(row) {
     notes: row.notes,
     blocked: Boolean(row.blocked),
     blockedReason: row.blocked_reason || '',
+    leasing: calculateLeasingState(row),
     image: row.image_file ? `/api/vehicles/${encodeURIComponent(row.id)}/image?v=${version}` : ''
   };
 }
@@ -129,7 +133,8 @@ function mapMinimalVehicle(row) {
     color: row.color,
     status: row.status,
     blocked: Boolean(row.blocked),
-    blockedReason: row.blocked_reason || ''
+    blockedReason: row.blocked_reason || '',
+    leasing: calculateLeasingState(row)
   };
 }
 
@@ -357,6 +362,10 @@ function getState(db, user, auth = null) {
     bookingRequests,
     notificationReads
   };
+
+  if (isPrivileged) {
+    state.smtp = getPublicSmtpConfig(db);
+  }
 
   const canManageUsers = isPrivileged || can('users_manage');
   const canManageRoles = isPrivileged || can('roles_manage');
