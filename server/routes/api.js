@@ -43,6 +43,7 @@ const {
   hasEffectivePermission,
   getRoleRank,
   rolePermissionsWithin,
+  isObjectPermissionDenied,
   publicObjectTypes
 } = require('../lib/permissions');
 const { SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID } = require('../lib/superadmin');
@@ -1081,6 +1082,9 @@ router.post('/booking-requests', (req, res, next) => {
       throw new HttpError(403, 'Für Buchungsanfragen ist kein Fahrerprofil mit Ihrem Konto verknüpft.');
     }
     const vehicle = ensureVehicleExists(requiredString(body.vehicleId, 'Fahrzeug'));
+    if (isObjectPermissionDenied(req.auth, 'vehicle', vehicle.id, 'vehicles_view')) {
+      throw new HttpError(403, 'Für dieses Fahrzeug fehlt die erforderliche Sichtberechtigung.');
+    }
     assertCan(req, 'own_trips_request', { driver: linkedDriver, vehicle });
     if (vehicle.blocked) throw new HttpError(409, vehicleBlockedMessage(vehicle));
     const purpose = requiredString(body.purpose, 'Einsatzzweck', { max: 200 });
