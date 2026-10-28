@@ -4,6 +4,7 @@ const { calculateLeasingState } = require('./leasing');
 const { getPublicSmtpConfig } = require('./smtp');
 const { getAllCostCenterUsage } = require('./cost-centers');
 const { getDefaultColorMode, getResolvedColorMode, getUserColorMode } = require('./color-mode');
+const { getWebAuthnConfig, listPasskeys } = require('./webauthn');
 
 function costCenterFields(row, costCenter = null) {
   return {
@@ -204,6 +205,10 @@ function getState(db, user, auth = null) {
       SELECT user_id, COUNT(*) AS count FROM mfa_recovery_codes
       WHERE used_at IS NULL GROUP BY user_id
     `).all()
+      .map((row) => [row.user_id, Number(row.count) || 0])
+  );
+  const passkeyCountByUserId = new Map(
+    db.prepare('SELECT user_id, COUNT(*) AS count FROM user_passkeys GROUP BY user_id').all()
       .map((row) => [row.user_id, Number(row.count) || 0])
   );
   const costCenterRows = db.prepare('SELECT * FROM cost_centers ORDER BY active DESC, code, id').all();
@@ -436,12 +441,16 @@ function getState(db, user, auth = null) {
   };
 
   const ownMfa = mfaByUserId.get(user.id) || null;
+  const passkeys = listPasskeys(db, user.id);
   state.security = {
     totpEnabled: Number(ownMfa?.totp_enabled) === 1,
     confirmedAt: ownMfa?.totp_confirmed_at || null,
     lastVerifiedAt: ownMfa?.last_verified_at || null,
     recoveryCodesRemaining: recoveryCountByUserId.get(user.id) || 0,
-    lockedUntil: ownMfa?.locked_until || null
+    lockedUntil: ownMfa?.locked_until || null,
+    passkeyEnabled: getWebAuthnConfig().enabled,
+    passkeyCount: passkeys.length,
+    passkeys
   };
 
   if (moduleAccess.cost_centers_view) {
@@ -483,6 +492,7 @@ function getState(db, user, auth = null) {
     const linkedDriver = driverByUserId.get(row.id) || null;
     const mfa = mfaByUserId.get(row.id) || null;
     const mfaEnabled = Number(mfa?.totp_enabled) === 1;
+    const passkeyCount = passkeyCountByUserId.get(row.id) || 0;
     const targetRank = roleRankById.get(row.role) || 0;
     return {
       ...mapUser(row, costCenterFor(row), defaultColorMode),
@@ -493,7 +503,8 @@ function getState(db, user, auth = null) {
       mfaEnabled,
       mfaConfirmedAt: mfa?.totp_confirmed_at || null,
       mfaLastVerifiedAt: mfa?.last_verified_at || null,
-      canResetMfa: mfaEnabled
+      passkeyCount,
+      canResetMfa: (mfaEnabled || passkeyCount > 0)
         && isPrivileged
         && row.id !== user.id
         && (isSuperadmin || (row.role !== 'admin' && targetRank < actorRank))
