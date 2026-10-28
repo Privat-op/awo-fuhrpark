@@ -1,8 +1,9 @@
-﻿'use strict';
+'use strict';
 
 const { calculateLeasingState } = require('./leasing');
 const { getPublicSmtpConfig } = require('./smtp');
 const { getAllCostCenterUsage } = require('./cost-centers');
+const { getDefaultColorMode, getResolvedColorMode, getUserColorMode } = require('./color-mode');
 
 function costCenterFields(row, costCenter = null) {
   return {
@@ -120,7 +121,7 @@ function mapCost(row, costCenter = null) {
   };
 }
 
-function mapUser(row, costCenter = null) {
+function mapUser(row, costCenter = null, defaultColorMode = 'light') {
   return {
     id: row.id,
     email: row.email,
@@ -129,6 +130,8 @@ function mapUser(row, costCenter = null) {
     permissionOverrides: parsePermissionOverrides(row.permission_overrides),
     objectPermissions: parseObjectPermissions(row.object_permissions),
     ...costCenterFields(row, costCenter),
+    colorMode: getUserColorMode(row),
+    resolvedColorMode: getResolvedColorMode(row, { default_color_mode: defaultColorMode }),
     active: Boolean(row.active),
     lastLoginAt: row.last_login_at,
     deactivatedAt: row.deactivated_at || null,
@@ -190,6 +193,7 @@ function getState(db, user, auth = null) {
   const isPrivileged = isAdmin || isSuperadmin;
   const can = (permission, context = {}) => resolvePermission(layers, permission, context);
   const settingsRow = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  const defaultColorMode = getDefaultColorMode(settingsRow);
   const costCenterRows = db.prepare('SELECT * FROM cost_centers ORDER BY active DESC, code, id').all();
   const costCenterById = new Map(costCenterRows.map((row) => [row.id, row]));
   const costCenterUsage = getAllCostCenterUsage(db);
@@ -391,6 +395,7 @@ function getState(db, user, auth = null) {
       textColor: settingsRow?.text_color || '#191c23',
       mutedColor: settingsRow?.muted_color || '#737a88',
       borderColor: settingsRow?.border_color || '#e7e9ee',
+      defaultColorMode,
       autoAnonymizeDays: Number(settingsRow?.auto_anonymize_days) || 0,
       logoUrl: settingsRow?.logo_file
         ? `/branding/logo?v=${encodeURIComponent(settingsRow.updated_at || '')}`
@@ -452,7 +457,7 @@ function getState(db, user, auth = null) {
   const mapStateUser = (row) => {
     const linkedDriver = driverByUserId.get(row.id) || null;
     return {
-      ...mapUser(row, costCenterFor(row)),
+      ...mapUser(row, costCenterFor(row), defaultColorMode),
       roleRank: roleRankById.get(row.role) || 0,
       driverId: linkedDriver?.id || null,
       driverName: linkedDriver?.name || '',
@@ -462,7 +467,7 @@ function getState(db, user, auth = null) {
 
   if (isPrivileged) {
     state.users = db.prepare(`
-      SELECT id, email, name, role, permission_overrides, object_permissions, active, cost_center_id, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
+      SELECT id, email, name, role, permission_overrides, object_permissions, active, cost_center_id, color_mode, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
       FROM users WHERE id <> ? AND role <> ? ORDER BY created_at, name
     `).all(SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID).map(mapStateUser);
     state.roles = visibleRoleRows.map(mapRoleState);
@@ -473,7 +478,7 @@ function getState(db, user, auth = null) {
       .map(mapRoleState);
     if (canManageUsers) {
       state.users = db.prepare(`
-        SELECT id, email, name, role, permission_overrides, object_permissions, active, cost_center_id, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
+        SELECT id, email, name, role, permission_overrides, object_permissions, active, cost_center_id, color_mode, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
         FROM users WHERE id <> ? AND role <> ? ORDER BY created_at, name
       `).all(SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID)
         .map(mapStateUser)

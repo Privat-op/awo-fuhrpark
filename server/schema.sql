@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   object_permissions TEXT NOT NULL DEFAULT '{}',
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   cost_center_id TEXT REFERENCES cost_centers(id) ON DELETE SET NULL,
+  color_mode TEXT CHECK (color_mode IN ('light', 'dark', 'auto')),
   last_login_at TEXT,
   deactivated_at TEXT,
   anonymized_at TEXT,
@@ -173,6 +174,7 @@ CREATE TABLE IF NOT EXISTS settings (
   text_color TEXT NOT NULL DEFAULT '#191c23',
   muted_color TEXT NOT NULL DEFAULT '#737a88',
   border_color TEXT NOT NULL DEFAULT '#e7e9ee',
+  default_color_mode TEXT NOT NULL DEFAULT 'light' CHECK (default_color_mode IN ('light', 'dark', 'auto')),
   auto_anonymize_days INTEGER NOT NULL DEFAULT 0,
   seeded_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

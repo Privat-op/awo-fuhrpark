@@ -4,6 +4,7 @@ const path = require('node:path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 process.env.TZ = process.env.TZ || 'Europe/Berlin';
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const express = require('express');
 const helmet = require('helmet');
@@ -24,6 +25,8 @@ const { startAutoAnonymizer } = require('./lib/anonymize');
 const { migrateSuperadminSchema, ensureSuperadmin } = require('./lib/superadmin');
 const { migrateLeasingSchema } = require('./lib/leasing-schema');
 const { migrateCostCentersSchema } = require('./lib/cost-centers-schema');
+const { migrateColorModeSchema } = require('./lib/color-mode-schema');
+const { normalizeColorMode } = require('./lib/color-mode');
 const { startLeasingScheduler } = require('./lib/leasing');
 const {
   ensureRoles,
@@ -58,6 +61,19 @@ if (!sessionSecret || sessionSecret.length < 32) {
 const loginTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'login.html'), 'utf8');
 const indexTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'index.html'), 'utf8');
 
+function inlineScriptHashes(templates) {
+  const hashes = new Set();
+  for (const template of templates) {
+    for (const match of template.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+      const script = match[1].replace(/\r\n/g, '\n');
+      hashes.add(`'sha256-${crypto.createHash('sha256').update(script).digest('base64')}'`);
+    }
+  }
+  return [...hashes];
+}
+
+const themeScriptHashes = inlineScriptHashes([loginTemplate, indexTemplate]);
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
@@ -67,10 +83,11 @@ function currentBranding() {
   return { settings, branding: getBranding(settings || {}) };
 }
 
-function applyBrandingTemplate(template, branding) {
+function applyBrandingTemplate(template, branding, colorMode = 'light') {
   return template
     .replaceAll('{{THEME}}', escapeHtml(branding.theme))
     .replaceAll('{{SIDEBAR_STYLE}}', escapeHtml(branding.sidebarStyle))
+    .replaceAll('{{COLOR_MODE}}', escapeHtml(normalizeColorMode(colorMode, 'light')))
     .replaceAll('{{BRAND_STYLES}}', branding.brandStyles)
     .replaceAll('{{THEME_COLOR}}', escapeHtml(branding.themeColor))
     .replaceAll('{{BRAND_MARK_CLASS}}', escapeHtml(branding.markClass))
@@ -88,8 +105,9 @@ function applyBrandingTemplate(template, branding) {
 function renderLogin(req, res, { status = 200, error = '', email = '' } = {}) {
   const csrfToken = ensureCsrfToken(req);
   const errorMarkup = error ? `<div class="login-error" role="alert">${escapeHtml(error)}</div>` : '';
-  const { branding } = currentBranding();
-  const html = applyBrandingTemplate(loginTemplate, branding)
+  const { settings, branding } = currentBranding();
+  const colorMode = normalizeColorMode(settings?.default_color_mode, 'light');
+  const html = applyBrandingTemplate(loginTemplate, branding, colorMode)
     .replaceAll('{{CSRF_TOKEN}}', escapeHtml(csrfToken))
     .replaceAll('{{ERROR}}', errorMarkup)
     .replaceAll('{{EMAIL}}', escapeHtml(email));
@@ -99,9 +117,11 @@ function renderLogin(req, res, { status = 200, error = '', email = '' } = {}) {
     .send(html);
 }
 
-function renderApp(res) {
-  const { branding } = currentBranding();
-  const html = applyBrandingTemplate(indexTemplate, branding);
+function renderApp(req, res) {
+  const { settings, branding } = currentBranding();
+  const userMode = normalizeColorMode(req.user?.color_mode, '');
+  const defaultMode = normalizeColorMode(settings?.default_color_mode, 'light');
+  const html = applyBrandingTemplate(indexTemplate, branding, userMode || defaultMode);
   res.set('Cache-Control', 'no-store').type('html').send(html);
 }
 
@@ -115,6 +135,7 @@ migrateAuditSchema(db);
 migrateSuperadminSchema(db);
 migrateLeasingSchema(db);
 migrateCostCentersSchema(db);
+migrateColorModeSchema(db);
 bootstrap(db);
 try {
   ensureSuperadmin(db, { projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR });
@@ -146,7 +167,7 @@ app.use(helmet({
     useDefaults: false,
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", ...themeScriptHashes],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:'],
       fontSrc: ["'self'"],
@@ -285,10 +306,10 @@ app.use('/api', apiLimiter, requireAuth, (req, res, next) => {
 }, csrfProtection, apiRouter);
 
 app.get('/', requireAuth, (req, res) => {
-  renderApp(res);
+  renderApp(req, res);
 });
 app.get('/index.html', requireAuth, (req, res) => {
-  renderApp(res);
+  renderApp(req, res);
 });
 
 app.use((req, res) => {

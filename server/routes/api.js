@@ -54,6 +54,7 @@ const {
   resolveCostCostCenter,
   getCostCenterUsage
 } = require('../lib/cost-centers');
+const { COLOR_MODES } = require('../lib/color-mode');
 const { leasingWarningForVehicle, triggerLeasingCheck } = require('../lib/leasing');
 const {
   loadSmtpConfig,
@@ -337,7 +338,8 @@ function syncVehicleStatus(vehicleId) {
 
 function mapSessionUser(user) {
   const costCenter = user?.cost_center_id ? getCostCenter(user.cost_center_id) : null;
-  return mapUser(user, costCenter);
+  const settings = db.prepare('SELECT default_color_mode FROM settings WHERE id = 1').get();
+  return mapUser(user, costCenter, settings?.default_color_mode || 'light');
 }
 
 /* =========================================================
@@ -537,6 +539,19 @@ router.patch('/me/driver-link', requireAdmin, (req, res, next) => {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE' && String(error.message).includes('drivers.user_id')) {
       return next(new HttpError(409, 'Diese Fahrer:in ist bereits mit einem Benutzerkonto verknüpft.'));
     }
+    next(error);
+  }
+});
+
+router.patch('/me/preferences', (req, res, next) => {
+  try {
+    const colorMode = oneOf(req.body?.colorMode, COLOR_MODES, 'Farbschema');
+    db.prepare('UPDATE users SET color_mode = ?, updated_at = ? WHERE id = ?')
+      .run(colorMode, isoNow(), req.user.id);
+    audit(req, 'update', 'user', req.user.id, { colorMode });
+    const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    res.json({ user: mapSessionUser(updated) });
+  } catch (error) {
     next(error);
   }
 });
@@ -1397,16 +1412,23 @@ router.patch('/settings', requirePermission('settings_manage'), (req, res, next)
   try {
     const body = req.body || {};
     const orgName = requiredString(body.orgName, 'Name der Einrichtung', { max: 160 });
+    const current = db.prepare('SELECT default_color_mode FROM settings WHERE id = 1').get();
+    const defaultColorMode = body.defaultColorMode === undefined
+      ? (current?.default_color_mode || 'light')
+      : oneOf(body.defaultColorMode, COLOR_MODES, 'Standard-Farbschema');
     db.prepare(`
-      UPDATE settings SET org_name = ?, location = ?, email = ?, phone = ?, updated_at = ? WHERE id = 1
+      UPDATE settings
+      SET org_name = ?, location = ?, email = ?, phone = ?, default_color_mode = ?, updated_at = ?
+      WHERE id = 1
     `).run(
       orgName,
       optionalString(body.location, { max: 160 }),
       optionalString(body.email, { max: 200 }),
       optionalString(body.phone, { max: 80 }),
+      defaultColorMode,
       isoNow()
     );
-    audit(req, 'update', 'settings', '1', { orgName });
+    audit(req, 'update', 'settings', '1', { orgName, defaultColorMode });
     sendState(req, res);
   } catch (error) {
     next(error);
