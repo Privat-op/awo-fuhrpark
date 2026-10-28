@@ -2,8 +2,17 @@
 
 const { calculateLeasingState } = require('./leasing');
 const { getPublicSmtpConfig } = require('./smtp');
+const { getAllCostCenterUsage } = require('./cost-centers');
 
-function mapVehicle(row) {
+function costCenterFields(row, costCenter = null) {
+  return {
+    costCenterId: row?.cost_center_id || null,
+    costCenterCode: costCenter?.code || '',
+    costCenterName: costCenter?.name || ''
+  };
+}
+
+function mapVehicle(row, costCenter = null) {
   const version = encodeURIComponent(row.updated_at || '');
   return {
     id: row.id,
@@ -24,12 +33,13 @@ function mapVehicle(row) {
     notes: row.notes,
     blocked: Boolean(row.blocked),
     blockedReason: row.blocked_reason || '',
+    ...costCenterFields(row, costCenter),
     leasing: calculateLeasingState(row),
     image: row.image_file ? `/api/vehicles/${encodeURIComponent(row.id)}/image?v=${version}` : ''
   };
 }
 
-function mapDriver(row) {
+function mapDriver(row, costCenter = null) {
   let license = [];
   try {
     license = JSON.parse(row.license);
@@ -47,11 +57,12 @@ function mapDriver(row) {
     status: row.status,
     color: row.color,
     userId: row.user_id || null,
-    ownTripsAccess: Number(row.own_trips_access) !== 0
+    ownTripsAccess: Number(row.own_trips_access) !== 0,
+    ...costCenterFields(row, costCenter)
   };
 }
 
-function mapBooking(row, vehicle = null, driver = null) {
+function mapBooking(row, vehicle = null, driver = null, costCenter = null) {
   return {
     id: row.id,
     vehicleId: row.vehicle_id,
@@ -64,6 +75,7 @@ function mapBooking(row, vehicle = null, driver = null) {
     driverName: driver?.name || '',
     driverRole: driver?.role || '',
     driverColor: driver?.color || '#64748b',
+    ...costCenterFields(row, costCenter),
     purpose: row.purpose,
     start: row.start_at,
     end: row.end_at,
@@ -89,7 +101,7 @@ function mapMaintenance(row) {
   };
 }
 
-function mapCost(row) {
+function mapCost(row, costCenter = null) {
   const version = encodeURIComponent(row.updated_at || '');
   return {
     id: row.id,
@@ -98,6 +110,7 @@ function mapCost(row) {
     category: row.category,
     amount: Number(row.amount) || 0,
     note: row.note,
+    ...costCenterFields(row, costCenter),
     receipt: row.receipt_file ? {
       name: row.receipt_name || 'Beleg',
       type: row.receipt_mime || 'application/octet-stream',
@@ -107,7 +120,7 @@ function mapCost(row) {
   };
 }
 
-function mapUser(row) {
+function mapUser(row, costCenter = null) {
   return {
     id: row.id,
     email: row.email,
@@ -115,6 +128,7 @@ function mapUser(row) {
     role: row.role,
     permissionOverrides: parsePermissionOverrides(row.permission_overrides),
     objectPermissions: parseObjectPermissions(row.object_permissions),
+    ...costCenterFields(row, costCenter),
     active: Boolean(row.active),
     lastLoginAt: row.last_login_at,
     deactivatedAt: row.deactivated_at || null,
@@ -124,7 +138,7 @@ function mapUser(row) {
   };
 }
 
-function mapMinimalVehicle(row) {
+function mapMinimalVehicle(row, costCenter = null) {
   return {
     id: row.id,
     name: row.name,
@@ -134,11 +148,12 @@ function mapMinimalVehicle(row) {
     status: row.status,
     blocked: Boolean(row.blocked),
     blockedReason: row.blocked_reason || '',
+    ...costCenterFields(row, costCenter),
     leasing: calculateLeasingState(row)
   };
 }
 
-function mapOwnTrip(row, vehicle) {
+function mapOwnTrip(row, vehicle, costCenter = null) {
   return {
     id: row.id,
     vehicleId: row.vehicle_id,
@@ -146,6 +161,7 @@ function mapOwnTrip(row, vehicle) {
     vehiclePlate: vehicle?.plate || '',
     vehicleType: vehicle?.type || 'Pkw',
     vehicleColor: vehicle?.color || '#64748b',
+    ...costCenterFields(row, costCenter),
     purpose: row.purpose,
     start: row.start_at,
     end: row.end_at,
@@ -174,6 +190,29 @@ function getState(db, user, auth = null) {
   const isPrivileged = isAdmin || isSuperadmin;
   const can = (permission, context = {}) => resolvePermission(layers, permission, context);
   const settingsRow = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+  const costCenterRows = db.prepare('SELECT * FROM cost_centers ORDER BY active DESC, code, id').all();
+  const costCenterById = new Map(costCenterRows.map((row) => [row.id, row]));
+  const costCenterUsage = getAllCostCenterUsage(db);
+  const costCenterFor = (row) => costCenterById.get(row?.cost_center_id) || null;
+  const mapCostCenter = (row) => {
+    const usage = costCenterUsage.get(row.id) || {};
+    return {
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      description: row.description || '',
+      active: Boolean(row.active),
+      usage: {
+        vehicles: usage.vehicles || 0,
+        drivers: usage.drivers || 0,
+        users: usage.users || 0,
+        bookings: usage.bookings || 0,
+        bookingRequests: usage.booking_requests || 0,
+        costs: usage.costs || 0,
+        total: usage.total || 0
+      }
+    };
+  };
 
   const vehicleRows = db.prepare('SELECT * FROM vehicles ORDER BY created_at, id').all();
   const driverRows = db.prepare('SELECT * FROM drivers ORDER BY created_at, id').all();
@@ -269,6 +308,8 @@ function getState(db, user, auth = null) {
     roles_manage: isPrivileged || can('roles_manage'),
     settings_manage: can('settings_manage'),
     branding_manage: can('branding_manage'),
+    cost_centers_view: can('cost_centers_view'),
+    cost_centers_manage: can('cost_centers_manage'),
     export_data: can('export_data')
   };
 
@@ -278,13 +319,14 @@ function getState(db, user, auth = null) {
   if (moduleAccess.logbook_manage) moduleAccess.logbook_view = true;
   if (moduleAccess.maintenance_manage) moduleAccess.maintenance_view = true;
   if (moduleAccess.costs_manage) moduleAccess.costs_view = true;
+  if (moduleAccess.cost_centers_manage) moduleAccess.cost_centers_view = true;
 
   let ownTrips = null;
   if (moduleAccess.own_trips_view && linkedDriverRow) {
     const ownBookings = bookingRows
       .filter((row) => row.driver_id === linkedDriverRow.id && ['planned', 'active', 'completed'].includes(row.status))
       .sort((a, b) => String(b.start_at).localeCompare(String(a.start_at)) || String(b.id).localeCompare(String(a.id)))
-      .map((row) => mapOwnTrip(row, vehicleById.get(row.vehicle_id)));
+      .map((row) => mapOwnTrip(row, vehicleById.get(row.vehicle_id), costCenterFor(row)));
     const ownRequestRows = db.prepare(`
       SELECT * FROM booking_requests
       WHERE requested_by = ?
@@ -295,13 +337,17 @@ function getState(db, user, auth = null) {
         id: linkedDriverRow.id,
         name: linkedDriverRow.name,
         role: linkedDriverRow.role,
-        color: linkedDriverRow.color
+        color: linkedDriverRow.color,
+        ...costCenterFields(linkedDriverRow, costCenterFor(linkedDriverRow))
       },
       canRequest: moduleAccess.own_trips_request,
       canExecute: moduleAccess.own_trips_execute,
-      vehicles: vehicleRows.map(mapMinimalVehicle),
+      vehicles: vehicleRows.map((row) => mapMinimalVehicle(row, costCenterFor(row))),
       bookings: ownBookings,
-      requests: ownRequestRows.map((row) => mapBookingRequest(row, { vehicle: vehicleById.get(row.vehicle_id) }))
+      requests: ownRequestRows.map((row) => mapBookingRequest(row, {
+        vehicle: vehicleById.get(row.vehicle_id),
+        costCenter: costCenterFor(row)
+      }))
     };
   }
 
@@ -319,7 +365,8 @@ function getState(db, user, auth = null) {
       .map((row) => mapBookingRequest(row, {
         vehicle: vehicleById.get(row.vehicle_id),
         driver: driverById.get(row.driver_id),
-        requester: requesterById.get(row.requested_by)
+        requester: requesterById.get(row.requested_by),
+        costCenter: costCenterFor(row)
       }));
   }
 
@@ -353,15 +400,24 @@ function getState(db, user, auth = null) {
       modules: moduleAccess,
       objects: objectAccess
     },
-    vehicles: visibleVehicleRows.map(mapVehicle),
-    drivers: visibleDriverRows.map(mapDriver),
-    bookings: visibleBookingRows.map((row) => mapBooking(row, vehicleById.get(row.vehicle_id), driverById.get(row.driver_id))),
+    vehicles: visibleVehicleRows.map((row) => mapVehicle(row, costCenterFor(row))),
+    drivers: visibleDriverRows.map((row) => mapDriver(row, costCenterFor(row))),
+    bookings: visibleBookingRows.map((row) => mapBooking(
+      row,
+      vehicleById.get(row.vehicle_id),
+      driverById.get(row.driver_id),
+      costCenterFor(row)
+    )),
     maintenance: visibleMaintenanceRows.map(mapMaintenance),
-    costs: visibleCostRows.map(mapCost),
+    costs: visibleCostRows.map((row) => mapCost(row, costCenterFor(row))),
     ownTrips,
     bookingRequests,
     notificationReads
   };
+
+  if (moduleAccess.cost_centers_view) {
+    state.costCenters = costCenterRows.map(mapCostCenter);
+  }
 
   if (isPrivileged) {
     state.smtp = getPublicSmtpConfig(db);
@@ -396,7 +452,7 @@ function getState(db, user, auth = null) {
   const mapStateUser = (row) => {
     const linkedDriver = driverByUserId.get(row.id) || null;
     return {
-      ...mapUser(row),
+      ...mapUser(row, costCenterFor(row)),
       roleRank: roleRankById.get(row.role) || 0,
       driverId: linkedDriver?.id || null,
       driverName: linkedDriver?.name || '',
@@ -406,7 +462,7 @@ function getState(db, user, auth = null) {
 
   if (isPrivileged) {
     state.users = db.prepare(`
-      SELECT id, email, name, role, permission_overrides, object_permissions, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
+      SELECT id, email, name, role, permission_overrides, object_permissions, active, cost_center_id, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
       FROM users WHERE id <> ? AND role <> ? ORDER BY created_at, name
     `).all(SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID).map(mapStateUser);
     state.roles = visibleRoleRows.map(mapRoleState);
@@ -417,7 +473,7 @@ function getState(db, user, auth = null) {
       .map(mapRoleState);
     if (canManageUsers) {
       state.users = db.prepare(`
-        SELECT id, email, name, role, permission_overrides, object_permissions, active, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
+        SELECT id, email, name, role, permission_overrides, object_permissions, active, cost_center_id, last_login_at, deactivated_at, anonymized_at, created_at, updated_at
         FROM users WHERE id <> ? AND role <> ? ORDER BY created_at, name
       `).all(SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID)
         .map(mapStateUser)

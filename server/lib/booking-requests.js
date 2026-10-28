@@ -91,7 +91,7 @@ function cancelOpenBookingRequests(db, userId, { actorId = null, reason = 'reque
   return openRequests.length;
 }
 
-function mapBookingRequest(row, { vehicle = null, driver = null, requester = null } = {}) {
+function mapBookingRequest(row, { vehicle = null, driver = null, requester = null, costCenter = null } = {}) {
   return {
     id: row.id,
     vehicleId: row.vehicle_id,
@@ -100,6 +100,9 @@ function mapBookingRequest(row, { vehicle = null, driver = null, requester = nul
     vehiclePlate: vehicle?.plate || '',
     vehicleType: vehicle?.type || 'Pkw',
     vehicleColor: vehicle?.color || '#64748b',
+    costCenterId: row.cost_center_id || null,
+    costCenterCode: costCenter?.code || '',
+    costCenterName: costCenter?.name || '',
     driverName: driver?.name || '',
     requesterName: requester?.name || '',
     requesterRole: requester?.role || '',
