@@ -39,6 +39,7 @@ const {
   verifyRecoveryForUser
 } = require('./lib/mfa');
 const { startLeasingScheduler } = require('./lib/leasing');
+const { startMaintenanceReminderScheduler } = require('./lib/maintenance-reminders');
 const {
   ensureRoles,
   getRolePermissions,
@@ -226,6 +227,11 @@ try {
   startLeasingScheduler(db, { dataDir: DATA_DIR });
 } catch (error) {
   console.warn('Leasing-Prüfung konnte nicht gestartet werden:', error.message);
+}
+try {
+  startMaintenanceReminderScheduler(db, { dataDir: DATA_DIR });
+} catch (error) {
+  console.warn('Wartungs-Erinnerungen konnten nicht gestartet werden:', error.message);
 }
 
 app.disable('x-powered-by');
