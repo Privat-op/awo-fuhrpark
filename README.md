@@ -28,6 +28,10 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
 
+## Release v0.9.1
+
+UI- und Rechte-Fix: Fokusring-Kontrast (QS-012) behoben, dunkle Custom-Akzentfarben werden im Dark Mode aufgehellt, und Fahrzeuge mit Objekt-Deny `vehicles_view` erscheinen weder im Buchungsanfrage-Dropdown noch können sie per API angefragt werden. Keine Migration (`user_version = 7`).
+
 ## Release v0.9.0 (Paket 3)
 
 Paket 3 führt den Dark Mode ein. Der Stand ist **QS-freigegeben (54 Checks, Freigabe JA; ein niedriges Finding QS-012 im Backlog)** und wird als v0.9.0 deployed.
