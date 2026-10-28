@@ -41,6 +41,9 @@ function getBranding(settings = {}) {
   const accentDark = mixColor(accentColor, '#000000', isAwo ? 0.2 : 0.28);
   const accentDeep = mixColor(accentColor, '#000000', 0.65);
   const accentSoft = mixColor(accentColor, '#ffffff', 0.9);
+  const accentOnDark = isAwo ? '#ff5a6a' : mixColor(accentColor, '#ffffff', 0.5);
+  const accentDarkOnDark = mixColor(accentOnDark, '#000000', 0.2);
+  const accentSoftOnDark = mixColor(accentOnDark, '#111418', 0.82);
   const pageBackground = isAwo ? '#f4f5f7' : normalizeHex(settings.page_background, '#f4f5f7');
   const surfaceColor = isAwo ? '#ffffff' : normalizeHex(settings.surface_color, '#ffffff');
   const textColor = isAwo ? '#191c23' : normalizeHex(settings.text_color, '#191c23');
@@ -73,7 +76,11 @@ function getBranding(settings = {}) {
     accentDark,
     accentSoft,
     accentDeep,
+    accentOnDark,
+    accentDarkOnDark,
+    accentSoftOnDark,
     brandRgb: rgbTriplet(accentColor),
+    brandRgbOnDark: rgbTriplet(accentOnDark),
     pageBackground,
     surfaceColor,
     surface2Color,
@@ -83,7 +90,7 @@ function getBranding(settings = {}) {
     borderColor,
     lineSoftColor,
     sidebarStyle,
-    brandStyles: `--awo:${accentColor};--awo-dark:${accentDark};--awo-soft:${accentSoft};--brand-deep:${accentDeep};--brand-rgb:${rgbTriplet(accentColor)};--bg:${pageBackground};--surface:${surfaceColor};--surface-2:${surface2Color};--ink:${textColor};--ink-2:${ink2Color};--muted:${mutedColor};--line:${borderColor};--line-soft:${lineSoftColor};`,
+    brandStyles: `--awo:${accentColor};--awo-dark:${accentDark};--awo-soft:${accentSoft};--brand-deep:${accentDeep};--brand-rgb:${rgbTriplet(accentColor)};--awo-on-dark:${accentOnDark};--awo-dark-on-dark:${accentDarkOnDark};--awo-soft-on-dark:${accentSoftOnDark};--brand-rgb-on-dark:${rgbTriplet(accentOnDark)};--bg:${pageBackground};--surface:${surfaceColor};--surface-2:${surface2Color};--ink:${textColor};--ink-2:${ink2Color};--muted:${mutedColor};--line:${borderColor};--line-soft:${lineSoftColor};`,
     themeColor: accentColor,
     pageTitle: isAwo ? 'AWO · Fuhrparkmanagement' : name,
     loginPageTitle: isAwo ? 'Anmelden · AWO Fuhrparkmanagement' : `Anmelden · ${name}`,

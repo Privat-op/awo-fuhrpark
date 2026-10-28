@@ -175,7 +175,7 @@ function mapOwnTrip(row, vehicle, costCenter = null) {
   };
 }
 
-const { parsePermissions, parsePermissionOverrides, parseObjectPermissions, resolvePermission } = require('./permissions');
+const { parsePermissions, parsePermissionOverrides, parseObjectPermissions, resolvePermission, isObjectPermissionDenied } = require('./permissions');
 const { isRequestVisibleToApprover, mapBookingRequest, parseBookingRequestPolicy } = require('./booking-requests');
 const { SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID } = require('./superadmin');
 
@@ -243,6 +243,9 @@ function getState(db, user, auth = null) {
   });
 
   const visibleVehicleRows = vehicleRows.filter((row) => can('vehicles_view', { vehicle: row }));
+  const ownTripVehicleRows = visibleVehicleRows.length
+    ? visibleVehicleRows
+    : vehicleRows.filter((row) => !isObjectPermissionDenied(layers, 'vehicle', row.id, 'vehicles_view'));
   const visibleDriverRows = driverRows.filter((row) => can('drivers_view', { driver: row }));
   const visibleBookingRows = bookingRows.filter((row) => {
     const context = bookingContext(row);
@@ -346,7 +349,7 @@ function getState(db, user, auth = null) {
       },
       canRequest: moduleAccess.own_trips_request,
       canExecute: moduleAccess.own_trips_execute,
-      vehicles: vehicleRows.map((row) => mapMinimalVehicle(row, costCenterFor(row))),
+      vehicles: ownTripVehicleRows.map((row) => mapMinimalVehicle(row, costCenterFor(row))),
       bookings: ownBookings,
       requests: ownRequestRows.map((row) => mapBookingRequest(row, {
         vehicle: vehicleById.get(row.vehicle_id),
