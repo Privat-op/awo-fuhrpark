@@ -506,6 +506,9 @@ function getClientBranding() {
   const accentDark = mixHex(accentColor, '#000000', theme === 'awo' ? 0.2 : 0.28);
   const accentSoft = mixHex(accentColor, '#ffffff', 0.9);
   const accentDeep = mixHex(accentColor, '#000000', 0.65);
+  const accentOnDark = theme === 'awo' ? '#ff5a6a' : mixHex(accentColor, '#ffffff', 0.5);
+  const accentDarkOnDark = mixHex(accentOnDark, '#000000', 0.2);
+  const accentSoftOnDark = mixHex(accentOnDark, '#111418', 0.82);
   const pageBackground = theme === 'awo' ? '#f4f5f7' : normalizeHex(db.settings.pageBackground, '#f4f5f7');
   const surfaceColor = theme === 'awo' ? '#ffffff' : normalizeHex(db.settings.surfaceColor, '#ffffff');
   const textColor = theme === 'awo' ? '#191c23' : normalizeHex(db.settings.textColor, '#191c23');
@@ -535,7 +538,11 @@ function getClientBranding() {
     accentDark,
     accentSoft,
     accentDeep,
+    accentOnDark,
+    accentDarkOnDark,
+    accentSoftOnDark,
     brandRgb: rgbTriplet(accentColor),
+    brandRgbOnDark: rgbTriplet(accentOnDark),
     pageBackground,
     surfaceColor,
     surface2Color,
@@ -560,6 +567,10 @@ function applyBranding() {
   root.style.setProperty('--awo-soft', branding.accentSoft);
   root.style.setProperty('--brand-deep', branding.accentDeep);
   root.style.setProperty('--brand-rgb', branding.brandRgb);
+  root.style.setProperty('--awo-on-dark', branding.accentOnDark);
+  root.style.setProperty('--awo-dark-on-dark', branding.accentDarkOnDark);
+  root.style.setProperty('--awo-soft-on-dark', branding.accentSoftOnDark);
+  root.style.setProperty('--brand-rgb-on-dark', branding.brandRgbOnDark);
   root.style.setProperty('--bg', branding.pageBackground);
   root.style.setProperty('--surface', branding.surfaceColor);
   root.style.setProperty('--surface-2', branding.surface2Color);
