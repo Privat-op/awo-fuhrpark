@@ -39,6 +39,11 @@ const ADMIN_TWO = {
   password: 'Admin-Zwei-Test-2026',
   newPassword: 'Admin-Zwei-Neu-Test-2026'
 };
+const ADMIN_THREE = {
+  email: 'admin-three@example.invalid',
+  name: 'Dritter Administrator',
+  password: 'Admin-Drei-Test-2026'
+};
 
 let tempDir;
 let dbPath;
@@ -398,7 +403,7 @@ test('Rolle und Konto sind systemgeschützt, versteckt und nicht über die API z
   assert.equal(managerState.data.roles.some((entry) => entry.id === 'superadmin'), false, 'Nicht-Admins sehen die Superadmin-Rolle nicht');
 });
 
-test('Admins verwalten keine Admins; nur Superadmin verwaltet Admin-Konten inklusive Herabstufung', async () => {
+test('Admins verwalten keine Admins; nur Superadmin verwaltet Admin-Konten inklusive Herabstufung und Anonymisierung', async () => {
   const adminEditManager = await apiJson('admin', 'PATCH', `/api/users/${ids.manager}`, {
     name: 'Test Fuhrparkleitung',
     email: MANAGER_EMAIL,
@@ -499,8 +504,6 @@ test('Admins verwalten keine Admins; nur Superadmin verwaltet Admin-Konten inklu
   const adminTwoSession = await fetch(`${baseUrl}/api/session`, { headers: { cookie: cookies.adminTwo } });
   assert.equal(adminTwoSession.status, 401, 'Deaktivierter Admin muss sofort ausgeschlossen sein');
 
-  const anonymizeAdmin = await apiJson('superadmin', 'POST', `/api/users/${adminTwo.id}/anonymize`);
-  assert.equal(anonymizeAdmin.status, 409);
   const demoteLastAdmin = await apiJson('superadmin', 'PATCH', `/api/users/${ids.admin}`, {
     name: 'Test-Administrator',
     email: ADMIN_EMAIL,
@@ -539,8 +542,9 @@ test('Admins verwalten keine Admins; nur Superadmin verwaltet Admin-Konten inklu
   assert.equal(policyOn.status, 200);
   const afterAuto = db.prepare('SELECT * FROM users WHERE id = ?').get(adminTwo.id);
   assert.equal(afterAuto.active, 0);
-  assert.equal(afterAuto.anonymized_at, null, 'Administratorkonten dürfen nicht automatisch anonymisiert werden');
-  assert.equal(afterAuto.email, ADMIN_TWO.email);
+  assert.ok(afterAuto.anonymized_at, 'Deaktivierte Administratorkonten müssen nach Frist automatisch anonymisiert werden');
+  assert.equal(afterAuto.name, 'Anonymisiertes Konto');
+  assert.match(afterAuto.email, /^anonymized-/);
   const policyOff = await apiJson('superadmin', 'PATCH', '/api/user-policy', { autoAnonymizeDays: 0 });
   assert.equal(policyOff.status, 200);
   const reactivateAgain = await apiJson('superadmin', 'PATCH', `/api/users/${adminTwo.id}`, {
@@ -549,7 +553,29 @@ test('Admins verwalten keine Admins; nur Superadmin verwaltet Admin-Konten inklu
     role: 'admin',
     active: true
   });
-  assert.equal(reactivateAgain.status, 200);
+  assert.equal(reactivateAgain.status, 409, 'Anonymisierte Konten dürfen nicht reaktiviert werden');
+
+  const createAdminThree = await apiJson('superadmin', 'POST', '/api/users', {
+    name: ADMIN_THREE.name,
+    email: ADMIN_THREE.email,
+    role: 'admin',
+    password: ADMIN_THREE.password
+  });
+  assert.equal(createAdminThree.status, 201, createAdminThree.text);
+  const adminThree = db.prepare('SELECT * FROM users WHERE email = ?').get(ADMIN_THREE.email);
+  const deactivateAdminThree = await apiJson('superadmin', 'PATCH', `/api/users/${adminThree.id}`, {
+    name: ADMIN_THREE.name,
+    email: ADMIN_THREE.email,
+    role: 'admin',
+    active: false
+  });
+  assert.equal(deactivateAdminThree.status, 200);
+  const anonymizeAdmin = await apiJson('superadmin', 'POST', `/api/users/${adminThree.id}/anonymize`);
+  assert.equal(anonymizeAdmin.status, 200, anonymizeAdmin.text);
+  const anonymizedAdmin = db.prepare('SELECT * FROM users WHERE id = ?').get(adminThree.id);
+  assert.equal(anonymizedAdmin.name, 'Anonymisiertes Konto');
+  assert.match(anonymizedAdmin.email, /^anonymized-/);
+  assert.ok(anonymizedAdmin.anonymized_at);
 
   const updates = db.prepare(`
     SELECT * FROM audit_logs

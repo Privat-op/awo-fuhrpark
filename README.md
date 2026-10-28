@@ -215,7 +215,7 @@ Konten mit `users_manage` können Benutzer anlegen, bearbeiten, deaktivieren, an
 
 ### Superadmin
 
-Der Superadmin ist die oberste Verwaltungsinstanz. Er kann Administratorkonten anlegen, bearbeiten, deaktivieren und Passwörter zurücksetzen, aber niemals sich selbst, einen zweiten Superadmin oder die Superadmin-Rolle verwalten. Bestehende Administratorkonten können nicht herabgestuft, gelöscht oder anonymisiert werden; mindestens ein aktives Administratorkonto bleibt geschützt. Der Superadmin zählt nicht als „letzter aktiver Admin“.
+Der Superadmin ist die oberste Verwaltungsinstanz. Er kann Administratorkonten anlegen, bearbeiten, deaktivieren, herabstufen, Passwörter zurücksetzen und nach der Deaktivierung anonymisieren, aber niemals sich selbst, einen zweiten Superadmin oder die Superadmin-Rolle verwalten. Eine Löschroute für Konten gibt es nicht; mindestens ein aktives Administratorkonto bleibt geschützt. Der Superadmin zählt nicht als „letzter aktiver Admin“.
 
 - **Datei:** Pfad über `SUPERADMIN_FILE`. Docker-Default ist `/run/secrets/awo-superadmin.json`, außerhalb von Docker `/etc/awo-fuhrpark/superadmin.json`. Die Datei muss außerhalb von Repository, persistentem Daten-Volume und Backup liegen und sollte `root:root` mit `0600` gehören.
 - **Format:** JSON mit den Pflichtfeldern `email`, `name` und `passwordHash`. `passwordHash` ist ein bcrypt-Hash mit Cost 12; Klartextpasswörter werden nicht unterstützt. Der Hash wird offline erzeugt und niemals in Logs, Audit, Chat oder Dokumentation ausgegeben.
@@ -254,7 +254,7 @@ Das Verzeichnis muss für den Anwendungsbenutzer lesbar sein, ohne dass Klartext
 - **Grant Ceiling:** Nicht-Administratoren können nur Rechte weitergeben, die sie selbst effektiv global besitzen. Rollen mit Admin-only-Rechten (z. B. `branding_manage`) bleiben für sie gesperrt. Objektbezogene Sonderrechte zählen nicht als Grundlage für die Weitergabe.
 - Die Weitergabe von `users_manage` und `roles_manage` an strikt niedrigere Rollen ist erlaubt; jede Delegationsstufe bleibt an Rang und Grant Ceiling gebunden.
 - Der Widerruf ist **isoliert**: Entzieht eine übergeordnete Rolle ihre Verwaltungsrechte, bleiben bereits an untere Rollen vergebene Rechte bestehen. Der obere Rang kann sie bei Bedarf direkt bei den unteren Rollen entziehen; eine automatische Kaskade gibt es nicht.
-- Administratorkonten und die Administrator-Rolle sind geschützt. Administratoren können keine anderen Administratoren bearbeiten, deaktivieren oder zu Administratoren befördern. Nur der Superadmin verwaltet Administratorkonten; eine Herabstufung, Löschung oder Anonymisierung bestehender Administratorkonten ist ausgeschlossen. Mindestens ein aktives Administratorkonto bleibt geschützt.
+- Administratorkonten und die Administrator-Rolle sind geschützt. Administratoren können keine anderen Administratoren bearbeiten, deaktivieren oder zu Administratoren befördern. Nur der Superadmin verwaltet Administratorkonten; er kann sie herabstufen, deaktivieren und nach der Deaktivierung anonymisieren. Eine Löschroute gibt es nicht. Mindestens ein aktives Administratorkonto bleibt geschützt; das Superadmin-Konto ist von der Anonymisierung ausgenommen.
 - Änderungen an Rollen und Konten werden transaktional ausgeführt und auditiert.
 
 ### Fahrtenbuch-Rechte
@@ -388,7 +388,7 @@ Der Schlüssel liegt in `MFA_ENCRYPTION_KEY` oder automatisch in `DATA_DIR/mfa.k
 
 ## Benutzerkonten und Anonymisierung
 
-Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Die Deaktivierung lässt eine bestehende Fahrer-Konto-Verknüpfung unverändert; der Login ist gesperrt. Deaktivierte Konten können anschließend anonymisiert werden:
+Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Die Deaktivierung lässt eine bestehende Fahrer-Konto-Verknüpfung unverändert; der Login ist gesperrt. Deaktivierte Konten können anschließend anonymisiert werden – Administratorkonten nur durch den Superadmin; das Superadmin-Konto selbst bleibt ausgenommen:
 
 - Name, E-Mail-Adresse und Passwort werden dauerhaft entfernt.
 - Persönliche Rechte-Ausnahmen werden entfernt.
@@ -399,7 +399,7 @@ Aktive Konten werden nicht gelöscht, sondern können deaktiviert werden. Die De
 - E-Mail-Adressen in zugehörigen Audit-Einträgen werden bereinigt.
 - Das Konto bleibt deaktiviert und kann nicht reaktiviert werden.
 
-Unter **Benutzer → Automatische Anonymisierung** lässt sich eine globale Frist in Tagen einstellen. `0` deaktiviert die Automatik. Die Prüfung läuft beim Serverstart, nach dem Speichern der Frist und anschließend regelmäßig. Nur Konten, die bereits deaktiviert und älter als die Frist sind, werden erfasst. Diese globale Richtlinie bleibt in Etappe 1 Administrator:innen vorbehalten (`PATCH /api/user-policy`); delegierte Benutzerverwaltung umfasst sie nicht.
+Unter **Benutzer → Automatische Anonymisierung** lässt sich eine globale Frist in Tagen einstellen. `0` deaktiviert die Automatik. Die Prüfung läuft beim Serverstart, nach dem Speichern der Frist und anschließend regelmäßig. Erfasst werden alle Konten, die bereits deaktiviert und älter als die Frist sind – einschließlich Administratorkonten. Das Superadmin-Konto ist ausgenommen. Diese globale Richtlinie bleibt in Etappe 1 Administrator:innen vorbehalten (`PATCH /api/user-policy`); delegierte Benutzerverwaltung umfasst sie nicht.
 
 ## Erscheinungsbild
 

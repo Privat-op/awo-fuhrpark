@@ -1828,9 +1828,6 @@ router.post('/users/:id/anonymize', requirePermission('users_manage'), (req, res
     const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
     if (!existing) throw new HttpError(404, 'Benutzerkonto wurde nicht gefunden.');
     assertUserManageable(req, existing);
-    if (existing.role === ADMIN_ROLE_ID) {
-      throw new HttpError(409, 'Administratorkonten können nicht anonymisiert werden.');
-    }
     anonymizeUser(req.params.id, { actorId: req.user.id, reason: 'manual' });
     sendState(req, res);
   } catch (error) {

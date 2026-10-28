@@ -35,9 +35,6 @@ function anonymizeUser(userId, { actorId = null, reason = 'manual' } = {}) {
     if (user.id === SUPERADMIN_USER_ID || user.role === SUPERADMIN_ROLE_ID) {
       throw new HttpError(409, 'Das Superadmin-Konto kann nicht anonymisiert werden.');
     }
-    if (user.role === 'admin') {
-      throw new HttpError(409, 'Administratorkonten können nicht anonymisiert werden.');
-    }
     if (user.active) throw new HttpError(409, 'Nur deaktivierte Konten können anonymisiert werden.');
     if (user.anonymized_at) throw new HttpError(409, 'Dieses Konto wurde bereits anonymisiert.');
 
@@ -100,7 +97,7 @@ function getAutoAnonymizeCandidates() {
     SELECT id FROM users
     WHERE active = 0
       AND id <> ?
-      AND role NOT IN (?, 'admin')
+      AND role <> ?
       AND anonymized_at IS NULL
       AND deactivated_at IS NOT NULL
       AND deactivated_at <= ?
