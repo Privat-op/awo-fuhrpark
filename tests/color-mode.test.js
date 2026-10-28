@@ -126,6 +126,12 @@ test('CSS-Token-Vertrag: Light/Dark, color-scheme, Fokus und Print', () => {
   assert.match(print, /color-scheme:\s*light\s*!important/);
   assert.match(css, /\.color-mode-switch\s*\{/);
   assert.match(css, /\.color-mode-option\[aria-pressed="true"\]/);
+  const topbar = extractBlock(css, '.topbar');
+  assert.ok(topbar, '.topbar fehlt');
+  assert.match(topbar, /background:\s*var\(--topbar-bg\)/);
+  assert.match(topbar, /border-bottom:\s*1px solid var\(--topbar-border\)/);
+  assert.match(dark, /--topbar-bg:\s*rgba\(17,\s*20,\s*24,\s*\.88\)/);
+  assert.match(dark, /--topbar-border:\s*rgba\(45,\s*52,\s*62,\s*\.9\)/);
 
   for (const selector of ['.card', '.modal', '.input, .select, .textarea', '.data-table']) {
     const block = extractBlock(css, selector);
@@ -138,7 +144,7 @@ test('CSS-Token-Vertrag: Light/Dark, color-scheme, Fokus und Print', () => {
   assert.match(body, /background:\s*var\(--bg\)/);
 });
 
-test('UI enthält kompakten Header-Umschalter und Einstellungs-Umschalter mit ARIA und Icons', () => {
+test('UI enthält kompakten Header-Umschalter (Hell/Dunkel) und Einstellungs-Umschalter mit ARIA und Icons', () => {
   const index = read('server/views/index.html');
   const views = read('public/views.js');
   const app = read('public/app.js');
@@ -148,6 +154,7 @@ test('UI enthält kompakten Header-Umschalter und Einstellungs-Umschalter mit AR
   assert.match(index, /data-action="cycle-color-mode"/);
   assert.match(index, /aria-label="Farbschema wechseln"/);
   assert.doesNotMatch(index, /data-color-mode-option="light"/);
+  assert.doesNotMatch(index, /data-mode="auto"/);
   assert.ok(index.indexOf('<script>') < index.indexOf('styles.css'), 'Bootstrap vor CSS');
   assert.match(views, /function renderColorModeSwitch\(/);
   assert.match(views, /data-action="set-color-mode"/);
