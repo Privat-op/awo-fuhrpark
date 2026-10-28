@@ -100,6 +100,28 @@ function openConfirm({ title = 'Sind Sie sicher?', text = '', confirmLabel = 'Be
 /* =========================================================
    Buchungen
    ========================================================= */
+function costCenterSelectMarkup(id, selectedId = '') {
+  return `
+    <div class="field field-full">
+      <label for="${id}">Kostenstelle</label>
+      <select class="select" id="${id}" name="costCenterId">${costCenterOptionsMarkup(selectedId)}</select>
+      <p class="field-hint" id="${id}Hint"></p>
+    </div>`;
+}
+
+function costCenterSelectionHint(selectedId, defaultId, { driver = null, vehicle = null, user = null } = {}) {
+  if (!selectedId) return 'Ohne Kostenstelle – es wird keine Zuordnung übernommen.';
+  const source = driver?.costCenterId === selectedId
+    ? 'Fahrer:in'
+    : vehicle?.costCenterId === selectedId
+      ? 'Fahrzeug'
+      : user?.costCenterId === selectedId
+        ? 'Benutzerkonto'
+        : '';
+  if (selectedId === defaultId && source) return `Vorbelegt aus ${source}; die Auswahl kann geändert werden.`;
+  return 'Explizit ausgewählt; die Zuordnung wird als Snapshot gespeichert.';
+}
+
 function leasingBookingHintMarkup(vehicle) {
   const leasing = vehicle?.leasing;
   if (!leasing || !Array.isArray(leasing.warnings) || !leasing.warnings.length) return '';
@@ -139,6 +161,8 @@ function openBookingModal(prefill = {}) {
   const startTime = prefill.startTime || '09:00';
   const endTime = prefill.endTime || '11:00';
   const purpose = prefill.purpose || '';
+  const canSelectCostCenter = can('cost_centers_view');
+  const defaultCostCenterId = defaultBookingCostCenterId({ driver: selectedDriver, vehicle: selectedVehicle, user: currentUser });
 
   const vehicleOptions = availableVehicles.map((vehicle) => {
     const status = VEHICLE_STATUS[vehicle.status];
@@ -169,6 +193,7 @@ function openBookingModal(prefill = {}) {
               ${driverOptions}
             </select>
           </div>
+          ${canSelectCostCenter ? costCenterSelectMarkup('bookingCostCenter', defaultCostCenterId) : ''}
           <div class="field">
             <label for="bookingDate">Datum <span class="optional">*</span></label>
             <input class="input" id="bookingDate" name="date" type="date" value="${esc(date)}" required>
@@ -208,6 +233,28 @@ function openBookingModal(prefill = {}) {
   vehicleSelect?.addEventListener('change', refreshLeasingHint);
   refreshLeasingHint();
 
+  const driverSelect = $('#bookingDriver');
+  const costCenterSelect = $('#bookingCostCenter');
+  const costCenterHint = $('#bookingCostCenterHint');
+  let costCenterTouched = false;
+  const refreshCostCenter = () => {
+    if (!costCenterSelect) return;
+    const driver = getDriver(driverSelect?.value);
+    const vehicle = getVehicle(vehicleSelect?.value);
+    const nextDefault = defaultBookingCostCenterId({ driver, vehicle, user: currentUser });
+    if (!costCenterTouched && costCenterSelect.value !== nextDefault) costCenterSelect.value = nextDefault;
+    if (costCenterHint) {
+      costCenterHint.textContent = costCenterSelectionHint(costCenterSelect.value, nextDefault, { driver, vehicle, user: currentUser });
+    }
+  };
+  costCenterSelect?.addEventListener('change', () => {
+    costCenterTouched = true;
+    refreshCostCenter();
+  });
+  driverSelect?.addEventListener('change', refreshCostCenter);
+  vehicleSelect?.addEventListener('change', refreshCostCenter);
+  refreshCostCenter();
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearFormError(form);
@@ -239,7 +286,16 @@ function openBookingModal(prefill = {}) {
     try {
       const state = await apiFetch('/api/bookings', {
         method: 'POST',
-        body: { vehicleId, driverId, date: bookingDate, startTime: from, endTime: to, purpose: bookingPurpose, notes }
+        body: {
+          vehicleId,
+          driverId,
+          date: bookingDate,
+          startTime: from,
+          endTime: to,
+          purpose: bookingPurpose,
+          notes,
+          ...(costCenterSelect ? { costCenterId: costCenterSelect.value || null } : {})
+        }
       });
       const leasingWarning = state.leasingWarning;
       applyServerState(state);
@@ -272,6 +328,8 @@ function openBookingRequestModal(prefill = {}) {
   const selectedVehicle = prefill.vehicleId
     ? vehicles.find((vehicle) => vehicle.id === prefill.vehicleId && !vehicle.blocked)
     : vehicles.find((vehicle) => !vehicle.blocked && vehicle.status !== 'maintenance') || vehicles.find((vehicle) => !vehicle.blocked) || vehicles[0];
+  const canSelectCostCenter = can('cost_centers_view');
+  const defaultCostCenterId = defaultBookingCostCenterId({ driver: db.ownTrips.driver, vehicle: selectedVehicle, user: currentUser });
   const date = prefill.date || todayISO();
   const startTime = prefill.startTime || '09:00';
   const endTime = prefill.endTime || '11:00';
@@ -297,6 +355,7 @@ function openBookingRequestModal(prefill = {}) {
             <select class="select" id="requestVehicle" name="vehicleId" required>${vehicleOptions}</select>
             <div id="requestLeasingHint" hidden></div>
           </div>
+          ${canSelectCostCenter ? costCenterSelectMarkup('requestCostCenter', defaultCostCenterId) : ''}
           <div class="field">
             <label for="requestDate">Datum <span class="optional">*</span></label>
             <input class="input" id="requestDate" name="date" type="date" value="${esc(date)}" required>
@@ -337,6 +396,29 @@ function openBookingRequestModal(prefill = {}) {
   requestVehicleSelect?.addEventListener('change', refreshRequestLeasingHint);
   refreshRequestLeasingHint();
 
+  const requestCostCenterSelect = $('#requestCostCenter');
+  const requestCostCenterHint = $('#requestCostCenterHint');
+  let requestCostCenterTouched = false;
+  const refreshRequestCostCenter = () => {
+    if (!requestCostCenterSelect) return;
+    const vehicle = vehicles.find((entry) => entry.id === requestVehicleSelect?.value);
+    const nextDefault = defaultBookingCostCenterId({ driver: db.ownTrips.driver, vehicle, user: currentUser });
+    if (!requestCostCenterTouched && requestCostCenterSelect.value !== nextDefault) requestCostCenterSelect.value = nextDefault;
+    if (requestCostCenterHint) {
+      requestCostCenterHint.textContent = costCenterSelectionHint(requestCostCenterSelect.value, nextDefault, {
+        driver: db.ownTrips.driver,
+        vehicle,
+        user: currentUser
+      });
+    }
+  };
+  requestCostCenterSelect?.addEventListener('change', () => {
+    requestCostCenterTouched = true;
+    refreshRequestCostCenter();
+  });
+  requestVehicleSelect?.addEventListener('change', refreshRequestCostCenter);
+  refreshRequestCostCenter();
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearFormError(form);
@@ -370,7 +452,8 @@ function openBookingRequestModal(prefill = {}) {
           startTime: from,
           endTime: to,
           purpose,
-          notes: String(data.get('notes') || '').trim()
+          notes: String(data.get('notes') || '').trim(),
+          ...(requestCostCenterSelect ? { costCenterId: requestCostCenterSelect.value || null } : {})
         }
       });
       const warning = state.requestWarning;
@@ -486,6 +569,10 @@ function openBookingDetails(bookingId) {
           <div class="detail-list-item">
             <span class="mini-icon tint-amber">${icon('gauge')}</span>
             <div class="main"><strong>Kilometerstand</strong><span>${booking.startKm != null ? `${formatKm(booking.startKm)}${booking.endKm != null ? ` → ${formatKm(booking.endKm)}` : ' · Fahrt läuft'}` : 'Wird beim Start erfasst'}</span></div>
+          </div>
+          <div class="detail-list-item">
+            <span class="mini-icon tint-gray">${icon('receipt')}</span>
+            <div class="main"><strong>Kostenstelle</strong><span>${booking.costCenterId ? esc(`${booking.costCenterCode || ''}${booking.costCenterName ? ` · ${booking.costCenterName}` : ''}`) : 'Ohne Kostenstelle'}</span></div>
           </div>
           <div class="detail-list-item">
             <span class="mini-icon tint-gray">${icon('book')}</span>
@@ -741,6 +828,11 @@ function openVehicleModal(vehicleId = null) {
             <label for="vehicleDepartment">Abteilung / Einrichtung</label>
             <input class="input" id="vehicleDepartment" name="department" type="text" value="${esc(vehicle.department)}" placeholder="z. B. Ambulante Pflege">
           </div>
+          ${can('cost_centers_view') ? `<div class="field">
+            <label for="vehicleCostCenter">Kostenstelle</label>
+            <select class="select" id="vehicleCostCenter" name="costCenterId">${costCenterOptionsMarkup(vehicle.costCenterId)}</select>
+            <p class="field-hint">Default für Buchungen und Kosten dieses Fahrzeugs.</p>
+          </div>` : ''}
           <div class="form-section-title">Betrieb & Termine</div>
           <div class="field">
             <label for="vehicleMileage">Kilometerstand</label>
@@ -888,6 +980,7 @@ function openVehicleModal(vehicleId = null) {
       status: String(data.get('status') || 'available'),
       location: String(data.get('location') || '').trim(),
       department: String(data.get('department') || '').trim(),
+      costCenterId: String(data.get('costCenterId') || '') || null,
       mileage: Math.max(0, Number(data.get('mileage')) || 0),
       insurance: String(data.get('insurance') || '').trim(),
       nextService: String(data.get('nextService') || ''),
@@ -933,6 +1026,7 @@ function vehicleMutationPayload(vehicle, overrides = {}) {
     status: vehicle.status,
     location: vehicle.location || '',
     department: vehicle.department || '',
+    costCenterId: vehicle.costCenterId || '',
     mileage: vehicle.mileage,
     nextService: vehicle.nextService || '',
     tuv: vehicle.tuv || '',
@@ -1083,6 +1177,7 @@ function openVehicleDetails(vehicleId) {
         <div class="detail-stat"><span>${icon('wrench')} Inspektion</span><strong>${formatDate(vehicle.nextService)}</strong></div>
         <div class="detail-stat"><span>${icon('fuel')} Kraftstoff</span><strong>${esc(vehicle.fuel)}</strong></div>
         <div class="detail-stat"><span>${icon('seat')} Sitzplätze</span><strong>${vehicle.seats}</strong></div>
+        <div class="detail-stat"><span>${icon('receipt')} Kostenstelle</span><strong>${vehicle.costCenterCode ? esc(vehicle.costCenterCode) : 'Ohne'}</strong></div>
         ${vehicle.leasing?.kmLimit ? `<div class="detail-stat"><span>${icon('calendar')} Leasing-Restkm</span><strong>${vehicle.leasing.remainingKm < 0 ? `−${formatKm(Math.abs(vehicle.leasing.remainingKm))}` : formatKm(vehicle.leasing.remainingKm)}</strong></div>` : ''}
         ${vehicle.leasing?.end ? `<div class="detail-stat"><span>${icon('calendar')} Leasingende</span><strong>${formatDate(vehicle.leasing.end)}</strong></div>` : ''}
         ${showCosts ? `<div class="detail-stat"><span>${icon('receipt')} Kosten 6 Monate</span><strong>${formatMoney(costTotal)}</strong></div>` : ''}
@@ -1214,6 +1309,139 @@ function openMaintenanceModal() {
   });
 }
 
+function openCostCenterModal(costCenterId = null) {
+  if (!can('cost_centers_manage')) {
+    toast('Keine Berechtigung', 'Für die Verwaltung von Kostenstellen fehlt die Berechtigung „Kostenstellen verwalten“.', 'error');
+    return;
+  }
+  const existing = costCenterId ? (db.costCenters || []).find((entry) => entry.id === costCenterId) : null;
+  const costCenter = existing || { code: '', name: '', description: '', active: true };
+  showModal({
+    title: existing ? 'Kostenstelle bearbeiten' : 'Kostenstelle anlegen',
+    eyebrow: 'Kostenstellen',
+    subtitle: existing ? `${costCenter.code} · ${costCenter.name}` : 'Neue Kostenstelle für die Zuordnung von Fahrzeugen, Buchungen und Kosten.',
+    size: 'modal-sm',
+    body: `
+      <form id="costCenterForm" novalidate autocomplete="off">
+        ${formAlertMarkup()}
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="costCenterCode">Code <span class="optional">*</span></label>
+            <input class="input" id="costCenterCode" name="code" type="text" value="${esc(costCenter.code)}" placeholder="z. B. KST-100" maxlength="40" required>
+            <p class="field-hint">Wird normalisiert (Großschreibung, Leerzeichen als Bindestrich) und muss eindeutig sein.</p>
+          </div>
+          <div class="field field-full">
+            <label for="costCenterName">Bezeichnung <span class="optional">*</span></label>
+            <input class="input" id="costCenterName" name="name" type="text" value="${esc(costCenter.name)}" placeholder="z. B. Ambulante Pflege" maxlength="160" required>
+          </div>
+          <div class="field field-full">
+            <label for="costCenterDescription">Beschreibung <span class="optional">optional</span></label>
+            <textarea class="textarea" id="costCenterDescription" name="description" rows="2" maxlength="500" placeholder="Interne Hinweise zur Kostenstelle …">${esc(costCenter.description || '')}</textarea>
+          </div>
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" id="costCenterActive" name="active" ${costCenter.active ? 'checked' : ''}> Kostenstelle aktiv</label>
+            <p class="field-hint">Inaktive Kostenstellen bleiben historisch sichtbar, können aber nicht neu zugeordnet werden.</p>
+          </div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="costCenterForm">${icon('check')} ${existing ? 'Änderungen speichern' : 'Kostenstelle anlegen'}</button>`
+  });
+
+  const form = $('#costCenterForm');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const code = String(data.get('code') || '').trim();
+    const name = String(data.get('name') || '').trim();
+    if (!code || !name) {
+      showFormError(form, 'Bitte geben Sie Code und Bezeichnung an.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="costCenterForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch(existing ? `/api/cost-centers/${encodeURIComponent(existing.id)}` : '/api/cost-centers', {
+        method: existing ? 'PATCH' : 'POST',
+        body: {
+          code,
+          name,
+          description: String(data.get('description') || '').trim(),
+          active: data.get('active') === 'on'
+        }
+      });
+      applyServerState(state);
+      closeModal(false);
+      if (ui.route === 'einstellungen') renderCurrentView();
+      toast(existing ? 'Kostenstelle aktualisiert' : 'Kostenstelle angelegt', `${code} · ${name} wurde gespeichert.`);
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function toggleCostCenterActive(costCenterId) {
+  const costCenter = (db.costCenters || []).find((entry) => entry.id === costCenterId);
+  if (!costCenter) return;
+  const nextActive = !costCenter.active;
+  openConfirm({
+    title: nextActive ? 'Kostenstelle aktivieren?' : 'Kostenstelle deaktivieren?',
+    text: nextActive
+      ? `<strong>${esc(costCenter.code)} · ${esc(costCenter.name)}</strong> kann danach wieder neu zugeordnet werden.`
+      : `<strong>${esc(costCenter.code)} · ${esc(costCenter.name)}</strong> bleibt historisch sichtbar, kann aber nicht mehr neu zugeordnet werden. Bestehende Zuordnungen bleiben unverändert.`,
+    confirmLabel: nextActive ? 'Aktivieren' : 'Deaktivieren',
+    danger: !nextActive,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/cost-centers/${encodeURIComponent(costCenter.id)}`, {
+          method: 'PATCH',
+          body: {
+            code: costCenter.code,
+            name: costCenter.name,
+            description: costCenter.description || '',
+            active: nextActive
+          }
+        });
+        applyServerState(state);
+        renderCurrentView();
+        toast(nextActive ? 'Kostenstelle aktiviert' : 'Kostenstelle deaktiviert', `${costCenter.code} wurde aktualisiert.`);
+      } catch (error) {
+        toast('Kostenstelle konnte nicht aktualisiert werden', error.message, 'error');
+      }
+    }
+  });
+}
+
+function deleteCostCenter(costCenterId) {
+  const costCenter = (db.costCenters || []).find((entry) => entry.id === costCenterId);
+  if (!costCenter) return;
+  const usageTotal = Number(costCenter.usage?.total) || 0;
+  if (usageTotal > 0) {
+    toast('Kostenstelle wird verwendet', 'Löschen ist nur ohne Zuordnungen möglich. Deaktivieren Sie die Kostenstelle stattdessen.', 'error');
+    return;
+  }
+  openConfirm({
+    title: 'Kostenstelle löschen?',
+    text: `<strong>${esc(costCenter.code)} · ${esc(costCenter.name)}</strong> wird dauerhaft entfernt. Diese Aktion ist nur ohne bestehende Zuordnungen möglich.`,
+    confirmLabel: 'Kostenstelle löschen',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/cost-centers/${encodeURIComponent(costCenter.id)}`, { method: 'DELETE' });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Kostenstelle gelöscht', `${costCenter.code} wurde entfernt.`);
+      } catch (error) {
+        toast('Kostenstelle konnte nicht gelöscht werden', error.message, 'error');
+      }
+    }
+  });
+}
+
 function openCostModal() {
   if (!can('costs_manage')) {
     toast('Keine Berechtigung', 'Ihre Rolle darf Kosten nicht erfassen.', 'error');
@@ -1225,6 +1453,8 @@ function openCostModal() {
     return;
   }
   const vehicleOptions = vehicles.map((vehicle) => `<option value="${vehicle.id}">${esc(vehicle.name)} · ${esc(vehicle.plate)}</option>`).join('');
+  const canSelectCostCenter = can('cost_centers_view');
+  const defaultCostCenterId = defaultCostCostCenterId({ vehicle: vehicles[0], user: currentUser });
   let pendingReceipt = null;
   showModal({
     title: 'Kosten erfassen',
@@ -1238,6 +1468,7 @@ function openCostModal() {
             <label for="costVehicle">Fahrzeug <span class="optional">*</span></label>
             <select class="select" id="costVehicle" name="vehicleId" required>${vehicleOptions}</select>
           </div>
+          ${canSelectCostCenter ? costCenterSelectMarkup('costCostCenter', defaultCostCenterId) : ''}
           <div class="field">
             <label for="costDate">Datum <span class="optional">*</span></label>
             <input class="input" id="costDate" name="date" type="date" value="${todayISO()}" required>
@@ -1279,10 +1510,30 @@ function openCostModal() {
   });
 
   const form = $('#costForm');
+  const costVehicleSelect = $('#costVehicle');
+  const costCenterSelect = $('#costCostCenter');
+  const costCenterHint = $('#costCostCenterHint');
   const receiptInput = $('#costReceiptInput');
   const receiptPreview = $('#costReceiptPreview');
   const removeReceiptButton = $('#costReceiptRemove');
   const uploadBox = $('#costReceiptUpload');
+
+  let costCenterTouched = false;
+  const refreshCostCenter = () => {
+    if (!costCenterSelect) return;
+    const vehicle = getVehicle(costVehicleSelect?.value);
+    const nextDefault = defaultCostCostCenterId({ vehicle, user: currentUser });
+    if (!costCenterTouched && costCenterSelect.value !== nextDefault) costCenterSelect.value = nextDefault;
+    if (costCenterHint) {
+      costCenterHint.textContent = costCenterSelectionHint(costCenterSelect.value, nextDefault, { vehicle, user: currentUser });
+    }
+  };
+  costCenterSelect?.addEventListener('change', () => {
+    costCenterTouched = true;
+    refreshCostCenter();
+  });
+  costVehicleSelect?.addEventListener('change', refreshCostCenter);
+  refreshCostCenter();
 
   const refreshReceiptPreview = () => {
     if (!pendingReceipt) {
@@ -1354,7 +1605,8 @@ function openCostModal() {
           category: String(data.get('category') || 'Sonstiges'),
           amount,
           note: String(data.get('note') || '').trim(),
-          receipt: pendingReceipt
+          receipt: pendingReceipt,
+          ...(costCenterSelect ? { costCenterId: costCenterSelect.value || null } : {})
         }
       });
       applyServerState(state);
@@ -1438,8 +1690,9 @@ function openDriverModal(driverId = null) {
     return;
   }
   const existing = driverId ? getDriver(driverId) : null;
-  const defaults = { name: '', role: '', department: '', phone: '', email: '', status: 'available', license: ['B'] };
+  const defaults = { name: '', role: '', department: '', phone: '', email: '', status: 'available', license: ['B'], costCenterId: null };
   const driver = existing || defaults;
+  const canSelectCostCenter = can('cost_centers_view');
   const title = existing ? 'Fahrer:in bearbeiten' : 'Fahrer:in anlegen';
 
   showModal({
@@ -1463,6 +1716,11 @@ function openDriverModal(driverId = null) {
             <label for="driverDepartment">Abteilung</label>
             <input class="input" id="driverDepartment" name="department" type="text" value="${esc(driver.department)}" placeholder="z. B. Ambulante Pflege">
           </div>
+          ${canSelectCostCenter ? `<div class="field">
+            <label for="driverCostCenter">Kostenstelle</label>
+            <select class="select" id="driverCostCenter" name="costCenterId">${costCenterOptionsMarkup(driver.costCenterId)}</select>
+            <p class="field-hint">Default für Buchungen dieser Fahrer:in.</p>
+          </div>` : ''}
           <div class="field">
             <label for="driverStatus">Status</label>
             <select class="select" id="driverStatus" name="status">
@@ -1517,6 +1775,7 @@ function openDriverModal(driverId = null) {
       email: String(data.get('email') || '').trim(),
       status: String(data.get('status') || 'available'),
       license: licenses,
+      costCenterId: String(data.get('costCenterId') || '') || null,
       color: existing?.color
     };
     const submitButton = modalRoot.querySelector('button[form="driverForm"]');
@@ -1672,7 +1931,8 @@ function openUserModal(userId = null) {
   const defaultRole = existing?.role && roles.some((role) => role.id === existing.role)
     ? existing.role
     : roles.find((role) => role.id === 'manager')?.id || roles[0].id;
-  const user = existing || { name: '', email: '', role: defaultRole, active: true, driverId: null, ownTripsAccess: true };
+  const user = existing || { name: '', email: '', role: defaultRole, active: true, driverId: null, ownTripsAccess: true, costCenterId: null };
+  const canSelectCostCenter = can('cost_centers_view');
   const roleLocked = existing?.role === 'admin' && !capabilities.isSuperadmin;
   const roleHint = roleLocked
     ? 'Administratorkonten behalten die Administrator-Rolle; eine Herabstufung ist nicht möglich.'
@@ -1707,6 +1967,11 @@ function openUserModal(userId = null) {
             <select class="select" id="accountRole" name="role" ${roleLocked ? 'disabled' : ''}>${roleOptions}</select>
             <p class="field-hint">${roleHint}</p>
           </div>
+          ${canSelectCostCenter ? `<div class="field">
+            <label for="accountCostCenter">Kostenstelle</label>
+            <select class="select" id="accountCostCenter" name="costCenterId">${costCenterOptionsMarkup(user.costCenterId)}</select>
+            <p class="field-hint">Default für Buchungen, wenn weder Fahrer:in noch Fahrzeug eine Kostenstelle haben.</p>
+          </div>` : ''}
           <div class="field">
             <label for="accountPassword">${existing ? 'Neues Passwort' : 'Passwort'} ${existing ? '<span class="optional">optional</span>' : '<span class="optional">*</span>'}</label>
             <input class="input" id="accountPassword" name="password" type="password" autocomplete="new-password" minlength="10" placeholder="${existing ? 'Leer lassen, um nichts zu ändern' : 'Mindestens 10 Zeichen'}">
@@ -1761,7 +2026,8 @@ function openUserModal(userId = null) {
       role: String(data.get('role') || defaultRole),
       active: existing ? data.get('active') === 'on' : true,
       driverId: driverId || null,
-      ownTripsAccess: Boolean(driverId) && data.get('ownTripsAccess') === 'on'
+      ownTripsAccess: Boolean(driverId) && data.get('ownTripsAccess') === 'on',
+      ...(data.has('costCenterId') ? { costCenterId: String(data.get('costCenterId') || '') || null } : {})
     };
     if (password) body.password = password;
     const submitButton = modalRoot.querySelector('button[form="userForm"]');
@@ -2355,6 +2621,8 @@ function openLogModal() {
   const initialStart = firstVehicle ? firstVehicle.mileage : 0;
   const vehicleOptions = vehicles.map((vehicle) => `<option value="${vehicle.id}">${esc(vehicle.name)} · ${esc(vehicle.plate)}</option>`).join('');
   const driverOptions = drivers.map((driver) => `<option value="${driver.id}">${esc(driver.name)}</option>`).join('');
+  const canSelectCostCenter = can('cost_centers_view');
+  const defaultCostCenterId = defaultBookingCostCenterId({ driver: drivers[0], vehicle: firstVehicle, user: currentUser });
 
   showModal({
     title: 'Fahrt nachtragen',
@@ -2374,6 +2642,7 @@ function openLogModal() {
             <label for="logDriver">Fahrer:in <span class="optional">*</span></label>
             <select class="select" id="logDriver" name="driverId" required>${driverOptions}</select>
           </div>
+          ${canSelectCostCenter ? costCenterSelectMarkup('logCostCenter', defaultCostCenterId) : ''}
           <div class="field">
             <label for="logDate">Datum <span class="optional">*</span></label>
             <input class="input" id="logDate" name="date" type="date" value="${todayISO()}" required>
@@ -2428,6 +2697,26 @@ function openLogModal() {
     kmHint.hidden = false;
   };
 
+  const driverSelect = $('#logDriver');
+  const logCostCenterSelect = $('#logCostCenter');
+  const logCostCenterHint = $('#logCostCenterHint');
+  let logCostCenterTouched = false;
+  const refreshLogCostCenter = () => {
+    if (!logCostCenterSelect) return;
+    const vehicle = getVehicle(vehicleSelect.value);
+    const driver = getDriver(driverSelect?.value);
+    const nextDefault = defaultBookingCostCenterId({ driver, vehicle, user: currentUser });
+    if (!logCostCenterTouched && logCostCenterSelect.value !== nextDefault) logCostCenterSelect.value = nextDefault;
+    if (logCostCenterHint) {
+      logCostCenterHint.textContent = costCenterSelectionHint(logCostCenterSelect.value, nextDefault, { driver, vehicle, user: currentUser });
+    }
+  };
+  logCostCenterSelect?.addEventListener('change', () => {
+    logCostCenterTouched = true;
+    refreshLogCostCenter();
+  });
+  driverSelect?.addEventListener('change', refreshLogCostCenter);
+
   vehicleSelect.addEventListener('change', () => {
     const vehicle = getVehicle(vehicleSelect.value);
     if (vehicle) {
@@ -2435,9 +2724,11 @@ function openLogModal() {
       endKmInput.value = Number(vehicle.mileage) + 20;
     }
     updateKmHint();
+    refreshLogCostCenter();
   });
   startKmInput.addEventListener('input', updateKmHint);
   updateKmHint();
+  refreshLogCostCenter();
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -2477,7 +2768,8 @@ function openLogModal() {
           purpose,
           startKm,
           endKm,
-          notes: String(data.get('notes') || '').trim()
+          notes: String(data.get('notes') || '').trim(),
+          ...(logCostCenterSelect ? { costCenterId: logCostCenterSelect.value || null } : {})
         }
       });
       const leasingWarning = state.leasingWarning;

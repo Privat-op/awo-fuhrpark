@@ -38,15 +38,15 @@ const ALL_NAV_ROUTES = NAV_GROUPS.flat();
 const SESSION_ROLES = {
   admin: {
     nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen'],
-    settings: { organisation: true, branding: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: true },
+    settings: { organisation: true, branding: true, costCenters: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: true },
     eyebrow: 'Organisation',
-    subtitle: 'Organisation, Erscheinungsbild, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
+    subtitle: 'Organisation, Erscheinungsbild, Kostenstellen, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
   },
   manager: {
     nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen'],
-    settings: { organisation: true, branding: false, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: false },
+    settings: { organisation: true, branding: false, costCenters: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Organisation',
-    subtitle: 'Organisation, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
+    subtitle: 'Organisation, Kostenstellen, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
   },
   usersRoles: {
     nav: ['dashboard', 'audit', 'benutzer', 'rollen', 'einstellungen'],
@@ -469,6 +469,7 @@ test('Einstellungen zeigen nur die erlaubten Karten und keine Berechtigungshinwe
     const settings = expected.settings;
     assert.equal(html.includes('id="settingsForm"'), settings.organisation, `Organisationsformular für ${key}`);
     assert.equal(html.includes('id="brandingForm"'), settings.branding, `Branding-Karte für ${key}`);
+    assert.equal(html.includes('id="costCentersCard"'), Boolean(settings.costCenters), `Kostenstellen-Karte für ${key}`);
     assert.equal(html.includes('<h3 class="card-title">Datenexport</h3>'), settings.export, `Datenexport-Karte für ${key}`);
     assert.equal(html.includes('href="#/benutzer"'), settings.users, `Benutzerlink für ${key}`);
     assert.equal(html.includes('href="#/rollen"'), settings.roles, `Rollenlink für ${key}`);

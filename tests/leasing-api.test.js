@@ -253,7 +253,7 @@ after(async () => {
 });
 
 test('Migration 5 ist aktiv, Leasing-Spalten und Tabellen sind vorhanden', () => {
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 5);
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 6);
   const columns = db.prepare('PRAGMA table_info(vehicles)').all().map((column) => column.name);
   for (const column of ['leasing_start', 'leasing_end', 'leasing_start_km', 'leasing_km_limit']) {
     assert.ok(columns.includes(column), `Leasing-Spalte fehlt: ${column}`);
