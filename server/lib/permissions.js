@@ -122,6 +122,7 @@ const ROLE_SCHEMA_VERSION = 3;
 const RANK_ADMIN = 1000000;
 const RANK_MANAGER = 900000;
 const RANK_CUSTOM_BASE = 100000;
+const RANK_USER = 10000;
 
 const OBJECT_TYPES = [
   {
@@ -379,10 +380,11 @@ function ensureRoles(db) {
   const insert = db.prepare(`
     INSERT INTO roles (id, name, permissions, object_permissions, is_system, rank, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO NOTHING
+    ON CONFLICT DO NOTHING
   `);
   insert.run('admin', 'Administrator', JSON.stringify(ALL_PERMISSIONS), '{}', 1, RANK_ADMIN, now, now);
   insert.run('manager', 'Fuhrparkleitung', JSON.stringify(normalizePermissions(DEFAULT_MANAGER_PERMISSIONS)), '{}', 1, RANK_MANAGER, now, now);
+  insert.run('user', 'Standardbenutzer', JSON.stringify(normalizePermissions(['own_trips_view', 'own_trips_request', 'own_trips_execute'])), '{}', 1, RANK_USER, now, now);
 
   db.prepare("UPDATE roles SET permissions = ?, object_permissions = '{}', rank = ? WHERE id = 'admin'")
     .run(JSON.stringify(ALL_PERMISSIONS), RANK_ADMIN);

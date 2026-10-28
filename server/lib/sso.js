@@ -35,7 +35,7 @@ function getSsoConfig() {
   const scopes = String(process.env.SSO_SCOPES || 'openid profile email').trim();
   const allowedDomains = splitList(process.env.SSO_ALLOWED_DOMAINS).map((entry) => entry.toLowerCase());
   const autoProvision = truthy(process.env.SSO_AUTO_PROVISION);
-  const defaultRole = String(process.env.SSO_DEFAULT_ROLE || 'manager').trim();
+  const defaultRole = String(process.env.SSO_DEFAULT_ROLE || 'user').trim();
   const groupClaim = String(process.env.SSO_GROUP_CLAIM || 'groups').trim();
   const adminGroup = String(process.env.SSO_ADMIN_GROUP || '').trim();
   const managerGroup = String(process.env.SSO_MANAGER_GROUP || '').trim();
@@ -288,17 +288,27 @@ function resolveSsoUser(db, config, claims, { now = new Date() } = {}) {
   if (!roleRow || role === 'superadmin') return { ok: false, reason: 'role' };
   const id = crypto.randomUUID();
   const passwordHash = bcrypt.hashSync(crypto.randomBytes(32).toString('base64url'), 12);
+  let driverCreated = false;
   db.transaction(() => {
     db.prepare(`
       INSERT INTO users (id, email, name, password_hash, role, active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)
     `).run(id, claims.email, claims.name, passwordHash, role, nowISO, nowISO);
     upsertSsoLink(db, id, config, claims, nowISO);
+    if (role === 'user') {
+      db.prepare(`
+        INSERT INTO drivers
+          (id, name, role, department, phone, email, license, status, color, user_id, own_trips_access, created_at, updated_at)
+        VALUES (?, ?, 'Mitarbeiter:in', '', '', ?, '["B"]', 'available', '#2563eb', ?, 1, ?, ?)
+      `).run(crypto.randomUUID(), claims.name, claims.email, id, nowISO, nowISO);
+      driverCreated = true;
+    }
   })();
   return {
     ok: true,
     user: db.prepare('SELECT * FROM users WHERE id = ?').get(id),
     provisioned: true,
+    driverCreated,
     roleChanged: false,
     role
   };

@@ -7,7 +7,7 @@
 ## Highlights
 
 - Optionale Passkeys als zweiter Faktor nach dem Passwort.
-- Optionales OIDC-SSO für Microsoft Entra ID mit PKCE, State/Nonce, Gruppenmapping und JIT-Provisioning.
+- Optionales OIDC-SSO für Microsoft Entra ID mit PKCE, State/Nonce, Gruppenmapping und JIT-Provisioning; Standardrolle `user` inklusive automatisch verknüpftem Fahrerprofil.
 - Optionaler Microsoft-Teams-Incoming-Webhook für Leasing, Buchungsanfragen und Wartungs-/TÜV-Erinnerungen.
 - Optionale ClamAV-Prüfung für Uploads.
 - Technische DSGVO-Retention für Audit, Sessions, Reset-Tokens und Notification-Deliveries inklusive Dry-Run.

@@ -9,7 +9,7 @@
 - Generischer Authorization-Code-Flow mit PKCE (S256), State und Nonce.
 - Routen `/auth/sso/start` und `/auth/sso/callback`; State/Nonce/PKCE sind sessiongebunden, einmalig und 10 Minuten gültig.
 - ID-Token-Prüfung: Signatur über JWKS, Issuer, Audience, Ablauf/Not-before, Nonce, `email_verified` (falls vorhanden), E-Mail-Domain-Allowlist.
-- Konto-Verknüpfung per E-Mail; JIT-Provisioning optional mit `SSO_DEFAULT_ROLE`. Superadmin wird nie automatisch angelegt oder hochgestuft; Superadmin-, inaktive und anonymisierte Konten werden abgelehnt.
+- Konto-Verknüpfung per E-Mail; JIT-Provisioning optional mit `SSO_DEFAULT_ROLE` (Standard `user`). Bei der Standardrolle wird automatisch ein verknüpftes Fahrerprofil mit `own_trips_access=1` angelegt. Superadmin wird nie automatisch angelegt oder hochgestuft; Superadmin-, inaktive und anonymisierte Konten werden abgelehnt.
 - Gruppenmapping über `SSO_GROUP_CLAIM`, `SSO_ADMIN_GROUP`, `SSO_MANAGER_GROUP`. Kein Treffer lässt bestehende Rollen unverändert.
 - Lokaler Login bleibt Fallback. Session-Regeneration nach Erfolg; Audit `sso_login`, `sso_provision`, `sso_failed` ohne Tokens/Secrets.
 - Kein passwordless Login; SSO ist ein primärer Loginweg, Passkeys bleiben zweiter Faktor des lokalen Logins.

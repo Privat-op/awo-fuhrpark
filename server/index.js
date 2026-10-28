@@ -552,7 +552,7 @@ app.get('/auth/sso/callback', ssoLimiter, async (req, res, next) => {
         action: 'sso_provision',
         entityType: 'user',
         entityId: resolved.user.id,
-        details: { role: resolved.role }
+        details: { role: resolved.role, driverCreated: Boolean(resolved.driverCreated) }
       });
     }
     return res.redirect(303, '/');

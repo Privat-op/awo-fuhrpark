@@ -222,7 +222,7 @@ before(async () => {
       SSO_SCOPES: 'openid profile email',
       SSO_ALLOWED_DOMAINS: 'example.invalid',
       SSO_AUTO_PROVISION: 'true',
-      SSO_DEFAULT_ROLE: 'manager',
+      SSO_DEFAULT_ROLE: 'user',
       SSO_GROUP_CLAIM: 'groups',
       SSO_ADMIN_GROUP: 'admin-group',
       SSO_MANAGER_GROUP: 'manager-group',
@@ -319,10 +319,17 @@ test('JIT-Provisioning legt ein Konto mit Default-Rolle an', async () => {
   assert.equal(result.response.status, 303);
   const user = db.prepare('SELECT * FROM users WHERE email = ? COLLATE NOCASE').get(email);
   assert.ok(user);
-  assert.equal(user.role, 'manager');
+  assert.equal(user.role, 'user');
   assert.equal(user.active, 1);
   assert.ok(db.prepare("SELECT 1 FROM user_sso WHERE user_id = ? AND subject = 'subject-jit'").get(user.id));
-  assert.ok(db.prepare("SELECT 1 FROM audit_logs WHERE action = 'sso_provision' AND entity_id = ?").get(user.id));
+  const driver = db.prepare('SELECT * FROM drivers WHERE user_id = ?').get(user.id);
+  assert.ok(driver);
+  assert.equal(driver.email, email);
+  assert.equal(driver.name, 'JIT User');
+  assert.equal(driver.own_trips_access, 1);
+  const provisionAudit = db.prepare("SELECT details FROM audit_logs WHERE action = 'sso_provision' AND entity_id = ?").get(user.id);
+  assert.ok(provisionAudit);
+  assert.match(provisionAudit.details, /"driverCreated":true/);
 });
 
 test('Gruppenmapping hebt bestehende Nutzer auf Admin, nie auf Superadmin', async () => {

@@ -9,7 +9,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - **Optionale MFA:** TOTP über Authenticator-App plus 10 einmalige Recovery-Codes, freiwillig pro Konto aktivierbar; kein Zwang, kein Step-up
 - **Optionale Passkeys:** WebAuthn/Passkey als zweiter Faktor nach dem Passwort, mehrere Geräte pro Konto, Fallback auf TOTP/Recovery; kein passwordless Login
 - **Optionales SSO:** generischer OIDC-Authorization-Code-Flow mit PKCE, State und Nonce, Entra-ID-Gruppenmapping, optionalem JIT-Provisioning; lokaler Login bleibt Fallback
-- Rollen: **Administrator** und **Fuhrparkleitung** sowie frei anlegbare Rollen
+- Rollen: **Administrator**, **Fuhrparkleitung**, **Standardbenutzer** sowie frei anlegbare Rollen
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
 - Automatische Anonymisierung deaktivierter Konten nach einer global einstellbaren Frist
@@ -228,6 +228,7 @@ Danach den Container neu starten. Der Server sollte nicht ungeschützt direkt au
 | Superadmin | Sonderrolle mit Rang 2.000.000, systemgeschützt, ausschließlich über die Superadmin-Datei konfiguriert; nicht über UI/API anlegbar, zuweisbar, änderbar oder löschbar |
 | Administrator | Alle Fuhrparkfunktionen, Einstellungen sowie Benutzer- und Rollenverwaltung; immer vollständig, systemgeschützt und nicht über die Benutzerverwaltung vergebbar |
 | Fuhrparkleitung | Standardrolle mit allen Fuhrparkfunktionen, Einstellungen, den delegierten Rechten `users_manage`/`roles_manage` sowie `audit_view` (ohne `audit_view_all`); Rechte, Rang und Objekt-Ausnahmen können angepasst werden |
+| Standardbenutzer | Minimale Rolle für eigene Fahrten (`own_trips_view/request/execute`); systemgeschützt, Rang 10.000, für JIT-SSO-Konten mit automatisch verknüpftem Fahrerprofil |
 | Eigene Rollen | Frei anlegbare Rollen mit individuellem Rang, Modulrechten und Objekt-Ausnahmen |
 
 Konten mit `users_manage` können Benutzer anlegen, bearbeiten, deaktivieren, anonymisieren, Benutzer-Ausnahmen pflegen und Fahrer-Konten verknüpfen. Konten mit `roles_manage` verwalten Rollen, Ränge, Objekt-Ausnahmen und die Buchungsanfrage-Policy. Beide Rechte sind getrennt vergebbar. Die Fuhrparkleitung erhält zusätzlich `booking_requests_manage`. Jede Person kann ihr eigenes Passwort unter **Einstellungen** ändern – ausgenommen der Superadmin, dessen Passwort ausschließlich aus der Datei stammt.
@@ -456,7 +457,7 @@ Passkeys sind ein optionaler zweiter Faktor nach korrektem Passwort. Es gibt **k
 SSO ist standardmäßig deaktiviert (`SSO_ENABLED` fehlt oder ist `0`). Der lokale Login bleibt immer verfügbar, insbesondere für den Superadmin.
 
 - **Ablauf:** `/auth/sso/start` erzeugt State, Nonce und PKCE; `/auth/sso/callback` prüft State/Nonce, tauscht den Code ein und validiert das ID-Token strikt (Signatur über JWKS, Issuer, Audience, Ablauf, `email_verified` falls vorhanden, Domain-Allowlist).
-- **Konto-Verknüpfung:** bestehende aktive Konten werden per E-Mail verknüpft. Mit `SSO_AUTO_PROVISION=true` werden unbekannte Konten mit `SSO_DEFAULT_ROLE` angelegt. Superadmin wird nie automatisch angelegt oder hochgestuft; Superadmin-, inaktive und anonymisierte Konten werden abgelehnt.
+- **Konto-Verknüpfung:** bestehende aktive Konten werden per E-Mail verknüpft. Mit `SSO_AUTO_PROVISION=true` werden unbekannte Konten mit `SSO_DEFAULT_ROLE` (Standard `user`) angelegt; bei der Standardrolle wird zusätzlich ein verknüpftes Fahrerprofil erstellt. Superadmin wird nie automatisch angelegt oder hochgestuft; Superadmin-, inaktive und anonymisierte Konten werden abgelehnt.
 - **Gruppen:** `SSO_GROUP_CLAIM` (Standard `groups`) wird gegen `SSO_ADMIN_GROUP` und `SSO_MANAGER_GROUP` gemappt. Ohne Treffer bleibt die bestehende Rolle erhalten; JIT nutzt `SSO_DEFAULT_ROLE`.
 - **Sicherheit:** State/Nonce/PKCE sind sessiongebunden, einmalig und 10 Minuten gültig. Sessions werden nach Erfolg regeneriert. Audit-Einträge `sso_login`, `sso_provision`, `sso_failed` enthalten keine Tokens, Codes oder Secrets.
 - **Entra-App-Registrierung:** Redirect-URI exakt auf `SSO_REDIRECT_URI` setzen (z. B. `https://fuhrpark.example.org/auth/sso/callback`), Client-ID und Client-Secret hinterlegen, optional Token-/Group-Claims für `groups` konfigurieren. `SSO_ISSUER` ist der Tenant-Issuer (z. B. `https://login.microsoftonline.com/<tenant-id>/v2.0`). `SSO_ALLOWED_DOMAINS` beschränkt die zulässigen E-Mail-Domains; leer bedeutet keine zusätzliche Domain-Beschränkung.
@@ -550,7 +551,7 @@ Der Lasttest ist kein Produktions-Benchmark und darf nicht gegen den Produktivse
 | `SSO_SCOPES` | Standard `openid profile email`. |
 | `SSO_ALLOWED_DOMAINS` | Kommagetrennte E-Mail-Domains; leer = keine zusätzliche Beschränkung. |
 | `SSO_AUTO_PROVISION` | `true` legt unbekannte Konten automatisch an; Standard aus. |
-| `SSO_DEFAULT_ROLE` | Rolle für JIT-Konten, Standard `manager`; `superadmin` ist nie zulässig. |
+| `SSO_DEFAULT_ROLE` | Rolle für JIT-Konten, Standard `user` (Standardbenutzer, inkl. Fahrerprofil); `superadmin` ist nie zulässig. |
 | `SSO_GROUP_CLAIM`, `SSO_ADMIN_GROUP`, `SSO_MANAGER_GROUP` | Gruppen-Claim und Gruppen-IDs für das Rollenmapping. |
 | `TEAMS_WEBHOOK_URL` | Optionaler Incoming-Webhook für Teams; leer = deaktiviert. Nicht loggen/committen. |
 | `VIRUS_SCAN_ENABLED` | `1` aktiviert die ClamAV-Prüfung; Standard aus. |
