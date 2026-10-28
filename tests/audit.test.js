@@ -755,7 +755,7 @@ test('Meta-Audit: Lesezugriff wird ohne Inhalte protokolliert, nur für All/Admi
 test('Manager erhält audit_view per Default, audit_view_all ist innerhalb Grant Ceiling delegierbar', async () => {
   assert.ok(sessions.manager.permissions.includes('audit_view'));
   assert.equal(sessions.manager.permissions.includes('audit_view_all'), false);
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 9);
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 10);
 
   const denied = await apiJson('manager', 'POST', '/api/roles', {
     name: 'Audit-Delegation vor Grant',
