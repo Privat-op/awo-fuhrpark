@@ -5,6 +5,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 ## Funktionen
 
 - Zentrale Anmeldung mit Sessions, CSRF-Schutz und Rate-Limits
+- **Passwort vergessen:** Self-Service-Link mit 60-Minuten-Token, Einmalverwendung, generischer Antwort und Invalidierung aller Sitzungen
 - **Optionale MFA:** TOTP über Authenticator-App plus 10 einmalige Recovery-Codes, freiwillig pro Konto aktivierbar; kein Zwang, kein Step-up
 - Rollen: **Administrator** und **Fuhrparkleitung** sowie frei anlegbare Rollen
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
@@ -12,7 +13,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Automatische Anonymisierung deaktivierter Konten nach einer global einstellbaren Frist
 - Fahrzeuge mit Bild-Upload, Standort, Kilometerstand, HU/AU und Service
 - Leasingüberwachung mit Laufzeit, Gesamt-Kilometerlimit, Warnschwellen 80/90/100 % und Erinnerungen 90/30 Tage vor Leasingende
-- Optionaler E-Mail-Versand an Fuhrparkleitung und Administration bei Leasing-Schwellen; SMTP-Konfiguration ausschließlich für Administrator:innen
+- Optionaler E-Mail-Versand an Fuhrparkleitung und Administration bei Leasing-Schwellen, Buchungsanfragen sowie Wartungs-/TÜV-Erinnerungen; SMTP-Konfiguration ausschließlich für Administrator:innen
 - Dauerhafte Fahrzeug-Sperre mit Begründung, Audit und serverseitiger 409-Sperre für neue Buchungen und Anfragen
 - Buchungen mit serverseitiger Konfliktprüfung für Fahrzeug und Fahrer:in
 - Eigene Fahrten: verknüpfte Fahrer:innen sehen ausschließlich ihre eigenen Buchungen und können Buchungsanfragen stellen
@@ -22,6 +23,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Kostenverwaltung inklusive Beleg-Upload (JPG, PNG, PDF)
 - Kostenstellen als Stammdatum mit Zuordnung zu Fahrzeugen, Fahrer:innen und Benutzerkonten, Default-Übernahme in Buchungen/Kosten, Filtern, Summen und Export
 - Dashboard, Suche und Benachrichtigungen mit Gelesen-Status
+- **Auto-Refresh:** Übersichten aktualisieren den Server-State alle 60 Sekunden, nur bei sichtbarem Tab und pausiert bei Modals, Formularfokus und verstecktem Tab
 - **Globales Erscheinungsbild:** Allgemeines AWO-Theme mit offiziellem Logo oder neutrales Theme mit eigenem Anzeigenamen, optionalem Logo, Akzentfarbe, weiteren Farben und Sidebar-Stil inklusive Live-Vorschau
 - **Farbschema:** Hell, Dunkel oder Automatik pro Nutzerkonto, globaler Default durch die Administration, konsistente Dark-Mode-Tokens für AWO und neutral, Login und Druckansicht
 - DATEV-unabhängiger JSON-Export und CSV-Export des Fahrtenbuchs; beide serverseitig berechtigungsgeprüft und audit-protokolliert
@@ -332,7 +334,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 7`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 9`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 
@@ -342,11 +344,14 @@ Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 7`
 - Der Scheduler prüft beim Start und anschließend alle sechs Stunden. Nach Kilometeränderungen (Fahrzeugbearbeitung, Fahrtende, Nachtragung) wird zusätzlich eine gedebouncte Prüfung ausgelöst. In Tests oder Sonderfällen kann er mit `LEASING_SCHEDULER_DISABLED=true` deaktiviert werden.
 - SMTP-Einstellungen sind nur für Administrator:innen sichtbar und änderbar. Das Passwort wird **nicht** in der Datenbank, im State, im Export oder im Audit gespeichert, sondern ausschließlich in `smtp-secret.json` im Datenverzeichnis (Dateirechte 0600 auf Linux). Das Backup-Skript sichert Datenbank und Uploads, **nicht** die Secret-Datei; nach einer Wiederherstellung muss das SMTP-Passwort neu gesetzt werden. Die Test-E-Mail geht an die angemeldete Administrator:in.
 - Ohne aktivierte und vollständige SMTP-Konfiguration wird keine Mail versendet; die Anwendung bleibt funktionsfähig.
+- **Buchungsanfragen:** Beim Eingang werden aktive Administrator:innen, Fuhrparkleitung und Konten mit `booking_requests_manage` informiert. Bei Genehmigung oder Ablehnung erhält die anfragende Person eine Entscheidungsmail. Dedupe verhindert Doppelversendungen; Mailfehler blockieren die API-Aktion nicht.
+- **Wartung/TÜV:** Der Scheduler erinnert 30, 14 und 7 Tage vor Fälligkeit sowie bei Überfälligkeit an offene Wartungen, HU/AU und Service/Inspektion. Empfänger sind aktive Administrator:innen und Fuhrparkleitung; Dedupe gilt pro Fahrzeug/Typ/Schwelle. Die Prüfung läuft beim Start und anschließend alle sechs Stunden und kann mit `REMINDER_SCHEDULER_DISABLED=true` deaktiviert werden.
 
 ## Passwörter ändern
 
 - **Normale Benutzer und Admins:** **Einstellungen → Ihr Konto → Passwort ändern**. Das aktuelle Passwort und ein neues Passwort mit mindestens 10 Zeichen eingeben. Das Hashen übernimmt die Anwendung.
-- **Superadmin:** Kein UI-Passwortwechsel. Ein neues Passwort wird lokal mit bcrypt (Cost 12) gehasht und als `passwordHash` in der Superadmin-Datei eingetragen; anschließend Container/Service neu starten.
+- **Passwort vergessen:** Auf der Loginseite führt **Passwort zurücksetzen** zu `/forgot-password`. Nach der Anfrage wird immer dieselbe generische Antwort angezeigt. Der Link ist 60 Minuten gültig, nur einmal verwendbar und beendet nach dem Setzen des neuen Passworts alle Sitzungen des Kontos. Voraussetzung für den Versand ist eine vollständige SMTP-Konfiguration und eine korrekte `APP_BASE_URL`.
+- **Superadmin:** Kein UI-Passwortwechsel. Ein neues Passwort wird lokal mit bcrypt (Cost 12) gehasht und als `passwordHash` in der Superadmin-Datei eingetragen; anschließend Container/Service neu starten. Der Self-Service-Passwort-Reset gilt nicht für den Superadmin.
 
 Der Helper gibt ausschließlich den bcrypt-Hash aus; das Passwort wird nicht gespeichert oder geloggt. Der Hash wird in `passwordHash` der Superadmin-Datei übernommen. Kein Klartextpasswort in die Datei schreiben.
 
@@ -445,6 +450,10 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 | `APP_PORT` | Host-Port für Docker Compose, Standard `3000` |
 | `DATA_DIR` | Datenverzeichnis im Container, Standard `/app/data` |
 | `MFA_ENCRYPTION_KEY` | Optional; 32 Byte als Base64 oder 64 Hex-Zeichen. Fehlt sie, wird `DATA_DIR/mfa.key` automatisch erzeugt. Ein gesetzter, ungültiger Wert bricht den Start ab. |
+| `APP_BASE_URL` | Öffentliche Basis-URL für Passwort-Reset-Links, z. B. `https://fuhrpark.example.org`. Fehlt sie, wird die Host-Information der Anfrage verwendet. |
+| `REMINDER_INTERVAL_MS` | Intervall des Wartungs-/TÜV-Schedulers in Millisekunden, Standard sechs Stunden. |
+| `REMINDER_INITIAL_DELAY_MS` | Verzögerung des ersten Wartungs-/TÜV-Laufs, Standard fünf Sekunden. |
+| `REMINDER_SCHEDULER_DISABLED` | `true` deaktiviert den Wartungs-/TÜV-Scheduler. |
 
 ## Dateien
 
