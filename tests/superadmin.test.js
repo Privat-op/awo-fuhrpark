@@ -398,7 +398,7 @@ test('Rolle und Konto sind systemgeschützt, versteckt und nicht über die API z
   assert.equal(managerState.data.roles.some((entry) => entry.id === 'superadmin'), false, 'Nicht-Admins sehen die Superadmin-Rolle nicht');
 });
 
-test('Admins verwalten keine Admins; nur Superadmin verwaltet Admin-Konten ohne Demotion/Löschung', async () => {
+test('Admins verwalten keine Admins; nur Superadmin verwaltet Admin-Konten inklusive Herabstufung', async () => {
   const adminEditManager = await apiJson('admin', 'PATCH', `/api/users/${ids.manager}`, {
     name: 'Test Fuhrparkleitung',
     email: MANAGER_EMAIL,
@@ -466,7 +466,27 @@ test('Admins verwalten keine Admins; nur Superadmin verwaltet Admin-Konten ohne 
     role: 'manager',
     active: true
   });
-  assert.equal(demoteAdmin.status, 409);
+  assert.equal(demoteAdmin.status, 200, `Superadmin muss Admin herabstufen dürfen: ${demoteAdmin.text}`);
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(adminTwo.id).role, 'manager');
+  const demotedSession = await fetch(`${baseUrl}/api/session`, { headers: { cookie: cookies.adminTwo } });
+  assert.equal(demotedSession.status, 200);
+  const demotedSessionData = await demotedSession.json();
+  assert.equal(demotedSessionData.user.role, 'manager');
+  assert.equal(demotedSessionData.user.isAdmin, false, 'Herabgestufter Admin darf keine Admin-Rechte mehr haben');
+  const demotionAudit = db.prepare(`
+    SELECT * FROM audit_logs
+    WHERE action = 'update' AND entity_type = 'user' AND entity_id = ?
+    ORDER BY id DESC LIMIT 1
+  `).get(adminTwo.id);
+  assert.match(demotionAudit.details || '', /"role":"manager"/);
+
+  const repromoteAdmin = await apiJson('superadmin', 'PATCH', `/api/users/${adminTwo.id}`, {
+    name: 'Zweiter Administrator Neu',
+    email: ADMIN_TWO.email,
+    role: 'admin',
+    active: true
+  });
+  assert.equal(repromoteAdmin.status, 200);
   assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(adminTwo.id).role, 'admin');
 
   const deactivateAdminTwo = await apiJson('superadmin', 'PATCH', `/api/users/${adminTwo.id}`, {
@@ -481,6 +501,14 @@ test('Admins verwalten keine Admins; nur Superadmin verwaltet Admin-Konten ohne 
 
   const anonymizeAdmin = await apiJson('superadmin', 'POST', `/api/users/${adminTwo.id}/anonymize`);
   assert.equal(anonymizeAdmin.status, 409);
+  const demoteLastAdmin = await apiJson('superadmin', 'PATCH', `/api/users/${ids.admin}`, {
+    name: 'Test-Administrator',
+    email: ADMIN_EMAIL,
+    role: 'manager',
+    active: true
+  });
+  assert.equal(demoteLastAdmin.status, 400, 'Der letzte aktive Admin darf nicht herabgestuft werden');
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(ids.admin).role, 'admin');
   const deactivateLastAdmin = await apiJson('superadmin', 'PATCH', `/api/users/${ids.admin}`, {
     name: 'Test-Administrator',
     email: ADMIN_EMAIL,

@@ -1357,9 +1357,6 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
     const email = emailValue(body.email, 'E-Mail');
     const name = requiredString(body.name, 'Name', { max: 120 });
     const role = assertRoleGrantable(req, requiredString(body.role, 'Rolle', { max: 120 })).id;
-    if (existing.role === ADMIN_ROLE_ID && role !== ADMIN_ROLE_ID) {
-      throw new HttpError(409, 'Bestehende Administratorkonten können nicht herabgestuft werden.');
-    }
     const active = booleanValue(body.active, Boolean(existing.active));
     assertLastActiveAdminChange(existing, role, active);
     const duplicate = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE AND id <> ?').get(email, existing.id);

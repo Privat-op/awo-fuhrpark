@@ -1599,7 +1599,12 @@ function openUserModal(userId = null) {
     ? existing.role
     : roles.find((role) => role.id === 'manager')?.id || roles[0].id;
   const user = existing || { name: '', email: '', role: defaultRole, active: true, driverId: null, ownTripsAccess: true };
-  const roleLocked = existing?.role === 'admin';
+  const roleLocked = existing?.role === 'admin' && !capabilities.isSuperadmin;
+  const roleHint = roleLocked
+    ? 'Administratorkonten behalten die Administrator-Rolle; eine Herabstufung ist nicht möglich.'
+    : existing?.role === 'admin'
+      ? 'Als Superadmin können Sie die Administrator-Rolle entziehen. Mindestens ein aktives Administratorkonto muss bestehen bleiben.'
+      : 'Nur Rollen unterhalb Ihres Rangs und innerhalb Ihres Grant Ceilings sind auswählbar. Die Superadmin-Rolle ist nicht vergebbar.';
   const roleOptions = roles.map((role) => `<option value="${esc(role.id)}" ${user.role === role.id ? 'selected' : ''}>${esc(role.name)} · Rang ${formatNumber(role.rank)}</option>`).join('');
   const driverOptions = [`<option value="">Keine Verknüpfung</option>`]
     .concat((db.driversForLinking || []).map((driver) => {
@@ -1626,7 +1631,7 @@ function openUserModal(userId = null) {
           <div class="field">
             <label for="accountRole">Rolle</label>
             <select class="select" id="accountRole" name="role" ${roleLocked ? 'disabled' : ''}>${roleOptions}</select>
-            <p class="field-hint">${roleLocked ? 'Administratorkonten behalten die Administrator-Rolle; eine Herabstufung ist nicht möglich.' : 'Nur Rollen unterhalb Ihres Rangs und innerhalb Ihres Grant Ceilings sind auswählbar. Die Superadmin-Rolle ist nicht vergebbar.'}</p>
+            <p class="field-hint">${roleHint}</p>
           </div>
           <div class="field">
             <label for="accountPassword">${existing ? 'Neues Passwort' : 'Passwort'} ${existing ? '<span class="optional">optional</span>' : '<span class="optional">*</span>'}</label>
