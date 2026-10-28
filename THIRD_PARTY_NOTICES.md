@@ -17,3 +17,7 @@ Paket: `nodemailer` (MIT-Lizenz), eingesetzt für den optionalen SMTP-Versand vo
 ## qrcode
 
 Paket: `qrcode` (MIT-Lizenz), eingesetzt zur serverseitigen Erzeugung der TOTP-Enrollment-QR-Codes. Weitere Informationen: https://github.com/soldair/node-qrcode
+
+## SimpleWebAuthn
+
+Pakete: `@simplewebauthn/server` und `@simplewebauthn/browser` (MIT-Lizenz), eingesetzt für WebAuthn-Registrierung, Assertion-Verifikation und die Browser-Bibliothek. Weitere Informationen: https://simplewebauthn.dev/

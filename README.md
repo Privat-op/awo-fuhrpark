@@ -7,6 +7,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Zentrale Anmeldung mit Sessions, CSRF-Schutz und Rate-Limits
 - **Passwort vergessen:** Self-Service-Link mit 60-Minuten-Token, Einmalverwendung, generischer Antwort und Invalidierung aller Sitzungen
 - **Optionale MFA:** TOTP über Authenticator-App plus 10 einmalige Recovery-Codes, freiwillig pro Konto aktivierbar; kein Zwang, kein Step-up
+- **Optionale Passkeys:** WebAuthn/Passkey als zweiter Faktor nach dem Passwort, mehrere Geräte pro Konto, Fallback auf TOTP/Recovery; kein passwordless Login
 - Rollen: **Administrator** und **Fuhrparkleitung** sowie frei anlegbare Rollen
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
@@ -30,6 +31,18 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - **Audit-Log für alle angemeldeten Nutzer:** serverseitig begrenzte Sicht (eigene Aktionen, Rangbereich oder alle Aktivitäten), Suche/Filter, Maskierung, Meta-Audit und Pagination
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
+
+## Release v0.11.0 (Optionale Passkeys)
+
+v0.11.0 ergänzt WebAuthn/Passkeys als optionalen zweiten Faktor nach dem Passwort. Kein passwordless Login, kein Enforcement, kein Step-up; TOTP/Recovery bleiben Fallback.
+
+- **Registrierung:** Passkey unter **Einstellungen → Sicherheit** mit Passwortbestätigung hinzufügen; mehrere Geräte pro Konto, Umbenennen und Entfernen.
+- **Login:** Nach dem Passwort kann neben TOTP/Recovery ein hinterlegter Passkey verwendet werden; die Session wird nach erfolgreicher Assertion regeneriert.
+- **Sicherheit:** Origin/RP-ID/Challenge/Signatur strikt geprüft, `userVerification: required`, Counter-Rückschritt entfernt den Passkey, 5 Fehlversuche/15 Minuten Lockout, CSRF auf allen Änderungen.
+- **Admin-Reset:** löscht Passkeys zusammen mit TOTP/Recovery und beendet Ziel-Sitzungen; Audit `passkey_reset` ohne Credential-Daten.
+- **Migration:** `user_version = 10` (`user_passkeys`, `passkey_attempts`).
+
+Details: [Feature-Doku v0.11.0 Passkeys](FEATURE_DOKU_v0.11.0_Passkeys.md).
 
 ## Release v0.10.0 (Optionale MFA)
 
@@ -224,7 +237,7 @@ Der Superadmin ist die oberste Verwaltungsinstanz. Er kann Administratorkonten a
 - **Bootstrap:** Beim Start wird nach Schema-/Rollenmigration ein Konto mit fester ID `superadmin`, der Rolle `superadmin` und `active=1` idempotent angelegt oder aktualisiert. Fehlt die Datei oder ist sie ungültig, wird nur gewarnt, ein vorhandenes Konto wird `active=0` gesetzt und der Superadmin-Login ist gesperrt; das System läuft normal weiter. Es gibt keinen Fallback auf einen alten Hash und keine Löschung oder Anonymisierung.
 - **Rotation/Recovery:** Datei ersetzen und Dienst bzw. Container neu starten. Änderungen an E-Mail oder Hash sowie eine Reaktivierung invalidieren alle Superadmin-Sessions. Jede Änderung wird als `superadmin_update` ohne Secret auditiert; eine Sperrung als `superadmin_disabled`.
 - **Schutz:** Keine UI-/API-Route zum Anlegen, Ändern oder Löschen des Superadmins. Das Konto ist in Benutzerliste und Datenexport vollständig ausgeblendet; die Rolle erscheint im Rollenbaum systemgeschützt mit Schloss. Superadmin-Ereignisse bleiben für berechtigte `audit_view_all`- und Administrator-Konten im Audit sichtbar.
-- **MFA:** optional für alle Konten einschließlich Superadmin. Der Superadmin richtet TOTP wie jede andere Person selbst ein; bei Totalverlust greift der dokumentierte Betriebsweg über Superadmin-Datei/DB. Passkeys/WebAuthn sind nicht enthalten.
+- **MFA und Passkeys:** optional für alle Konten einschließlich Superadmin. Der Superadmin richtet TOTP und Passkeys wie jede andere Person selbst ein; bei Totalverlust greift der dokumentierte Betriebsweg über Superadmin-Datei/DB. Passkeys sind ein zweiter Faktor, kein passwordless Login.
 
 Beispiel für die Dateistruktur (Werte ersetzen; kein echter Hash im Repository):
 
@@ -334,7 +347,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 9`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 10`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 
@@ -385,11 +398,22 @@ Unter **Einstellungen → Sicherheit** kann jedes Konto freiwillig TOTP aktivier
 1. **TOTP einrichten** öffnet QR-Code und manuelles Secret für eine Authenticator-App.
 2. Nach Bestätigung eines 6-stelligen Codes werden **10 Recovery-Codes** einmalig angezeigt. Sie können kopiert oder als Textdatei gespeichert werden und sind danach nicht erneut abrufbar.
 3. **Deaktivieren** und **Recovery-Codes neu ausgeben** verlangen einen aktuellen TOTP- oder Recovery-Code.
-4. Beim Login erscheint nach korrektem Passwort nur bei aktivierter MFA die Seite `/login/mfa` mit TOTP- und Recovery-Option.
+4. Beim Login erscheint nach korrektem Passwort nur bei aktivierter MFA bzw. hinterlegten Passkeys die Seite `/login/mfa` mit TOTP-, Recovery- und Passkey-Option.
 
 Sicherheitsregeln: maximal 5 Fehlversuche pro 15 Minuten, danach 15 Minuten Sperre; TOTP akzeptiert ±1 Zeitschritt und verhindert Replay; Recovery-Codes sind einmalig. Administrator:innen können MFA für Konten mit strikt niedrigerem Rang zurücksetzen, der Superadmin für jedes Konto. Dabei werden die Ziel-Sitzungen beendet und ein Audit-Eintrag ohne Geheimnisse geschrieben.
 
 Der Schlüssel liegt in `MFA_ENCRYPTION_KEY` oder automatisch in `DATA_DIR/mfa.key` (0600). **Schlüssel und Datenbank gemeinsam sichern:** Bei Schlüsselverlust sind bestehende TOTP-Secrets nicht mehr entschlüsselbar und müssen per Admin-Reset neu eingerichtet werden.
+
+## Optionale Passkeys (WebAuthn)
+
+Passkeys sind ein optionaler zweiter Faktor nach korrektem Passwort. Es gibt **kein passwordless Login**; TOTP und Recovery-Codes bleiben als Fallback verfügbar.
+
+- Unter **Einstellungen → Sicherheit** können mehrere Passkeys hinzugefügt, umbenannt und entfernt werden. Vor dem Hinzufügen ist das aktuelle Passwort erforderlich.
+- Der Login zeigt nach dem Passwort zusätzlich **Mit Passkey anmelden**, sofern Passkeys hinterlegt und WebAuthn im Browser verfügbar sind. Browser ohne WebAuthn blenden die Funktion aus.
+- Registrierung und Login verlangen `userVerification: required`; Challenge, Origin und RP-ID werden serverseitig strikt geprüft. Ein Counter-Rückschritt entfernt den betroffenen Passkey als kompromittiert.
+- Nach Entfernen eines Passkeys werden alle Sitzungen des Kontos beendet. Der Admin-Reset löscht Passkeys, TOTP und Recovery-Codes gemeinsam und auditiert `passkey_reset` ohne Credential-Daten.
+- Konfiguration ausschließlich über `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_NAME` und `WEBAUTHN_ORIGIN` (kommagetrennt). Die Werte werden **nicht** aus dem Host-Header abgeleitet. Fehlt die Konfiguration, sind die Passkey-Endpunkte sauber deaktiviert.
+- Die Challenge liegt ausschließlich in der Session, ist an das Konto gebunden, fünf Minuten gültig und einmalig. Credential-IDs, Public Keys und Challenges erscheinen nicht in State, Export, Audit oder Logs.
 
 ## Benutzerkonten und Anonymisierung
 
@@ -450,6 +474,9 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 | `APP_PORT` | Host-Port für Docker Compose, Standard `3000` |
 | `DATA_DIR` | Datenverzeichnis im Container, Standard `/app/data` |
 | `MFA_ENCRYPTION_KEY` | Optional; 32 Byte als Base64 oder 64 Hex-Zeichen. Fehlt sie, wird `DATA_DIR/mfa.key` automatisch erzeugt. Ein gesetzter, ungültiger Wert bricht den Start ab. |
+| `WEBAUTHN_RP_ID` | RP-ID der Passkey-Domain, z. B. `fuhrpark.example.org`; ohne Schema/Port. |
+| `WEBAUTHN_RP_NAME` | Anzeigename für den Passkey-Dialog. |
+| `WEBAUTHN_ORIGIN` | Erlaubte Origin(s) inklusive Schema, mehrere kommagetrennt. Muss zur RP-ID passen. |
 | `APP_BASE_URL` | Öffentliche Basis-URL für Passwort-Reset-Links, z. B. `https://fuhrpark.example.org`. Fehlt sie, wird die Host-Information der Anfrage verwendet. |
 | `REMINDER_INTERVAL_MS` | Intervall des Wartungs-/TÜV-Schedulers in Millisekunden, Standard sechs Stunden. |
 | `REMINDER_INITIAL_DELAY_MS` | Verzögerung des ersten Wartungs-/TÜV-Laufs, Standard fünf Sekunden. |
