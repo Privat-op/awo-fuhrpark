@@ -7,6 +7,7 @@ const {
   sanitizeSmtpError,
   validateSmtpConfig
 } = require('./smtp');
+const { teamsConfigured, deliverTeams } = require('./teams');
 
 const THRESHOLDS = [30, 14, 7];
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
@@ -174,11 +175,15 @@ async function runMaintenanceNotifications(db, options = {}) {
   const dataDir = options.dataDir;
   const now = options.now || new Date();
   const config = loadSmtpConfig(db, { dataDir });
-  if (!config.enabled || validateSmtpConfig(config, { requireEnabled: true }).length) {
+  const smtpReady = config.enabled && validateSmtpConfig(config, { requireEnabled: true }).length === 0;
+  const teamsReady = teamsConfigured();
+  if (!smtpReady && !teamsReady) {
     return { skipped: 'smtp_not_configured', sent: 0, failed: 0, reminders: [] };
   }
-  const recipients = getRecipients(db);
-  if (!recipients.length) return { skipped: 'no_recipients', sent: 0, failed: 0, reminders: [] };
+  const recipients = smtpReady ? getRecipients(db) : [];
+  if (smtpReady && !recipients.length && !teamsReady) {
+    return { skipped: 'no_recipients', sent: 0, failed: 0, reminders: [] };
+  }
   const items = collectMaintenanceReminders(db, now);
   if (!items.length) return { skipped: 'nothing_due', sent: 0, failed: 0, reminders: [] };
 
@@ -187,54 +192,81 @@ async function runMaintenanceNotifications(db, options = {}) {
   const nowMs = now.getTime();
   let sent = 0;
   let failed = 0;
+  let teamsSent = 0;
+  let teamsFailed = 0;
   for (const item of items) {
     const delivery = db.prepare('SELECT * FROM notification_deliveries WHERE dedupe_key = ?').get(item.dedupeKey);
-    if (!deliveryIsDue(delivery, nowMs)) continue;
-    upsertPending(db, item, nowISO);
-    try {
-      await sendMail({
-        config,
-        to: recipients,
-        subject: `[${organization}] ${item.subject}`,
-        text: [
-          item.text,
-          '',
-          'Diese Nachricht wurde automatisch vom AWO Fuhrparkmanagement erzeugt.'
-        ].join('\n'),
-        transportFactory: options.transportFactory
-      });
-      db.prepare(`
-        UPDATE notification_deliveries
-        SET status = 'sent', error_code = NULL, last_attempt_at = ?, updated_at = ?
-        WHERE dedupe_key = ?
-      `).run(nowISO, nowISO, item.dedupeKey);
-      writeAudit(db, {
-        userId: null,
-        action: 'maintenance_notification',
+    if (smtpReady && recipients.length && deliveryIsDue(delivery, nowMs)) {
+      upsertPending(db, item, nowISO);
+      try {
+        await sendMail({
+          config,
+          to: recipients,
+          subject: `[${organization}] ${item.subject}`,
+          text: [
+            item.text,
+            '',
+            'Diese Nachricht wurde automatisch vom AWO Fuhrparkmanagement erzeugt.'
+          ].join('\n'),
+          transportFactory: options.transportFactory
+        });
+        db.prepare(`
+          UPDATE notification_deliveries
+          SET status = 'sent', error_code = NULL, last_attempt_at = ?, updated_at = ?
+          WHERE dedupe_key = ?
+        `).run(nowISO, nowISO, item.dedupeKey);
+        writeAudit(db, {
+          userId: null,
+          action: 'maintenance_notification',
+          entityType: 'vehicle',
+          entityId: item.vehicleId,
+          details: { kind: item.kind, status: 'sent', recipients: recipients.length }
+        });
+        sent += 1;
+      } catch (error) {
+        const code = sanitizeSmtpError(error);
+        db.prepare(`
+          UPDATE notification_deliveries
+          SET status = 'failed', error_code = ?, last_attempt_at = ?, updated_at = ?
+          WHERE dedupe_key = ?
+        `).run(code, nowISO, nowISO, item.dedupeKey);
+        console.warn(`Wartungs-Benachrichtigung konnte nicht versendet werden (${code}).`);
+        writeAudit(db, {
+          userId: null,
+          action: 'maintenance_notification',
+          entityType: 'vehicle',
+          entityId: item.vehicleId,
+          details: { kind: item.kind, status: 'failed', errorCode: code, recipients: recipients.length }
+        });
+        failed += 1;
+      }
+    }
+
+    if (teamsReady) {
+      const teamResult = await deliverTeams(db, {
+        dedupeKey: item.dedupeKey,
+        title: `[${organization}] ${item.subject}`,
+        text: item.text,
+        summary: item.subject,
+        kind: item.kind,
         entityType: 'vehicle',
         entityId: item.vehicleId,
-        details: { kind: item.kind, status: 'sent', recipients: recipients.length }
+        vehicleId: item.vehicleId,
+        now,
+        fetchImpl: options.teamsFetch
       });
-      sent += 1;
-    } catch (error) {
-      const code = sanitizeSmtpError(error);
-      db.prepare(`
-        UPDATE notification_deliveries
-        SET status = 'failed', error_code = ?, last_attempt_at = ?, updated_at = ?
-        WHERE dedupe_key = ?
-      `).run(code, nowISO, nowISO, item.dedupeKey);
-      console.warn(`Wartungs-Benachrichtigung konnte nicht versendet werden (${code}).`);
-      writeAudit(db, {
-        userId: null,
-        action: 'maintenance_notification',
-        entityType: 'vehicle',
-        entityId: item.vehicleId,
-        details: { kind: item.kind, status: 'failed', errorCode: code, recipients: recipients.length }
-      });
-      failed += 1;
+      teamsSent += teamResult.sent || 0;
+      teamsFailed += teamResult.failed || 0;
     }
   }
-  return { skipped: null, sent, failed, reminders: items.map((item) => item.dedupeKey) };
+  return {
+    skipped: null,
+    sent,
+    failed,
+    teamsSent,
+    teamsFailed,
+    reminders: items.map((item) => item.dedupeKey)
+  };
 }
 
 function schedulerDisabled() {

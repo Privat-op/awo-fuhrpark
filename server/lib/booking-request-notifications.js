@@ -14,6 +14,7 @@ const {
   sanitizeSmtpError,
   validateSmtpConfig
 } = require('./smtp');
+const { teamsConfigured, deliverTeams } = require('./teams');
 
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
 const PENDING_TIMEOUT_MS = 15 * 60 * 1000;
@@ -114,50 +115,78 @@ async function sendNotification(db, {
   text,
   dataDir,
   transportFactory,
+  teamsFetch,
   now = new Date()
 }) {
   if (!recipients.length) return { skipped: 'no_recipients' };
   const config = loadSmtpConfig(db, { dataDir });
-  if (!config.enabled || validateSmtpConfig(config, { requireEnabled: true }).length) {
-    return { skipped: 'smtp_not_configured' };
-  }
+  const smtpReady = config.enabled && validateSmtpConfig(config, { requireEnabled: true }).length === 0;
+  const teamsReady = teamsConfigured();
+  if (!smtpReady && !teamsReady) return { skipped: 'smtp_not_configured' };
   const nowISO = now.toISOString();
-  if (!beginDelivery(db, { key, vehicleId, kind }, nowISO)) return { skipped: 'already_sent' };
+  let sent = 0;
+  let failed = 0;
+  let teamsSent = 0;
+  let teamsFailed = 0;
 
-  try {
-    await sendMail({
-      config,
-      to: recipients,
-      subject: `[${organizationName(db)}] ${subject}`,
-      text: [
-        text,
-        '',
-        'Diese Nachricht wurde automatisch vom AWO Fuhrparkmanagement erzeugt.'
-      ].join('\n'),
-      transportFactory
-    });
-    finishDelivery(db, key, 'sent', null, nowISO);
-    writeAudit(db, {
-      userId: null,
-      action: 'booking_request_notification',
+  if (teamsReady) {
+    const teamResult = await deliverTeams(db, {
+      dedupeKey: key,
+      title: `[${organizationName(db)}] ${subject}`,
+      text,
+      summary: subject,
+      kind,
       entityType: 'booking_request',
       entityId: requestId,
-      details: { kind, status: 'sent', recipients: recipients.length }
+      vehicleId,
+      now,
+      fetchImpl: teamsFetch
     });
-    return { skipped: null, sent: 1 };
-  } catch (error) {
-    const code = sanitizeSmtpError(error);
-    finishDelivery(db, key, 'failed', code, nowISO);
-    console.warn(`Buchungsanfrage-Benachrichtigung konnte nicht versendet werden (${code}).`);
-    writeAudit(db, {
-      userId: null,
-      action: 'booking_request_notification',
-      entityType: 'booking_request',
-      entityId: requestId,
-      details: { kind, status: 'failed', errorCode: code, recipients: recipients.length }
-    });
-    return { skipped: null, failed: 1 };
+    teamsSent += teamResult.sent || 0;
+    teamsFailed += teamResult.failed || 0;
   }
+
+  if (smtpReady) {
+    if (!beginDelivery(db, { key, vehicleId, kind }, nowISO)) {
+      return { skipped: teamsSent ? null : 'already_sent', sent, failed, teamsSent, teamsFailed };
+    }
+    try {
+      await sendMail({
+        config,
+        to: recipients,
+        subject: `[${organizationName(db)}] ${subject}`,
+        text: [
+          text,
+          '',
+          'Diese Nachricht wurde automatisch vom AWO Fuhrparkmanagement erzeugt.'
+        ].join('\n'),
+        transportFactory
+      });
+      finishDelivery(db, key, 'sent', null, nowISO);
+      writeAudit(db, {
+        userId: null,
+        action: 'booking_request_notification',
+        entityType: 'booking_request',
+        entityId: requestId,
+        details: { kind, status: 'sent', recipients: recipients.length }
+      });
+      sent = 1;
+    } catch (error) {
+      const code = sanitizeSmtpError(error);
+      finishDelivery(db, key, 'failed', code, nowISO);
+      console.warn(`Buchungsanfrage-Benachrichtigung konnte nicht versendet werden (${code}).`);
+      writeAudit(db, {
+        userId: null,
+        action: 'booking_request_notification',
+        entityType: 'booking_request',
+        entityId: requestId,
+        details: { kind, status: 'failed', errorCode: code, recipients: recipients.length }
+      });
+      failed = 1;
+    }
+  }
+
+  return { skipped: null, sent, failed, teamsSent, teamsFailed };
 }
 
 async function notifyBookingRequestCreated(db, requestId, options = {}) {

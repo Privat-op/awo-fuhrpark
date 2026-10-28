@@ -16,6 +16,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Fahrzeuge mit Bild-Upload, Standort, Kilometerstand, HU/AU und Service
 - Leasingüberwachung mit Laufzeit, Gesamt-Kilometerlimit, Warnschwellen 80/90/100 % und Erinnerungen 90/30 Tage vor Leasingende
 - Optionaler E-Mail-Versand an Fuhrparkleitung und Administration bei Leasing-Schwellen, Buchungsanfragen sowie Wartungs-/TÜV-Erinnerungen; SMTP-Konfiguration ausschließlich für Administrator:innen
+- **Optionaler Teams-Webhook:** MessageCards für Leasing, Buchungsanfragen/-entscheidungen und Wartungs-/TÜV-Erinnerungen; ohne Graph/App-Registration, ohne URL in Logs
 - Dauerhafte Fahrzeug-Sperre mit Begründung, Audit und serverseitiger 409-Sperre für neue Buchungen und Anfragen
 - Buchungen mit serverseitiger Konfliktprüfung für Fahrzeug und Fahrer:in
 - Eigene Fahrten: verknüpfte Fahrer:innen sehen ausschließlich ihre eigenen Buchungen und können Buchungsanfragen stellen
@@ -361,6 +362,15 @@ Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 10
 - **Buchungsanfragen:** Beim Eingang werden aktive Administrator:innen, Fuhrparkleitung und Konten mit `booking_requests_manage` informiert. Bei Genehmigung oder Ablehnung erhält die anfragende Person eine Entscheidungsmail. Dedupe verhindert Doppelversendungen; Mailfehler blockieren die API-Aktion nicht.
 - **Wartung/TÜV:** Der Scheduler erinnert 30, 14 und 7 Tage vor Fälligkeit sowie bei Überfälligkeit an offene Wartungen, HU/AU und Service/Inspektion. Empfänger sind aktive Administrator:innen und Fuhrparkleitung; Dedupe gilt pro Fahrzeug/Typ/Schwelle. Die Prüfung läuft beim Start und anschließend alle sechs Stunden und kann mit `REMINDER_SCHEDULER_DISABLED=true` deaktiviert werden.
 
+## Teams-Benachrichtigungen (optional)
+
+Mit `TEAMS_WEBHOOK_URL` kann ein Incoming-Webhook für Microsoft Teams konfiguriert werden. Es wird kein Graph, keine App-Registration und kein Secret im Repository benötigt.
+
+- Sendet MessageCards für Leasing-Warnungen, neue/entschiedene Buchungsanfragen und Wartungs-/TÜV-Erinnerungen.
+- Ohne konfigurierte URL ist die Funktion ein No-op; Versandfehler blockieren weder API-Aktionen noch Scheduler.
+- Dedupe erfolgt über `notification_deliveries` mit eigenem `teams:`-Kanal; die URL und Response-Inhalte werden nicht geloggt.
+- Der Webhook ist ein Betriebsgeheimnis und gehört nicht in Repository, Audit oder Dokumentation.
+
 ## Passwörter ändern
 
 - **Normale Benutzer und Admins:** **Einstellungen → Ihr Konto → Passwort ändern**. Das aktuelle Passwort und ein neues Passwort mit mindestens 10 Zeichen eingeben. Das Hashen übernimmt die Anwendung.
@@ -497,6 +507,7 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 | `SSO_AUTO_PROVISION` | `true` legt unbekannte Konten automatisch an; Standard aus. |
 | `SSO_DEFAULT_ROLE` | Rolle für JIT-Konten, Standard `manager`; `superadmin` ist nie zulässig. |
 | `SSO_GROUP_CLAIM`, `SSO_ADMIN_GROUP`, `SSO_MANAGER_GROUP` | Gruppen-Claim und Gruppen-IDs für das Rollenmapping. |
+| `TEAMS_WEBHOOK_URL` | Optionaler Incoming-Webhook für Teams; leer = deaktiviert. Nicht loggen/committen. |
 | `APP_BASE_URL` | Öffentliche Basis-URL für Passwort-Reset-Links, z. B. `https://fuhrpark.example.org`. Fehlt sie, wird die Host-Information der Anfrage verwendet. |
 | `REMINDER_INTERVAL_MS` | Intervall des Wartungs-/TÜV-Schedulers in Millisekunden, Standard sechs Stunden. |
 | `REMINDER_INITIAL_DELAY_MS` | Verzögerung des ersten Wartungs-/TÜV-Laufs, Standard fünf Sekunden. |

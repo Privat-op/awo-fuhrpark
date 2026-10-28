@@ -9,6 +9,7 @@ const {
   sanitizeSmtpError,
   validateSmtpConfig
 } = require('./smtp');
+const { teamsConfigured, deliverTeams } = require('./teams');
 
 const KM_THRESHOLDS = [80, 90, 100];
 const END_THRESHOLDS = [90, 30];
@@ -216,11 +217,13 @@ async function runLeasingNotifications(db, options = {}) {
   const dataDir = options.dataDir || defaultDataDir();
   const now = options.now || new Date();
   const config = loadSmtpConfig(db, { dataDir });
-  if (!config.enabled || validateSmtpConfig(config, { requireEnabled: true }).length) {
+  const smtpReady = config.enabled && validateSmtpConfig(config, { requireEnabled: true }).length === 0;
+  const teamsReady = teamsConfigured();
+  if (!smtpReady && !teamsReady) {
     return { skipped: 'smtp_not_configured', sent: 0, failed: 0, notifications: [] };
   }
-  const recipients = getLeasingRecipients(db);
-  if (!recipients.length) {
+  const recipients = smtpReady ? getLeasingRecipients(db) : [];
+  if (smtpReady && !recipients.length && !teamsReady) {
     return { skipped: 'no_recipients', sent: 0, failed: 0, notifications: [] };
   }
   const notifications = collectLeasingNotifications(db, now);
@@ -233,54 +236,73 @@ async function runLeasingNotifications(db, options = {}) {
   const nowISO = new Date().toISOString();
   let sent = 0;
   let failed = 0;
+  let teamsSent = 0;
+  let teamsFailed = 0;
 
   for (const notification of notifications) {
     const delivery = db.prepare('SELECT * FROM notification_deliveries WHERE dedupe_key = ?').get(notification.dedupeKey);
-    if (!deliveryIsDue(delivery, nowMs)) continue;
+    if (smtpReady && recipients.length && deliveryIsDue(delivery, nowMs)) {
+      upsertPending(db, notification, nowISO);
+      try {
+        await sendMail({
+          config,
+          to: recipients,
+          subject: `[${organization}] ${notification.subject}`,
+          text: [
+            notification.text,
+            '',
+            'Diese Nachricht wurde automatisch vom AWO Fuhrparkmanagement erzeugt.',
+            'Bitte prüfen Sie die Leasingdaten im Fahrzeugdatensatz.'
+          ].join('\n'),
+          transportFactory: options.transportFactory
+        });
+        db.prepare(`
+          UPDATE notification_deliveries
+          SET status = 'sent', error_code = NULL, last_attempt_at = ?, updated_at = ?
+          WHERE dedupe_key = ?
+        `).run(nowISO, nowISO, notification.dedupeKey);
+        writeAudit(db, {
+          userId: null,
+          action: 'leasing_notification',
+          entityType: 'vehicle',
+          entityId: notification.vehicleId,
+          details: { kind: notification.kind, status: 'sent', recipients: recipients.length }
+        });
+        sent += 1;
+      } catch (error) {
+        const code = sanitizeSmtpError(error);
+        db.prepare(`
+          UPDATE notification_deliveries
+          SET status = 'failed', error_code = ?, last_attempt_at = ?, updated_at = ?
+          WHERE dedupe_key = ?
+        `).run(code, nowISO, nowISO, notification.dedupeKey);
+        console.warn(`Leasing-Benachrichtigung konnte nicht versendet werden (${code}).`);
+        writeAudit(db, {
+          userId: null,
+          action: 'leasing_notification',
+          entityType: 'vehicle',
+          entityId: notification.vehicleId,
+          details: { kind: notification.kind, status: 'failed', errorCode: code, recipients: recipients.length }
+        });
+        failed += 1;
+      }
+    }
 
-    upsertPending(db, notification, nowISO);
-    try {
-      await sendMail({
-        config,
-        to: recipients,
-        subject: `[${organization}] ${notification.subject}`,
-        text: [
-          notification.text,
-          '',
-          'Diese Nachricht wurde automatisch vom AWO Fuhrparkmanagement erzeugt.',
-          'Bitte prüfen Sie die Leasingdaten im Fahrzeugdatensatz.'
-        ].join('\n'),
-        transportFactory: options.transportFactory
-      });
-      db.prepare(`
-        UPDATE notification_deliveries
-        SET status = 'sent', error_code = NULL, last_attempt_at = ?, updated_at = ?
-        WHERE dedupe_key = ?
-      `).run(nowISO, nowISO, notification.dedupeKey);
-      writeAudit(db, {
-        userId: null,
-        action: 'leasing_notification',
+    if (teamsReady) {
+      const teamResult = await deliverTeams(db, {
+        dedupeKey: notification.dedupeKey,
+        title: `[${organization}] ${notification.subject}`,
+        text: notification.text,
+        summary: notification.subject,
+        kind: notification.kind,
         entityType: 'vehicle',
         entityId: notification.vehicleId,
-        details: { kind: notification.kind, status: 'sent', recipients: recipients.length }
+        vehicleId: notification.vehicleId,
+        now,
+        fetchImpl: options.teamsFetch
       });
-      sent += 1;
-    } catch (error) {
-      const code = sanitizeSmtpError(error);
-      db.prepare(`
-        UPDATE notification_deliveries
-        SET status = 'failed', error_code = ?, last_attempt_at = ?, updated_at = ?
-        WHERE dedupe_key = ?
-      `).run(code, nowISO, nowISO, notification.dedupeKey);
-      console.warn(`Leasing-Benachrichtigung konnte nicht versendet werden (${code}).`);
-      writeAudit(db, {
-        userId: null,
-        action: 'leasing_notification',
-        entityType: 'vehicle',
-        entityId: notification.vehicleId,
-        details: { kind: notification.kind, status: 'failed', errorCode: code, recipients: recipients.length }
-      });
-      failed += 1;
+      teamsSent += teamResult.sent || 0;
+      teamsFailed += teamResult.failed || 0;
     }
   }
 
@@ -288,6 +310,8 @@ async function runLeasingNotifications(db, options = {}) {
     skipped: null,
     sent,
     failed,
+    teamsSent,
+    teamsFailed,
     notifications: notifications.map((notification) => notification.dedupeKey)
   };
 }
