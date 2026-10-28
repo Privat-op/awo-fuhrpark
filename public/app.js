@@ -294,6 +294,15 @@ function applyState(state) {
     users: Array.isArray(state.users) ? state.users : [],
     roles: Array.isArray(state.roles) ? state.roles : [],
     smtp: state.smtp && typeof state.smtp === 'object' ? state.smtp : null,
+    security: state.security && typeof state.security === 'object'
+      ? {
+          totpEnabled: Boolean(state.security.totpEnabled),
+          confirmedAt: state.security.confirmedAt || null,
+          lastVerifiedAt: state.security.lastVerifiedAt || null,
+          recoveryCodesRemaining: Number(state.security.recoveryCodesRemaining) || 0,
+          lockedUntil: state.security.lockedUntil || null
+        }
+      : { totpEnabled: false, confirmedAt: null, lastVerifiedAt: null, recoveryCodesRemaining: 0, lockedUntil: null },
     driversForLinking: Array.isArray(state.driversForLinking) ? state.driversForLinking : [],
     bookingRequests: Array.isArray(state.bookingRequests) ? state.bookingRequests : [],
     ownTrips: state.ownTrips && typeof state.ownTrips === 'object'
@@ -1331,6 +1340,10 @@ function dispatchAction(element) {
     case 'export-data': exportData(); break;
     case 'logout': logout(); break;
     case 'change-password': openPasswordModal(); break;
+    case 'mfa-enroll': openMfaEnrollModal(); break;
+    case 'mfa-disable': openMfaDisableModal(); break;
+    case 'mfa-regenerate': openMfaRegenerateModal(); break;
+    case 'mfa-admin-reset': openMfaAdminResetConfirm(id); break;
     case 'set-color-mode': setColorMode(element.dataset.mode); break;
     case 'cycle-color-mode': cycleColorMode(); break;
     case 'smtp-test': testSmtpSettings(); break;
@@ -1813,11 +1826,11 @@ function bindEvents() {
   });
 
   modal?.addEventListener('click', (event) => {
-    if (event.target.classList.contains('modal-backdrop')) {
-      closeModal();
-      return;
-    }
-    if (event.target.closest('[data-close-modal]')) {
+    if (event.target.classList.contains('modal-backdrop') || event.target.closest('[data-close-modal]')) {
+      if (modalCloseBlocked()) {
+        toast('Bestätigung erforderlich', 'Bitte bestätigen Sie, dass Sie die Recovery-Codes gespeichert haben.', 'info');
+        return;
+      }
       closeModal();
       return;
     }
@@ -1847,6 +1860,10 @@ function bindEvents() {
     if (event.key === 'Escape') {
       if (modal && modal.children.length) {
         event.preventDefault();
+        if (modalCloseBlocked()) {
+          toast('Bestätigung erforderlich', 'Bitte bestätigen Sie, dass Sie die Recovery-Codes gespeichert haben.', 'info');
+          return;
+        }
         closeModal();
         return;
       }

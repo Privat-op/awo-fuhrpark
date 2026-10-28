@@ -13,3 +13,7 @@ Das Logo wird ausschließlich im AWO-Theme verwendet. Im neutralen Theme wird es
 ## Nodemailer
 
 Paket: `nodemailer` (MIT-Lizenz), eingesetzt für den optionalen SMTP-Versand von Leasing-Benachrichtigungen. Weitere Informationen: https://nodemailer.com/
+
+## qrcode
+
+Paket: `qrcode` (MIT-Lizenz), eingesetzt zur serverseitigen Erzeugung der TOTP-Enrollment-QR-Codes. Weitere Informationen: https://github.com/soldair/node-qrcode

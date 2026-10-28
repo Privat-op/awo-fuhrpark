@@ -208,8 +208,8 @@ after(async () => {
   try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* Windows-Sperre */ }
 });
 
-test('Migration 7 und State-/Session-Defaults', async () => {
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 7);
+test('Migration 8 und State-/Session-Defaults', async () => {
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 8);
   assert.ok(db.prepare('PRAGMA table_info(users)').all().some((column) => column.name === 'color_mode'));
   assert.ok(db.prepare('PRAGMA table_info(settings)').all().some((column) => column.name === 'default_color_mode'));
   assert.equal(db.prepare('SELECT default_color_mode FROM settings WHERE id = 1').get().default_color_mode, 'light');

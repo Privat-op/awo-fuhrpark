@@ -3129,3 +3129,92 @@ p, h1, h2, h3, h4 { margin: 0; }
   body { color: #000 !important; background: #fff !important; }
   .color-mode-switch, .color-mode-setting { display: none !important; }
 }
+
+/* =========================================================
+   MFA / Sicherheit
+   ========================================================= */
+.mfa-enroll-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+
+.mfa-qr {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.mfa-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.mfa-enroll-copy {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.mfa-step-copy strong {
+  color: var(--ink);
+}
+
+.mfa-secret {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.mfa-secret code {
+  flex: 1;
+  min-width: 160px;
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: .08em;
+  word-break: break-all;
+}
+
+.recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin: 16px 0 0;
+  padding-left: 24px;
+}
+
+.recovery-codes li {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.recovery-codes code {
+  font-size: 12px;
+  letter-spacing: .06em;
+}
+
+.mfa-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 0;
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .mfa-enroll-grid { grid-template-columns: 1fr; }
+  .recovery-codes { grid-template-columns: 1fr; }
+}

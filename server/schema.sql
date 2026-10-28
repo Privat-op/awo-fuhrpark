@@ -207,6 +207,28 @@ CREATE TABLE IF NOT EXISTS sessions (
   expire INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_mfa (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  totp_secret_enc TEXT,
+  totp_enabled INTEGER NOT NULL DEFAULT 0 CHECK (totp_enabled IN (0, 1)),
+  totp_confirmed_at TEXT,
+  totp_last_used_step INTEGER,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until TEXT,
+  last_verified_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL UNIQUE,
+  batch_id TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS smtp_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   host TEXT NOT NULL DEFAULT '',
@@ -245,3 +267,5 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_due ON maintenance (due_date);
 CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions (expire);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs (created_at);
 CREATE INDEX IF NOT EXISTS idx_notification_deliveries_status ON notification_deliveries (status, last_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_user_mfa_enabled ON user_mfa (totp_enabled);
+CREATE INDEX IF NOT EXISTS idx_mfa_recovery_user ON mfa_recovery_codes (user_id, used_at);
