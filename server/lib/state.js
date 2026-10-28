@@ -243,6 +243,16 @@ function getState(db, user, auth = null) {
   });
 
   const visibleVehicleRows = vehicleRows.filter((row) => can('vehicles_view', { vehicle: row }));
+  const isVehicleViewDenied = (row) => {
+    const userRule = layers.userObjectPermissions?.vehicle?.[row.id];
+    if (userRule?.deny?.includes('vehicles_view')) return true;
+    if (userRule?.allow?.includes('vehicles_view')) return false;
+    const roleRule = layers.roleObjectPermissions?.vehicle?.[row.id];
+    return Boolean(roleRule?.deny?.includes('vehicles_view'));
+  };
+  const ownTripVehicleRows = visibleVehicleRows.length
+    ? visibleVehicleRows
+    : vehicleRows.filter((row) => !isVehicleViewDenied(row));
   const visibleDriverRows = driverRows.filter((row) => can('drivers_view', { driver: row }));
   const visibleBookingRows = bookingRows.filter((row) => {
     const context = bookingContext(row);
@@ -346,7 +356,7 @@ function getState(db, user, auth = null) {
       },
       canRequest: moduleAccess.own_trips_request,
       canExecute: moduleAccess.own_trips_execute,
-      vehicles: vehicleRows.map((row) => mapMinimalVehicle(row, costCenterFor(row))),
+      vehicles: ownTripVehicleRows.map((row) => mapMinimalVehicle(row, costCenterFor(row))),
       bookings: ownBookings,
       requests: ownRequestRows.map((row) => mapBookingRequest(row, {
         vehicle: vehicleById.get(row.vehicle_id),
