@@ -506,6 +506,26 @@ docker compose cp app:/app/data/backups ./backups
 
 Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopieren. Uploads und Datenbank gehören zusammen und müssen gemeinsam gesichert werden.
 
+## Betriebs-Skripte
+
+| Skript | Zweck |
+|---|---|
+| `npm run verify-backup -- --db <pfad> --data <dir>` | SQLite-Integrität, Fremdschlüssel, Kerntabellen, Uploads und `mfa.key` prüfen; Exit-Code für Monitoring. |
+| `npm run healthcheck -- --url <healthz> [--db <pfad>] [--disk <pfad>]` | HTTP-Health, optionale DB- und freie-Speicher-Prüfung; Exit-Code für Monitoring. |
+| `npm run backup:offsite -- --source <dir> --target <rclone-ziel>` | Offsite-Copy über `rclone`; ohne `OFFSITE_TARGET` No-op, `--dry-run` zeigt nur den Befehl. Keine Credentials im Repo. |
+| `npm run loadtest -- --url <url> --confirm` | Leichter HTTP-Lasttest gegen lokale/dedizierte Testinstanzen; Produktionsziele sind ohne `--allow-remote` gesperrt. |
+
+Beispiele:
+
+```bash
+npm run verify-backup -- --db data/awo-fuhrpark.sqlite --data data
+npm run healthcheck -- --url http://127.0.0.1:3000/healthz --db data/awo-fuhrpark.sqlite
+OFFSITE_TARGET=remote:backup npm run backup:offsite -- --source data --dry-run
+npm run loadtest -- --url http://127.0.0.1:3000/healthz --concurrency 5 --duration 10 --confirm
+```
+
+Der Lasttest ist kein Produktions-Benchmark und darf nicht gegen den Produktivserver laufen. Offsite-Ziele und Credentials werden ausschließlich über die Betriebsumgebung gesetzt.
+
 ## Konfiguration
 
 | Variable | Bedeutung |
@@ -551,6 +571,7 @@ Die Sicherung anschließend auf ein externes Medium oder ein Backup-System kopie
 ├─ server/             Express-Anwendung, API, Schema, Bootstrap und Backup
 ├─ public/             CSS, Browser-JavaScript und Branding-Dateien
 ├─ server/views/       HTML für Anwendung und Login
+├─ scripts/            Backup-, Health-, Offsite- und Lasttest-Skripte
 ├─ tests/              Integrationstests mit temporärer Datenbank
 ├─ Dockerfile
 ├─ docker-compose.yml

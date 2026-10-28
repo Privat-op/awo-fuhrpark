@@ -8,6 +8,10 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "backup": "node server/backup.js",
+    "verify-backup": "node scripts/verify-backup.js",
+    "healthcheck": "node scripts/healthcheck.js",
+    "backup:offsite": "node scripts/backup-offsite.js",
+    "loadtest": "node scripts/loadtest.js",
     "superadmin:hash": "node scripts/superadmin-hash.js",
     "superadmin:setup": "node scripts/superadmin-setup.js",
     "test": "node --test"
