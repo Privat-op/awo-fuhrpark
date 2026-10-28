@@ -49,6 +49,11 @@ function closeModal(restoreFocus = true) {
   }
 }
 
+function modalCloseBlocked() {
+  const required = modalRoot.querySelector('[data-ack-required]');
+  return Boolean(required && !required.checked);
+}
+
 function clearFormError(form) {
   const alert = form.querySelector('.form-alert');
   if (alert) {
@@ -1859,6 +1864,325 @@ function openPasswordModal() {
       showFormError(form, error.message);
     } finally {
       if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+/* =========================================================
+   MFA / Sicherheit
+   ========================================================= */
+function formatMfaSecret(secret) {
+  const normalized = String(secret || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+  return normalized.match(/.{1,4}/g)?.join(' ') || '';
+}
+
+async function copyPlainText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fallback unten verwenden.
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch {
+    copied = false;
+  }
+  area.remove();
+  return copied;
+}
+
+function recoveryCodesDownloadText(codes) {
+  return [
+    'AWO Fuhrparkmanagement – Recovery-Codes',
+    `Konto: ${currentUser?.email || ''}`,
+    `Ausgegeben: ${new Date().toLocaleString('de-DE')}`,
+    '',
+    'Jeder Code ist einmalig gültig. Bewahren Sie diese Liste getrennt von Ihrem Gerät auf.',
+    '',
+    ...codes.map((code, index) => `${String(index + 1).padStart(2, '0')}. ${code}`)
+  ].join('\n');
+}
+
+function showRecoveryCodesModal(codes, { title = 'MFA aktiviert', subtitle = 'Ihre Recovery-Codes wurden neu ausgegeben.', onDone = null } = {}) {
+  const list = Array.isArray(codes) ? codes : [];
+  showModal({
+    title,
+    eyebrow: 'Sicherheit',
+    subtitle,
+    size: 'modal-lg',
+    body: `
+      <div class="info-banner is-danger">
+        ${icon('alert')}
+        <div><strong>Nur einmal sichtbar</strong><p>Diese Codes werden nicht erneut vom Server angezeigt. Bewahren Sie sie getrennt von Ihrem Authenticator-Gerät auf. Jeder Code kann genau einmal verwendet werden.</p></div>
+      </div>
+      <ol class="recovery-codes" aria-label="Recovery-Codes">
+        ${list.map((code) => `<li><code>${esc(code)}</code></li>`).join('')}
+      </ol>
+      <div class="setting-actions">
+        <button class="btn btn-ghost btn-sm" type="button" id="copyRecoveryCodes">${icon('filter')} Alle kopieren</button>
+        <button class="btn btn-ghost btn-sm" type="button" id="downloadRecoveryCodes">${icon('download')} Als Datei speichern</button>
+      </div>
+      <label class="check-row" style="margin-top:16px">
+        <input type="checkbox" id="recoveryCodesAck" data-ack-required>
+        <span>Ich habe die Recovery-Codes gespeichert und weiß, dass sie nur einmal angezeigt werden.</span>
+      </label>`,
+    footer: `
+      <button class="btn btn-primary" type="button" id="recoveryCodesDone" disabled>${icon('check')} Fertig</button>`
+  });
+
+  const ack = $('#recoveryCodesAck');
+  const done = $('#recoveryCodesDone');
+  ack?.addEventListener('change', () => {
+    if (done) done.disabled = !ack.checked;
+  });
+  done?.addEventListener('click', () => {
+    closeModal(false);
+    onDone?.();
+  });
+  $('#copyRecoveryCodes')?.addEventListener('click', async () => {
+    const copied = await copyPlainText(list.join('\n'));
+    toast(copied ? 'Codes kopiert' : 'Kopieren nicht möglich', copied ? 'Die Recovery-Codes liegen jetzt in der Zwischenablage.' : 'Bitte markieren und kopieren Sie die Codes manuell.', copied ? 'info' : 'error');
+  });
+  $('#downloadRecoveryCodes')?.addEventListener('click', () => {
+    triggerBlobDownload('awo-recovery-codes.txt', new Blob([recoveryCodesDownloadText(list)], { type: 'text/plain;charset=utf-8' }));
+  });
+}
+
+function openMfaEnrollModal() {
+  if (db.security?.totpEnabled) {
+    toast('Bereits aktiviert', 'Für dieses Konto ist TOTP bereits eingerichtet.', 'info');
+    return;
+  }
+  showModal({
+    title: 'TOTP einrichten',
+    eyebrow: 'Sicherheit',
+    subtitle: 'QR-Code wird vorbereitet …',
+    size: 'modal-sm',
+    body: '<div class="mfa-loading"><span class="app-spinner"></span><span>Einrichtung wird gestartet …</span></div>',
+    footer: '<button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>'
+  });
+
+  apiFetch('/api/security/totp/enroll/start', { method: 'POST' })
+    .then((data) => {
+      if (!/^<svg[\s>]/i.test(String(data?.qrSvg || ''))) throw new Error('Der QR-Code konnte nicht erzeugt werden.');
+      showModal({
+        title: 'TOTP einrichten',
+        eyebrow: 'Sicherheit',
+        subtitle: 'Scannen Sie den QR-Code mit Ihrer Authenticator-App und bestätigen Sie den angezeigten Code.',
+        size: 'modal-lg',
+        body: `
+          <div class="mfa-enroll-grid">
+            <div class="mfa-qr" role="img" aria-label="QR-Code für die Authenticator-App">${data.qrSvg}</div>
+            <div class="mfa-enroll-copy">
+              <p class="mfa-step-copy"><strong>Keine Kamera?</strong> Geben Sie dieses Secret manuell in der App ein.</p>
+              <div class="mfa-secret">
+                <code id="mfaSecretValue">${esc(formatMfaSecret(data.secret))}</code>
+                <button class="btn btn-ghost btn-sm" type="button" id="copyMfaSecret">Kopieren</button>
+              </div>
+              <div class="info-banner" style="margin-top:12px">
+                ${icon('lock')}
+                <div><strong>Secret vertraulich behandeln</strong><p>Das Secret erscheint nur in diesem Dialog und wird nicht im Browser gespeichert.</p></div>
+              </div>
+            </div>
+          </div>
+          <form id="mfaEnrollForm" novalidate autocomplete="off">
+            ${formAlertMarkup()}
+            <div class="field field-full">
+              <label for="mfaEnrollCode">Bestätigungscode</label>
+              <input class="input" id="mfaEnrollCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required data-autofocus>
+              <p class="field-hint">6-stelliger Code aus der Authenticator-App.</p>
+            </div>
+          </form>`,
+        footer: `
+          <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+          <button class="btn btn-primary" type="submit" form="mfaEnrollForm">${icon('check')} TOTP aktivieren</button>`
+      });
+
+      $('#copyMfaSecret')?.addEventListener('click', async () => {
+        const copied = await copyPlainText(formatMfaSecret(data.secret));
+        toast(copied ? 'Secret kopiert' : 'Kopieren nicht möglich', copied ? 'Das Secret liegt jetzt in der Zwischenablage.' : 'Bitte markieren und kopieren Sie das Secret manuell.', copied ? 'info' : 'error');
+      });
+
+      const form = $('#mfaEnrollForm');
+      form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        clearFormError(form);
+        const code = String(new FormData(form).get('code') || '').replace(/\s+/g, '');
+        if (!/^\d{6}$/.test(code)) {
+          showFormError(form, 'Bitte geben Sie den 6-stelligen Code aus der Authenticator-App ein.');
+          return;
+        }
+        const submitButton = modalRoot.querySelector('button[form="mfaEnrollForm"]');
+        if (submitButton) submitButton.disabled = true;
+        try {
+          const result = await apiFetch('/api/security/totp/enroll/confirm', { method: 'POST', body: { code } });
+          db.security = result.security;
+          renderCurrentView();
+          showRecoveryCodesModal(result.recoveryCodes, {
+            title: 'MFA aktiviert',
+            subtitle: 'TOTP ist jetzt aktiv. Bewahren Sie die Recovery-Codes sicher auf.',
+            onDone: () => toast('MFA aktiviert', 'Beim nächsten Login wird zusätzlich ein Bestätigungscode verlangt.')
+          });
+        } catch (error) {
+          showFormError(form, error.message);
+        } finally {
+          if (submitButton) submitButton.disabled = false;
+        }
+      });
+    })
+    .catch((error) => {
+      closeModal(false);
+      toast('Einrichtung fehlgeschlagen', error.message, 'error');
+    });
+}
+
+function openMfaDisableModal() {
+  if (!db.security?.totpEnabled) {
+    toast('Nicht eingerichtet', 'Für dieses Konto ist kein TOTP aktiviert.', 'info');
+    return;
+  }
+  showModal({
+    title: 'MFA deaktivieren',
+    eyebrow: 'Sicherheit',
+    subtitle: 'Bestätigen Sie die Deaktivierung mit Ihrem aktuellen TOTP- oder Recovery-Code.',
+    size: 'modal-sm',
+    body: `
+      <div class="info-banner is-danger">
+        ${icon('alert')}
+        <div><strong>Schutz wird entfernt</strong><p>Nach der Deaktivierung reicht beim Login wieder das Passwort. Alle Recovery-Codes werden ungültig.</p></div>
+      </div>
+      <form id="mfaDisableForm" novalidate autocomplete="off">
+        ${formAlertMarkup()}
+        <div class="field field-full">
+          <label for="mfaDisableCode">TOTP- oder Recovery-Code</label>
+          <input class="input" id="mfaDisableCode" name="code" type="text" autocomplete="one-time-code" maxlength="32" spellcheck="false" required data-autofocus>
+        </div>
+        <label class="check-row">
+          <input type="checkbox" name="useRecovery" id="mfaDisableRecovery">
+          <span>Eingabe ist ein Recovery-Code</span>
+        </label>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-danger" type="submit" form="mfaDisableForm">${icon('lock')} MFA deaktivieren</button>`
+  });
+
+  const form = $('#mfaDisableForm');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const code = String(data.get('code') || '').replace(/\s+/g, '');
+    const useRecovery = data.get('useRecovery') === 'on';
+    if (!code) {
+      showFormError(form, 'Bitte geben Sie einen TOTP- oder Recovery-Code ein.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="mfaDisableForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const result = await apiFetch('/api/security/totp/disable', { method: 'POST', body: { code, useRecovery } });
+      db.security = result.security;
+      closeModal(false);
+      renderCurrentView();
+      toast('MFA deaktiviert', 'Beim nächsten Login wird kein Bestätigungscode mehr verlangt.');
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function openMfaRegenerateModal() {
+  if (!db.security?.totpEnabled) {
+    toast('Nicht eingerichtet', 'Für dieses Konto ist kein TOTP aktiviert.', 'info');
+    return;
+  }
+  showModal({
+    title: 'Recovery-Codes neu ausgeben',
+    eyebrow: 'Sicherheit',
+    subtitle: 'Bisherige Codes werden ungültig. Bestätigen Sie mit einem aktuellen TOTP- oder Recovery-Code.',
+    size: 'modal-sm',
+    body: `
+      <form id="mfaRegenerateForm" novalidate autocomplete="off">
+        ${formAlertMarkup()}
+        <div class="field field-full">
+          <label for="mfaRegenerateCode">TOTP- oder Recovery-Code</label>
+          <input class="input" id="mfaRegenerateCode" name="code" type="text" autocomplete="one-time-code" maxlength="32" spellcheck="false" required data-autofocus>
+        </div>
+        <label class="check-row">
+          <input type="checkbox" name="useRecovery" id="mfaRegenerateRecovery">
+          <span>Eingabe ist ein Recovery-Code</span>
+        </label>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="mfaRegenerateForm">${icon('history')} Neue Codes ausgeben</button>`
+  });
+
+  const form = $('#mfaRegenerateForm');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const code = String(data.get('code') || '').replace(/\s+/g, '');
+    const useRecovery = data.get('useRecovery') === 'on';
+    if (!code) {
+      showFormError(form, 'Bitte geben Sie einen TOTP- oder Recovery-Code ein.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="mfaRegenerateForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const result = await apiFetch('/api/security/recovery/regenerate', { method: 'POST', body: { code, useRecovery } });
+      db.security = result.security;
+      renderCurrentView();
+      showRecoveryCodesModal(result.recoveryCodes, {
+        title: 'Neue Recovery-Codes',
+        subtitle: 'Die bisherigen Codes sind jetzt ungültig.',
+        onDone: () => toast('Recovery-Codes ersetzt', 'Die alten Codes können nicht mehr verwendet werden.')
+      });
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function openMfaAdminResetConfirm(userId) {
+  const user = db.users?.find((entry) => entry.id === userId);
+  if (!user || !user.canResetMfa) {
+    toast('Keine Berechtigung', 'Für dieses Konto darf MFA nicht zurückgesetzt werden.', 'error');
+    return;
+  }
+  openConfirm({
+    title: 'MFA zurücksetzen?',
+    text: `Für <strong>${esc(user.name)}</strong> (${esc(user.email)}) werden TOTP und alle Recovery-Codes gelöscht. Alle aktiven Sitzungen dieses Kontos werden beendet. Die Person muss MFA bei Bedarf neu einrichten.`,
+    confirmLabel: 'MFA zurücksetzen',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        await apiFetch(`/api/security/admin-reset/${encodeURIComponent(user.id)}`, { method: 'POST' });
+        const state = await apiFetch('/api/state');
+        applyServerState(state);
+        renderCurrentView();
+        toast('MFA zurückgesetzt', `Die MFA-Einrichtung von ${user.name} wurde entfernt und die Sitzungen beendet.`);
+      } catch (error) {
+        toast('Reset fehlgeschlagen', error.message, 'error');
+      }
     }
   });
 }

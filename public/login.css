@@ -449,3 +449,53 @@ button, input { font: inherit; }
     transition-duration: .01ms !important;
   }
 }
+
+.login-field-hint {
+  margin-top: 5px;
+  color: var(--subtle);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.login-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 15px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.login-check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--awo);
+}
+
+.login-cancel-form {
+  margin-top: 10px;
+  text-align: center;
+}
+
+.login-cancel-button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.login-cancel-button:hover {
+  color: var(--ink);
+}
+
+.login-account-hint {
+  margin-top: 12px;
+  color: var(--subtle);
+  font-size: 9px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}

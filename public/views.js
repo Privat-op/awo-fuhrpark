@@ -1554,6 +1554,58 @@ function renderCostCentersCard() {
     </section>`;
 }
 
+function renderSecurityCard() {
+  const security = db.security || {};
+  const active = Boolean(security.totpEnabled);
+  const lockedUntil = security.lockedUntil ? new Date(security.lockedUntil) : null;
+  const locked = lockedUntil && lockedUntil.getTime() > Date.now();
+  const statusBadge = active
+    ? '<span class="badge badge-green no-dot">TOTP aktiv</span>'
+    : '<span class="badge badge-gray no-dot">Nicht eingerichtet</span>';
+  const statusText = active
+    ? `Bestätigt${security.confirmedAt ? ` am ${formatDate(security.confirmedAt)}` : ''}`
+    : 'Optionaler Schutz mit Authenticator-App und Recovery-Codes.';
+  const lockBanner = locked
+    ? `<div class="info-banner is-danger" style="margin-top:14px">
+        ${icon('alert')}
+        <div><strong>Vorübergehend gesperrt</strong><p>Zu viele Fehlversuche. Neue Versuche sind ab ${formatDateTime(security.lockedUntil)} wieder möglich.</p></div>
+      </div>`
+    : '';
+  return `
+    <section class="card" id="securityCard">
+      <div class="card-head">
+        <div><h3 class="card-title">Sicherheit</h3><p class="card-sub">Freiwillige Zwei-Faktor-Authentifizierung für Ihr Konto</p></div>
+        ${statusBadge}
+      </div>
+      <div class="card-body">
+        <div class="detail-list">
+          <div class="detail-list-item">
+            <span class="mini-icon tint-green">${icon('shield')}</span>
+            <div class="main"><strong>Authenticator-App (TOTP)</strong><span>${statusText}</span></div>
+          </div>
+          <div class="detail-list-item">
+            <span class="mini-icon tint-blue">${icon('lock')}</span>
+            <div class="main"><strong>Recovery-Codes</strong><span>${active ? `${security.recoveryCodesRemaining || 0} von 10 Codes verfügbar` : 'Werden bei der Einrichtung einmalig ausgegeben.'}</span></div>
+          </div>
+          ${active && security.lastVerifiedAt ? `<div class="detail-list-item">
+            <span class="mini-icon tint-violet">${icon('history')}</span>
+            <div class="main"><strong>Zuletzt bestätigt</strong><span>${formatDateTime(security.lastVerifiedAt)}</span></div>
+          </div>` : ''}
+        </div>
+        <div class="setting-actions">
+          ${active
+            ? `<button class="btn btn-ghost btn-sm" type="button" data-action="mfa-regenerate">${icon('history')} Recovery-Codes neu ausgeben</button>
+               <button class="btn btn-danger-ghost btn-sm" type="button" data-action="mfa-disable">${icon('lock')} MFA deaktivieren</button>`
+            : `<button class="btn btn-primary btn-sm" type="button" data-action="mfa-enroll">${icon('shield')} TOTP einrichten</button>`}
+        </div>
+        ${lockBanner}
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">MFA ist freiwillig und gilt nur für Ihr Konto. Administrator:innen können MFA zu Support-Zwecken zurücksetzen.</span>
+      </div>
+    </section>`;
+}
+
 function renderSettings() {
   const roleDisplay = currentUser?.roleName || roleLabel(currentUser?.role);
   const canEditSettings = can('settings_manage');
@@ -1658,7 +1710,7 @@ function renderSettings() {
           </div>
           <div class="version-box">
             <span>Installation vom ${db.meta.seededAt ? formatDate(db.meta.seededAt) : '—'}</span>
-            <span class="version-badge">Server-MVP 0.9.0-dev</span>
+            <span class="version-badge">Server-MVP 0.10.0-dev</span>
           </div>
         </div>
       </section>` : ''
@@ -1692,6 +1744,8 @@ function renderSettings() {
             <button class="btn btn-danger-ghost btn-sm" type="button" data-action="logout">${icon('log-out')} Abmelden</button>
           </div>
         </section>
+
+        ${renderSecurityCard()}
 
         ${renderAdminDriverProfileCard()}
 
@@ -1762,6 +1816,7 @@ function renderUsers() {
       : manageable
         ? `${canEditOverrides ? `<button class="table-action" type="button" title="Benutzer-Ausnahmen bearbeiten" aria-label="Benutzer-Ausnahmen bearbeiten" data-action="edit-user-permissions" data-id="${user.id}">${icon('filter')}</button>` : ''}
            <button class="table-action" type="button" title="Benutzer bearbeiten" aria-label="Benutzer bearbeiten" data-action="edit-user" data-id="${user.id}">${icon('edit')}</button>
+           ${user.canResetMfa ? `<button class="table-action danger" type="button" title="MFA zurücksetzen" aria-label="MFA zurücksetzen" data-action="mfa-admin-reset" data-id="${user.id}">${icon('shield')}</button>` : ''}
            ${!user.active ? `<button class="table-action danger" type="button" title="Benutzerkonto anonymisieren" aria-label="Benutzerkonto anonymisieren" data-action="anonymize-user" data-id="${user.id}">${icon('user-x')}</button>` : ''}`
         : `<span class="table-action" title="Nur eigene oder niedrigere Ränge bearbeitbar" aria-label="Nur lesbar" style="pointer-events:none;color:var(--muted)">${icon('shield')}</span>`;
     return `
@@ -1776,6 +1831,7 @@ function renderUsers() {
         <td>
           <span class="badge badge-${user.role === 'admin' ? 'red' : 'blue'}">${esc(roleLabel(user.role))}</span>
           <span class="table-sub">Rang ${formatNumber(user.roleRank || roleRankOf(user.role))}</span>
+          ${user.mfaEnabled ? '<span class="badge badge-green no-dot" title="Zwei-Faktor-Authentifizierung aktiv">MFA</span>' : ''}
           ${user.costCenterId ? costCenterBadge(user) : ''}
           ${overrideCount ? `<span class="badge badge-violet no-dot">${overrideCount} Ausnahmen</span>` : ''}
           ${user.driverId ? `<span class="badge badge-${user.ownTripsAccess ? 'green' : 'gray'} no-dot">Fahrer:in: ${esc(user.driverName)}${user.ownTripsAccess ? '' : ' · ohne Standardzugriff'}</span>` : ''}
