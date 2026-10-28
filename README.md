@@ -10,6 +10,8 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
 - Automatische Anonymisierung deaktivierter Konten nach einer global einstellbaren Frist
 - Fahrzeuge mit Bild-Upload, Standort, Kilometerstand, HU/AU und Service
+- Leasingüberwachung mit Laufzeit, Gesamt-Kilometerlimit, Warnschwellen 80/90/100 % und Erinnerungen 90/30 Tage vor Leasingende
+- Optionaler E-Mail-Versand an Fuhrparkleitung und Administration bei Leasing-Schwellen; SMTP-Konfiguration ausschließlich für Administrator:innen
 - Dauerhafte Fahrzeug-Sperre mit Begründung, Audit und serverseitiger 409-Sperre für neue Buchungen und Anfragen
 - Buchungen mit serverseitiger Konfliktprüfung für Fahrzeug und Fahrer:in
 - Eigene Fahrten: verknüpfte Fahrer:innen sehen ausschließlich ihre eigenen Buchungen und können Buchungsanfragen stellen
@@ -23,6 +25,18 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - **Audit-Log für alle angemeldeten Nutzer:** serverseitig begrenzte Sicht (eigene Aktionen, Rangbereich oder alle Aktivitäten), Suche/Filter, Maskierung, Meta-Audit und Pagination
 - SQLite-Datenbank, Dateispeicher und Sicherungsskript
 - Docker- und Reverse-Proxy-fähig
+
+## Release v0.7.0-dev (Paket 1)
+
+Paket 1 führt die Leasingüberwachung und den E-Mail-Versand ein. Der Stand ist noch **nicht released und nicht deployed**; Paket 2 (Kostenstellen) und Paket 3 (Dark Mode) liegen ausschließlich als Design/Estimate vor.
+
+- **Leasing:** Start/Ende, Startkilometer und Gesamt-Kilometerlimit pro Fahrzeug; Bestandsfahrzeuge ohne Leasing bleiben unverändert.
+- **Warnungen:** 80/90/100 % Kilometerverbrauch und 90/30 Tage vor Leasingende in Fahrzeugliste, Fahrzeugdetails, Dashboard/Benachrichtigungen und bei Buchungen – als Hinweis, ohne Blockade.
+- **E-Mail:** SMTP-Konfiguration nur für Administrator:innen; Versand an aktive Fuhrparkleitung und Administration; Dedupe pro Fahrzeug/Schwelle/Leasingzeitraum; Fehlversuche mit begrenztem Retry.
+- **Sicherheit:** SMTP-Passwort ausschließlich in `smtp-secret.json` im Datenverzeichnis (0600), nie in State, Export, Audit oder Logs.
+- **Migration:** `user_version = 5`.
+
+Details: [Feature-Doku v0.7.0 Paket 1](FEATURE_DOKU_v0.7.0_Paket1.md).
 
 ## Release v0.6.0
 
@@ -267,7 +281,16 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 4`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 5`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+
+## Leasing und E-Mail
+
+- Leasingdaten werden im Fahrzeugdialog gepflegt. Ohne Leasingende und Kilometerlimit bleibt ein Fahrzeug außerhalb der Überwachung.
+- Warnschwellen: 80 %, 90 % und 100 % des Kilometerlimits sowie 90 und 30 Tage vor Leasingende. Die Hinweise erscheinen in der Fahrzeugliste, in den Fahrzeugdetails, im Dashboard/Benachrichtigungsbereich und beim Buchen. Sie blockieren keine Buchung.
+- E-Mails gehen an aktive Konten der Rollen **Administrator** und **Fuhrparkleitung**. Es wird pro Fahrzeug, Schwelle und Leasingzeitraum höchstens einmal versendet; Fehlversuche werden bis zu dreimal mit Wartezeit wiederholt.
+- Der Scheduler prüft beim Start und anschließend alle sechs Stunden. Nach Kilometeränderungen (Fahrzeugbearbeitung, Fahrtende, Nachtragung) wird zusätzlich eine gedebouncte Prüfung ausgelöst. In Tests oder Sonderfällen kann er mit `LEASING_SCHEDULER_DISABLED=true` deaktiviert werden.
+- SMTP-Einstellungen sind nur für Administrator:innen sichtbar und änderbar. Das Passwort wird **nicht** in der Datenbank, im State, im Export oder im Audit gespeichert, sondern ausschließlich in `smtp-secret.json` im Datenverzeichnis (Dateirechte 0600 auf Linux). Das Backup-Skript sichert Datenbank und Uploads, **nicht** die Secret-Datei; nach einer Wiederherstellung muss das SMTP-Passwort neu gesetzt werden. Die Test-E-Mail geht an die angemeldete Administrator:in.
+- Ohne aktivierte und vollständige SMTP-Konfiguration wird keine Mail versendet; die Anwendung bleibt funktionsfähig.
 
 ## Passwörter ändern
 

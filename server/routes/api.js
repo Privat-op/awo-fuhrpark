@@ -4,7 +4,7 @@ const express = require('express');
 const crypto = require('node:crypto');
 const bcrypt = require('bcryptjs');
 
-const { db } = require('../db');
+const { db, DATA_DIR } = require('../db');
 const { getState, mapUser } = require('../lib/state');
 const {
   HttpError,
@@ -46,6 +46,14 @@ const {
   publicObjectTypes
 } = require('../lib/permissions');
 const { SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID } = require('../lib/superadmin');
+const { leasingWarningForVehicle, triggerLeasingCheck } = require('../lib/leasing');
+const {
+  loadSmtpConfig,
+  saveSmtpConfig,
+  sendMail,
+  sanitizeSmtpError,
+  smtpErrorMessage
+} = require('../lib/smtp');
 
 const router = express.Router();
 
@@ -57,8 +65,9 @@ const COST_CATEGORIES = ['Kraftstoff', 'Laden', 'Wartung', 'Versicherung', 'Kfz-
 const VEHICLE_COLORS = ['#2563eb', '#0f766e', '#7c3aed', '#059669', '#e2600f', '#0891b2', '#4338ca', '#b45309', '#be123c', '#475569'];
 const DRIVER_COLORS = ['#e2001a', '#0f766e', '#7c3aed', '#2563eb', '#b45309', '#be123c', '#0f8f8a', '#4338ca'];
 
-function sendState(req, res, status = 200) {
-  res.status(status).json(getState(db, req.user, req.auth));
+function sendState(req, res, status = 200, extra = null) {
+  const state = getState(db, req.user, req.auth);
+  res.status(status).json(extra ? { ...state, ...extra } : state);
 }
 
 function assertCan(req, permission, context = {}) {
@@ -382,6 +391,7 @@ router.get('/export/logbook.csv', requirePermission('logbook_export'), (req, res
 router.get('/export/data.json', requirePermission('export_data'), (req, res, next) => {
   try {
     const state = getState(db, req.user, req.auth);
+    delete state.smtp;
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="fuhrpark-daten-${todayISO()}.json"`);
     res.send(JSON.stringify(state, null, 2));
@@ -493,6 +503,37 @@ router.post('/notifications/read', (req, res) => {
 /* =========================================================
    Fahrzeuge
    ========================================================= */
+function parseLeasingPayload(body, existing = null, mileage = 0) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(body, key);
+  const pick = (key, column) => (has(key) ? body[key] : existing?.[column]);
+  const start = optionalDate(pick('leasingStart', 'leasing_start'), 'Leasingbeginn');
+  const end = optionalDate(pick('leasingEnd', 'leasing_end'), 'Leasingende');
+  const startKmRaw = pick('leasingStartKm', 'leasing_start_km');
+  const limitRaw = pick('leasingKmLimit', 'leasing_km_limit');
+  const startKm = startKmRaw === undefined || startKmRaw === null || startKmRaw === ''
+    ? null
+    : intValue(startKmRaw, 'Leasing-Startkilometer', { min: 0, max: 10_000_000, required: true });
+  const kmLimit = limitRaw === undefined || limitRaw === null || limitRaw === ''
+    ? null
+    : intValue(limitRaw, 'Leasing-Kilometerlimit', { min: 1, max: 10_000_000, required: true });
+
+  if (!start && !end && startKm === null && kmLimit === null) {
+    return { leasingStart: null, leasingEnd: null, leasingStartKm: null, leasingKmLimit: null };
+  }
+  if (!end) throw new HttpError(400, 'Bitte geben Sie für die Leasingüberwachung ein Leasingende an.');
+  if (kmLimit === null) throw new HttpError(400, 'Bitte geben Sie ein Gesamt-Kilometerlimit für das Leasing an.');
+  if (start && end < start) throw new HttpError(400, 'Das Leasingende muss nach dem Leasingbeginn liegen.');
+  if (startKm !== null && startKm > mileage) {
+    throw new HttpError(400, 'Der Leasing-Startkilometerstand darf den aktuellen Kilometerstand nicht übersteigen.');
+  }
+  return {
+    leasingStart: start,
+    leasingEnd: end,
+    leasingStartKm: startKm,
+    leasingKmLimit: kmLimit
+  };
+}
+
 function parseVehiclePayload(body, existing = null) {
   const name = requiredString(body.name, 'Bezeichnung', { max: 120 });
   const plate = requiredString(body.plate, 'Kennzeichen', { max: 30 }).toUpperCase();
@@ -500,6 +541,8 @@ function parseVehiclePayload(body, existing = null) {
   const blockedReason = blocked
     ? optionalString(body.blockedReason === undefined ? existing?.blocked_reason : body.blockedReason, { max: 500 })
     : '';
+  const mileage = intValue(body.mileage ?? 0, 'Kilometerstand', { min: 0, max: 10_000_000, required: true });
+  const leasing = parseLeasingPayload(body, existing, mileage);
   return {
     name,
     plate,
@@ -509,13 +552,14 @@ function parseVehiclePayload(body, existing = null) {
     status: oneOf(body.status || 'available', VEHICLE_STATUSES, 'Status'),
     location: optionalString(body.location, { max: 160 }),
     department: optionalString(body.department, { max: 160 }),
-    mileage: intValue(body.mileage ?? 0, 'Kilometerstand', { min: 0, max: 10_000_000, required: true }),
+    mileage,
     nextService: optionalDate(body.nextService, 'Nächste Inspektion'),
     tuv: optionalDate(body.tuv, 'HU/AU'),
     insurance: optionalString(body.insurance, { max: 160 }),
     notes: optionalString(body.notes, { max: 1000 }),
     blocked,
     blockedReason,
+    ...leasing,
     color: hexColorValue(body.color, VEHICLE_COLORS[db.prepare('SELECT COUNT(*) AS count FROM vehicles').get().count % VEHICLE_COLORS.length])
   };
 }
@@ -539,17 +583,28 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
     if (activeBooking) values.status = 'in_use';
     db.prepare(`
       INSERT INTO vehicles
-        (id, name, plate, type, fuel, seats, location, department, status, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, name, plate, type, fuel, seats, location, department, status, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, values.name, values.plate, values.type, values.fuel, values.seats,
       values.location, values.department, values.status, values.mileage,
       values.blocked ? 1 : 0, values.blockedReason,
       values.nextService, values.tuv, values.insurance, todayISO(),
-      values.color, values.notes, imageFile, now, now
+      values.color, values.notes, imageFile,
+      values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
+      now, now
     );
     audit(req, 'create', 'vehicle', id, { name: values.name, plate: values.plate, blocked: values.blocked, blockedReason: values.blockedReason });
     if (values.blocked) audit(req, 'block', 'vehicle', id, { reason: values.blockedReason });
+    if (values.leasingEnd) {
+      audit(req, 'leasing_update', 'vehicle', id, {
+        leasingStart: values.leasingStart,
+        leasingEnd: values.leasingEnd,
+        leasingStartKm: values.leasingStartKm,
+        leasingKmLimit: values.leasingKmLimit
+      });
+    }
+    triggerLeasingCheck(db, { dataDir: DATA_DIR });
     sendState(req, res, 201);
   } catch (error) {
     if (imageFile) deleteUpload(imageFile);
@@ -574,12 +629,18 @@ router.patch('/vehicles/:id', async (req, res, next) => {
     const active = db.prepare("SELECT 1 FROM bookings WHERE vehicle_id = ? AND status = 'active' LIMIT 1").get(existing.id);
     if (active && values.status !== 'maintenance') values.status = 'in_use';
     const blockedChanged = Boolean(existing.blocked) !== values.blocked;
+    const leasingChanged = String(existing.leasing_start || '') !== String(values.leasingStart || '')
+      || String(existing.leasing_end || '') !== String(values.leasingEnd || '')
+      || String(existing.leasing_start_km ?? '') !== String(values.leasingStartKm ?? '')
+      || String(existing.leasing_km_limit ?? '') !== String(values.leasingKmLimit ?? '');
+    const mileageChanged = Number(existing.mileage) !== Number(values.mileage);
 
     db.transaction(() => {
       db.prepare(`
         UPDATE vehicles SET
           name = ?, plate = ?, type = ?, fuel = ?, seats = ?, location = ?, department = ?,
           status = ?, mileage = ?, blocked = ?, blocked_reason = ?, next_service = ?, tuv = ?, insurance = ?, color = ?, notes = ?,
+          leasing_start = ?, leasing_end = ?, leasing_start_km = ?, leasing_km_limit = ?,
           image_file = ?, updated_at = ?
         WHERE id = ?
       `).run(
@@ -587,6 +648,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
         values.location, values.department, values.status, values.mileage,
         values.blocked ? 1 : 0, values.blockedReason,
         values.nextService, values.tuv, values.insurance, values.color, values.notes,
+        values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
         imageFile, isoNow(), existing.id
       );
       audit(req, 'update', 'vehicle', existing.id, {
@@ -601,8 +663,23 @@ router.patch('/vehicles/:id', async (req, res, next) => {
           previousReason: existing.blocked_reason || ''
         });
       }
+      if (leasingChanged) {
+        audit(req, 'leasing_update', 'vehicle', existing.id, {
+          leasingStart: values.leasingStart,
+          leasingEnd: values.leasingEnd,
+          leasingStartKm: values.leasingStartKm,
+          leasingKmLimit: values.leasingKmLimit,
+          previous: {
+            leasingStart: existing.leasing_start || null,
+            leasingEnd: existing.leasing_end || null,
+            leasingStartKm: existing.leasing_start_km ?? null,
+            leasingKmLimit: existing.leasing_km_limit ?? null
+          }
+        });
+      }
     })();
     if (existing.image_file && existing.image_file !== imageFile) deleteUpload(existing.image_file);
+    if (leasingChanged || mileageChanged) triggerLeasingCheck(db, { dataDir: DATA_DIR });
     sendState(req, res);
   } catch (error) {
     if (newImageFile) deleteUpload(newImageFile);
@@ -705,7 +782,7 @@ router.post('/bookings', (req, res, next) => {
       VALUES (?, ?, ?, ?, ?, ?, 'planned', ?, ?, ?, ?)
     `).run(id, vehicle.id, driver.id, purpose, start, end, optionalString(body.notes, { max: 1000 }), req.user.id, now, now);
     audit(req, 'create', 'booking', id, { purpose, vehicleId, driverId, start, end });
-    sendState(req, res, 201);
+    sendState(req, res, 201, { leasingWarning: leasingWarningForVehicle(vehicle) });
   } catch (error) {
     next(error);
   }
@@ -761,7 +838,10 @@ router.post('/bookings/:id/end', (req, res, next) => {
       audit(req, 'complete', 'booking', booking.id, { startKm, endKm, distance: endKm - startKm });
     });
     transaction();
-    sendState(req, res);
+    const completedBooking = db.prepare('SELECT vehicle_id FROM bookings WHERE id = ?').get(req.params.id);
+    const updatedVehicle = completedBooking ? getVehicle(completedBooking.vehicle_id) : null;
+    triggerLeasingCheck(db, { dataDir: DATA_DIR });
+    sendState(req, res, 200, { leasingWarning: updatedVehicle ? leasingWarningForVehicle(updatedVehicle) : null });
   } catch (error) {
     next(error);
   }
@@ -844,7 +924,11 @@ router.post('/booking-requests', (req, res, next) => {
       });
     })();
     const state = getState(db, req.user, req.auth);
-    res.status(201).json({ ...state, requestWarning: conflict.hasConflict ? conflict.message : null });
+    res.status(201).json({
+      ...state,
+      requestWarning: conflict.hasConflict ? conflict.message : null,
+      leasingWarning: leasingWarningForVehicle(vehicle)
+    });
   } catch (error) {
     next(error);
   }
@@ -1002,7 +1086,9 @@ router.post('/trips', (req, res, next) => {
       audit(req, 'create', 'trip', id, { vehicleId: vehicle.id, driverId: driver.id, startKm, endKm });
     });
     transaction();
-    sendState(req, res, 201);
+    triggerLeasingCheck(db, { dataDir: DATA_DIR });
+    const updatedVehicle = getVehicle(vehicle.id);
+    sendState(req, res, 201, { leasingWarning: updatedVehicle ? leasingWarningForVehicle(updatedVehicle) : null });
   } catch (error) {
     next(error);
   }
@@ -1145,6 +1231,56 @@ router.patch('/settings', requirePermission('settings_manage'), (req, res, next)
     );
     audit(req, 'update', 'settings', '1', { orgName });
     sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/smtp', requireAdmin, (req, res, next) => {
+  try {
+    const previous = loadSmtpConfig(db, { dataDir: DATA_DIR });
+    let config;
+    try {
+      config = saveSmtpConfig(db, req.body || {}, { dataDir: DATA_DIR });
+    } catch (error) {
+      const httpError = new HttpError(400, error.message);
+      httpError.details = error.details || null;
+      throw httpError;
+    }
+    audit(req, 'update', 'smtp', '1', {
+      enabled: config.enabled,
+      secure: config.secure,
+      hostChanged: previous.host !== config.host,
+      fromAddressChanged: previous.fromAddress !== config.fromAddress,
+      usernameChanged: previous.username !== config.username,
+      passwordChanged: Boolean(req.body?.password),
+      passwordCleared: req.body?.clearPassword === true
+    });
+    if (config.enabled) triggerLeasingCheck(db, { dataDir: DATA_DIR });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/smtp/test', requireAdmin, async (req, res, next) => {
+  try {
+    const config = loadSmtpConfig(db, { dataDir: DATA_DIR });
+    const organization = db.prepare('SELECT org_name FROM settings WHERE id = 1').get()?.org_name || 'Fuhrpark';
+    try {
+      await sendMail({
+        config,
+        to: req.user.email,
+        subject: `[${organization}] SMTP-Test`,
+        text: 'Diese Testnachricht bestätigt den SMTP-Versand aus dem AWO Fuhrparkmanagement.'
+      });
+    } catch (error) {
+      const code = sanitizeSmtpError(error);
+      audit(req, 'smtp_test', 'smtp', '1', { ok: false, errorCode: code });
+      throw new HttpError(400, smtpErrorMessage(code));
+    }
+    audit(req, 'smtp_test', 'smtp', '1', { ok: true });
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
