@@ -60,6 +60,17 @@ CREATE TABLE IF NOT EXISTS roles (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS vehicle_usage_categories (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  is_system INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0,1)),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS vehicles (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -71,6 +82,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   department TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'in_use', 'maintenance', 'defect', 'sold', 'not_drivable')),
   ownership_type TEXT NOT NULL DEFAULT 'owned' CHECK (ownership_type IN ('owned', 'leasing')),
+  usage_category_id TEXT REFERENCES vehicle_usage_categories(id) ON DELETE SET NULL,
   mileage INTEGER NOT NULL DEFAULT 0 CHECK (mileage >= 0),
   blocked INTEGER NOT NULL DEFAULT 0 CHECK (blocked IN (0, 1)),
   blocked_reason TEXT NOT NULL DEFAULT '',
@@ -87,6 +99,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
   leasing_end TEXT,
   leasing_start_km INTEGER,
   leasing_km_limit INTEGER,
+  leasing_monthly_cost REAL CHECK (leasing_monthly_cost IS NULL OR leasing_monthly_cost >= 0),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -389,3 +402,4 @@ CREATE INDEX IF NOT EXISTS idx_mfa_recovery_user ON mfa_recovery_codes (user_id,
 CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens (user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_user_passkeys_user ON user_passkeys (user_id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_user_sso_subject ON user_sso (issuer, subject);
+CREATE INDEX IF NOT EXISTS idx_vehicle_usage_categories_sort ON vehicle_usage_categories (sort_order, code);

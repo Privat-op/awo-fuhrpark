@@ -753,7 +753,7 @@ function openVehicleModal(vehicleId = null) {
   }
   const existing = vehicleId ? getVehicle(vehicleId) : null;
   const defaults = {
-    name: '', plate: '', type: 'Pkw', fuel: 'Diesel', seats: 5, status: 'available', ownershipType: 'owned',
+    name: '', plate: '', type: 'Pkw', fuel: 'Diesel', seats: 5, status: 'available', ownershipType: 'owned', usageCategoryId: null,
     location: '', department: '', mileage: 0, nextService: addDays(todayISO(), 90),
     tuv: addDays(todayISO(), 365), insurance: '', notes: '', image: '', blocked: false, blockedReason: '',
     leasing: null
@@ -761,6 +761,7 @@ function openVehicleModal(vehicleId = null) {
   const vehicle = existing || defaults;
   const ownership = vehicle.ownershipType || (vehicle.leasing ? 'leasing' : 'owned');
   const leasing = vehicle.leasing || {};
+  const usageCategories = db.vehicleUsageCategories || [];
   const title = existing ? 'Fahrzeug bearbeiten' : 'Fahrzeug anlegen';
   let pendingImage = vehicle.image || '';
   let newImageData = null;
@@ -833,6 +834,18 @@ function openVehicleModal(vehicleId = null) {
             </div>
             <p class="field-hint">Bei Eigentum werden Leasingfelder ignoriert; gespeicherte Werte bleiben erhalten.</p>
           </div>
+          <div class="field field-full">
+            <label for="vehicleUsageCategory">Einsatzkategorie <span class="optional">optional</span></label>
+            <select class="select" id="vehicleUsageCategory" name="usageCategoryId">
+              <option value="" ${!vehicle.usageCategoryId ? 'selected' : ''}>Keine Kategorie</option>
+              ${usageCategories.map((category) => {
+                const disabled = Number(category.active) === 0 && category.id !== vehicle.usageCategoryId ? 'disabled' : '';
+                const label = Number(category.active) === 0 && category.id !== vehicle.usageCategoryId ? `${esc(category.name)} (inaktiv)` : esc(category.name);
+                return `<option value="${esc(category.id)}" ${vehicle.usageCategoryId === category.id ? 'selected' : ''} ${disabled}>${label}</option>`;
+              }).join('')}
+            </select>
+            <p class="field-hint">Frei anpassbar über Einstellungen → Fuhrpark → Einsatzkategorien.</p>
+          </div>
           <div class="field">
             <label for="vehicleLocation">Standort (Freitext)</label>
             <input class="input" id="vehicleLocation" name="location" type="text" value="${esc(vehicle.location)}" placeholder="z. B. Kita Pusteblume">
@@ -885,6 +898,11 @@ function openVehicleModal(vehicleId = null) {
           <div class="field">
             <label for="vehicleLeasingKmLimit">Gesamt-Kilometerlimit</label>
             <input class="input" id="vehicleLeasingKmLimit" name="leasingKmLimit" type="number" min="1" step="1" value="${leasing.kmLimit ?? ''}" placeholder="z. B. 120000">
+          </div>
+          <div class="field field-full">
+            <label for="vehicleLeasingMonthlyCost">Monatliche Leasingkosten (€) <span class="optional">optional</span></label>
+            <input class="input" id="vehicleLeasingMonthlyCost" name="leasingMonthlyCost" type="number" inputmode="decimal" step="0.01" min="0" max="99999.99" value="${leasing.monthlyCost ?? ''}" placeholder="z. B. 499,00">
+            <p class="field-hint">Nur für Leasing-Fahrzeuge relevant; für Eigentum optional und ohne Auswirkung.</p>
           </div>
           <div class="field field-full">
             <p class="field-hint">Leasingende und Kilometerlimit gemeinsam hinterlegen. Ohne Angaben bleibt das Fahrzeug außerhalb der Leasingüberwachung; bestehende Daten bleiben unverändert.</p>
@@ -1008,6 +1026,8 @@ function openVehicleModal(vehicleId = null) {
       seats: Math.max(1, Number(data.get('seats')) || 1),
       status: String(data.get('status') || 'available'),
       ownershipType: String(data.get('ownershipType') || 'owned'),
+      usageCategoryId: data.get('usageCategoryId') ? String(data.get('usageCategoryId')) : null,
+      leasingMonthlyCost: data.get('leasingMonthlyCost') === '' || data.get('leasingMonthlyCost') === null ? null : String(data.get('leasingMonthlyCost')),
       location: String(data.get('location') || '').trim(),
       department: String(data.get('department') || '').trim(),
       costCenterId: String(data.get('costCenterId') || '') || null,
@@ -1056,6 +1076,7 @@ function vehicleMutationPayload(vehicle, overrides = {}) {
     seats: vehicle.seats,
     status: vehicle.status,
     ownershipType: vehicle.ownershipType || 'owned',
+    usageCategoryId: vehicle.usageCategoryId || null,
     location: vehicle.location || '',
     department: vehicle.department || '',
     costCenterId: vehicle.costCenterId || '',
@@ -1158,6 +1179,7 @@ function openVehicleDetails(vehicleId) {
   const canBookVehicle = canOn('vehicle', vehicleId, 'bookings_create');
   const unavailableReason = vehicleUnavailableReason(vehicle);
   const ownership = VEHICLE_OWNERSHIP[vehicle.ownershipType] || VEHICLE_OWNERSHIP.owned;
+  const usageCategory = vehicle.usageCategory?.name || '';
   const blocked = Boolean(vehicle.blocked);
   const showBookings = canOn('vehicle', vehicleId, 'bookings_view');
   const showMaintenance = canOn('vehicle', vehicleId, 'maintenance_view');
@@ -1200,7 +1222,7 @@ function openVehicleDetails(vehicleId) {
         <div class="detail-art ${vehicle.image ? 'has-photo' : ''}">${vehicle.image ? `<img src="${esc(vehicle.image)}" alt="${esc(vehicle.name)}">` : vehicleArt(vehicle.type, vehicle.color)}</div>
         <div class="detail-title">
           <h3>${esc(vehicle.name)}</h3>
-          <div class="vehicle-sub"><span class="plate">${esc(vehicle.plate)}</span><span>·</span><span class="badge badge-${ownership.badge} no-dot">${ownership.label}</span><span>·</span><span>${esc(vehicle.location)}</span></div>
+          <div class="vehicle-sub"><span class="plate">${esc(vehicle.plate)}</span><span>·</span><span class="badge badge-${ownership.badge} no-dot">${ownership.label}</span>${usageCategory ? `<span>·</span><span class="badge badge-gray no-dot">${esc(usageCategory)}</span>` : ''}<span>·</span><span>${esc(vehicle.location)}</span></div>
           <div style="margin-top:8px"><span class="badge badge-${status.badge}">${status.label}</span>${blocked ? ' <span class="badge badge-red">Dauerhaft gesperrt</span>' : ''}</div>
         </div>
       </div>

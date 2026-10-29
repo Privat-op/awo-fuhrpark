@@ -911,6 +911,110 @@ router.delete('/locations/:id', requireAdmin, (req, res, next) => {
 });
 
 /* =========================================================
+   Einsatzkategorien
+   ========================================================= */
+function getUsageCategory(db, id) {
+  return db.prepare('SELECT * FROM vehicle_usage_categories WHERE id = ?').get(id);
+}
+
+router.get('/vehicle-usage-categories', requirePermission('vehicles_view'), (req, res, next) => {
+  try {
+    const categories = db.prepare('SELECT * FROM vehicle_usage_categories ORDER BY sort_order ASC, code ASC').all();
+    res.json({ vehicleUsageCategories: categories });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/vehicle-usage-categories', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const name = requiredString(req.body?.name, 'Bezeichnung', { max: 160 });
+    let code = requiredString(req.body?.code, 'Code', { max: 40 }).toUpperCase();
+    code = code.replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    if (!code) throw new HttpError(400, 'Ungültiger Code.');
+    const active = bodyBoolean(req.body?.active, true);
+    const sortOrder = bodyInt(req.body?.sortOrder ?? 99, 0, 9999);
+    const duplicate = db.prepare('SELECT id FROM vehicle_usage_categories WHERE code = ? COLLATE NOCASE').get(code);
+    if (duplicate) throw new HttpError(409, 'Eine Einsatzkategorie mit diesem Code existiert bereits.');
+    const id = crypto.randomUUID();
+    const now = isoNow();
+    db.prepare(`
+      INSERT INTO vehicle_usage_categories (id, code, name, sort_order, active, is_system, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+    `).run(id, code, name, sortOrder, active ? 1 : 0, now, now);
+    audit(req, 'create', 'vehicle_usage_category', id, { code, name, active });
+    sendState(req, res, 201);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return next(new HttpError(409, 'Eine Einsatzkategorie mit diesem Code existiert bereits.'));
+    }
+    next(error);
+  }
+});
+
+router.patch('/vehicle-usage-categories/:id', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const existing = getUsageCategory(db, req.params.id);
+    if (!existing) throw new HttpError(404, 'Einsatzkategorie wurde nicht gefunden.');
+    const name = hasKey(req.body, 'name') ? requiredString(req.body.name, 'Bezeichnung', { max: 160 }) : existing.name;
+    const code = hasKey(req.body, 'code') ? requiredString(req.body.code, 'Code', { max: 40 }).toUpperCase() : existing.code;
+    const normalizedCode = code.replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    if (!normalizedCode) throw new HttpError(400, 'Ungültiger Code.');
+    const active = hasKey(req.body, 'active') ? bodyBoolean(req.body.active, Boolean(existing.active)) : Boolean(existing.active);
+    const sortOrder = hasKey(req.body, 'sortOrder') ? bodyInt(req.body.sortOrder, 0, 9999) : Number(existing.sort_order || 0);
+    const duplicate = db.prepare('SELECT id FROM vehicle_usage_categories WHERE code = ? COLLATE NOCASE AND id <> ?').get(normalizedCode, existing.id);
+    if (duplicate) throw new HttpError(409, 'Eine Einsatzkategorie mit diesem Code existiert bereits.');
+    db.prepare('UPDATE vehicle_usage_categories SET code = ?, name = ?, sort_order = ?, active = ?, updated_at = ? WHERE id = ?')
+      .run(normalizedCode, name, sortOrder, active ? 1 : 0, isoNow(), existing.id);
+    audit(req, 'update', 'vehicle_usage_category', existing.id, { code: normalizedCode, name, active, sortOrder });
+    sendState(req, res);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return next(new HttpError(409, 'Eine Einsatzkategorie mit diesem Code existiert bereits.'));
+    }
+    next(error);
+  }
+});
+
+router.delete('/vehicle-usage-categories/:id', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const existing = getUsageCategory(db, req.params.id);
+    if (!existing) throw new HttpError(404, 'Einsatzkategorie wurde nicht gefunden.');
+    if (Number(existing.is_system)) throw new HttpError(409, 'Systemkategorien können nicht gelöscht werden.');
+    const count = db.prepare('SELECT COUNT(*) AS count FROM vehicles WHERE usage_category_id = ?').get(existing.id).count;
+    if (count > 0) throw new HttpError(409, 'Die Einsatzkategorie wird noch verwendet und kann nicht gelöscht werden. Deaktivieren Sie sie stattdessen.');
+    db.prepare('DELETE FROM vehicle_usage_categories WHERE id = ?').run(existing.id);
+    audit(req, 'delete', 'vehicle_usage_category', existing.id, { code: existing.code, name: existing.name });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/vehicle-usage-categories/:id/reorder', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const direction = String(req.body?.direction || '');
+    if (direction !== 'up' && direction !== 'down') throw new HttpError(400, 'Ungültige Richtung.');
+    const items = db.prepare('SELECT id, sort_order FROM vehicle_usage_categories ORDER BY sort_order ASC, code ASC').all();
+    const index = items.findIndex((item) => item.id === req.params.id);
+    if (index < 0) throw new HttpError(404, 'Einsatzkategorie wurde nicht gefunden.');
+    const swapWith = direction === 'up' ? index - 1 : index + 1;
+    if (swapWith < 0 || swapWith >= items.length) return sendState(req, res);
+    const a = items[index];
+    const b = items[swapWith];
+    const now = isoNow();
+    db.transaction(() => {
+      db.prepare('UPDATE vehicle_usage_categories SET sort_order = ?, updated_at = ? WHERE id = ?').run(b.sort_order, now, a.id);
+      db.prepare('UPDATE vehicle_usage_categories SET sort_order = ?, updated_at = ? WHERE id = ?').run(a.sort_order, now, b.id);
+    })();
+    audit(req, 'update', 'vehicle_usage_category', a.id, { action: 'reorder', direction, swappedWith: b.id });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* =========================================================
    Fahrzeuge
    ========================================================= */
 function parseLeasingPayload(body, existing = null, mileage = 0) {
@@ -965,6 +1069,18 @@ function parseVehiclePayload(body, existing = null) {
       VEHICLE_OWNERSHIP_TYPES,
       'Eigentum/Leasing'
     ),
+    usageCategoryId: body.usageCategoryId === undefined ? (existing?.usage_category_id || null) : (body.usageCategoryId === null || body.usageCategoryId === '' ? null : requiredString(body.usageCategoryId, 'Einsatzkategorie')),
+    leasingMonthlyCost: (() => {
+      const has = Object.prototype.hasOwnProperty.call(body, 'leasingMonthlyCost');
+      if (!has) return existing?.leasing_monthly_cost === null || existing?.leasing_monthly_cost === undefined ? null : Number(existing?.leasing_monthly_cost);
+      if (body.leasingMonthlyCost === null || body.leasingMonthlyCost === '') return null;
+      const num = Number(body.leasingMonthlyCost);
+      if (!Number.isFinite(num) || num < 0) throw new HttpError(400, 'Monatliche Leasingkosten müssen >= 0 sein.');
+      if (Math.round(num * 100) !== Math.round(num * 100 + 1e-9)) throw new HttpError(400, 'Monatliche Leasingkosten dürfen maximal 2 Nachkommastellen haben.');
+      if (Math.round(num * 100) !== num * 100 && Math.abs(Math.round(num * 100) - num * 100) > 1e-8) throw new HttpError(400, 'Monatliche Leasingkosten dürfen maximal 2 Nachkommastellen haben.');
+      if (num > 99999.99) throw new HttpError(400, 'Monatliche Leasingkosten dürfen maximal 99999,99 € betragen.');
+      return Math.round(num * 100) / 100;
+    })()(),
     location: optionalString(body.location, { max: 160 }),
     department: optionalString(body.department, { max: 160 }),
     mileage,
@@ -995,15 +1111,15 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
     if (activeBooking) values.status = 'in_use';
     db.prepare(`
       INSERT INTO vehicles
-        (id, name, plate, type, fuel, seats, location, department, status, ownership_type, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, cost_center_id, location_id, leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, name, plate, type, fuel, seats, location, department, status, ownership_type, usage_category_id, mileage, blocked, blocked_reason, next_service, tuv, insurance, acquired, color, notes, image_file, cost_center_id, location_id, leasing_start, leasing_end, leasing_start_km, leasing_km_limit, leasing_monthly_cost, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, values.name, values.plate, values.type, values.fuel, values.seats,
-      values.location, values.department, values.status, values.ownershipType, values.mileage,
+      values.location, values.department, values.status, values.ownershipType, values.usageCategoryId, values.mileage,
       values.blocked ? 1 : 0, values.blockedReason,
       values.nextService, values.tuv, values.insurance, todayISO(),
       values.color, values.notes, imageFile, values.costCenterId, values.locationId,
-      values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
+      values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit, values.leasingMonthlyCost,
       now, now
     );
     audit(req, 'create', 'vehicle', id, {
@@ -1013,6 +1129,8 @@ router.post('/vehicles', requirePermission('vehicles_manage'), async (req, res, 
       blockedReason: values.blockedReason,
       status: values.status,
       ownershipType: values.ownershipType,
+      usageCategoryId: values.usageCategoryId,
+      leasingMonthlyCost: values.leasingMonthlyCost,
       costCenterId: values.costCenterId,
       locationId: values.locationId
     });
@@ -1064,16 +1182,16 @@ router.patch('/vehicles/:id', async (req, res, next) => {
       db.prepare(`
         UPDATE vehicles SET
           name = ?, plate = ?, type = ?, fuel = ?, seats = ?, location = ?, department = ?,
-          status = ?, ownership_type = ?, mileage = ?, blocked = ?, blocked_reason = ?, next_service = ?, tuv = ?, insurance = ?, color = ?, notes = ?,
-          cost_center_id = ?, location_id = ?, leasing_start = ?, leasing_end = ?, leasing_start_km = ?, leasing_km_limit = ?,
+          status = ?, ownership_type = ?, usage_category_id = ?, mileage = ?, blocked = ?, blocked_reason = ?, next_service = ?, tuv = ?, insurance = ?, color = ?, notes = ?,
+          cost_center_id = ?, location_id = ?, leasing_start = ?, leasing_end = ?, leasing_start_km = ?, leasing_km_limit = ?, leasing_monthly_cost = ?,
           image_file = ?, updated_at = ?
         WHERE id = ?
       `).run(
         values.name, values.plate, values.type, values.fuel, values.seats,
-        values.location, values.department, values.status, values.ownershipType, values.mileage,
+        values.location, values.department, values.status, values.ownershipType, values.usageCategoryId, values.mileage,
         values.blocked ? 1 : 0, values.blockedReason,
         values.nextService, values.tuv, values.insurance, values.color, values.notes,
-        values.costCenterId, values.locationId, values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit,
+        values.costCenterId, values.locationId, values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit, values.leasingMonthlyCost,
         imageFile, isoNow(), existing.id
       );
       audit(req, 'update', 'vehicle', existing.id, {
@@ -1081,6 +1199,8 @@ router.patch('/vehicles/:id', async (req, res, next) => {
         plate: values.plate,
         status: values.status,
         ownershipType: values.ownershipType,
+        usageCategoryId: values.usageCategoryId,
+        leasingMonthlyCost: values.leasingMonthlyCost,
         blocked: values.blocked,
         blockedReason: values.blockedReason,
         costCenterId: values.costCenterId,

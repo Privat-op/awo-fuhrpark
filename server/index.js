@@ -1044,6 +1044,9 @@ app.use((req, res) => {
 app.use((error, req, res, _next) => {
   const status = error instanceof HttpError ? error.status : Number(error.status) || 500;
   logRequestError(req, status, error);
+  if (status >= 500) {
+    console.error('SERVERERR', error.stack || error);
+  }
   if (res.headersSent) return;
   const message = status >= 500 ? 'Interner Serverfehler.' : error.message;
   if (wantsJson(req)) {

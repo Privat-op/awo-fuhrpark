@@ -20,8 +20,14 @@ function costCenterFields(row, costCenter = null) {
   };
 }
 
-function mapVehicle(row, costCenter = null, location = null) {
+function mapVehicle(row, costCenter = null, location = null, usageCategory = null) {
   const version = encodeURIComponent(row.updated_at || '');
+  const leasing = calculateLeasingState(row);
+  if (leasing && row.leasing_monthly_cost !== null && row.leasing_monthly_cost !== undefined && row.leasing_monthly_cost !== '') {
+    leasing.monthlyCost = Number(row.leasing_monthly_cost);
+  } else if (row.leasing_monthly_cost !== null && row.leasing_monthly_cost !== undefined && row.leasing_monthly_cost !== '') {
+    leasing = { monthlyCost: Number(row.leasing_monthly_cost), warnings: [] };
+  }
   return {
     id: row.id,
     name: row.name,
@@ -33,6 +39,8 @@ function mapVehicle(row, costCenter = null, location = null) {
     department: row.department,
     status: row.status,
     ownershipType: row.ownership_type || 'owned',
+    usageCategoryId: row.usage_category_id || null,
+    usageCategory: usageCategory ? { id: usageCategory.id, code: usageCategory.code, name: usageCategory.name } : null,
     mileage: row.mileage,
     nextService: row.next_service,
     tuv: row.tuv,
@@ -45,7 +53,7 @@ function mapVehicle(row, costCenter = null, location = null) {
     ...costCenterFields(row, costCenter),
     locationId: row.location_id || null,
     locationName: location?.name || '',
-    leasing: calculateLeasingState(row),
+    leasing: leasing,
     image: row.image_file ? `/api/vehicles/${encodeURIComponent(row.id)}/image?v=${version}` : ''
   };
 }
@@ -153,7 +161,27 @@ function mapUser(row, costCenter = null, defaultColorMode = 'light', location = 
   };
 }
 
-function mapMinimalVehicle(row, costCenter = null) {
+function mapMinimalVehicle(row, costCenter = null, usageCategory = null) {
+  const leasing = calculateLeasingState(row);
+  if (leasing && row.leasing_monthly_cost !== null && row.leasing_monthly_cost !== undefined && row.leasing_monthly_cost !== '') {
+    leasing.monthlyCost = Number(row.leasing_monthly_cost);
+  } else if (row.leasing_monthly_cost !== null && row.leasing_monthly_cost !== undefined && row.leasing_monthly_cost !== '') {
+    return {
+      id: row.id,
+      name: row.name,
+      plate: row.plate,
+      type: row.type,
+      color: row.color,
+      status: row.status,
+      ownershipType: row.ownership_type || 'owned',
+      usageCategoryId: row.usage_category_id || null,
+      usageCategory: usageCategory ? { id: usageCategory.id, code: usageCategory.code, name: usageCategory.name } : null,
+      blocked: Boolean(row.blocked),
+      blockedReason: row.blocked_reason || '',
+      ...costCenterFields(row, costCenter),
+      leasing: { monthlyCost: Number(row.leasing_monthly_cost), warnings: [] }
+    };
+  }
   return {
     id: row.id,
     name: row.name,
@@ -162,10 +190,12 @@ function mapMinimalVehicle(row, costCenter = null) {
     color: row.color,
     status: row.status,
     ownershipType: row.ownership_type || 'owned',
+    usageCategoryId: row.usage_category_id || null,
+    usageCategory: usageCategory ? { id: usageCategory.id, code: usageCategory.code, name: usageCategory.name } : null,
     blocked: Boolean(row.blocked),
     blockedReason: row.blocked_reason || '',
     ...costCenterFields(row, costCenter),
-    leasing: calculateLeasingState(row)
+    leasing: leasing
   };
 }
 
@@ -388,6 +418,15 @@ function getState(db, user, auth = null) {
   if (moduleAccess.costs_manage) moduleAccess.costs_view = true;
   if (moduleAccess.cost_centers_manage) moduleAccess.cost_centers_view = true;
 
+  let vehicleUsageCategoryRows = [];
+  try {
+    vehicleUsageCategoryRows = db.prepare('SELECT * FROM vehicle_usage_categories').all();
+  } catch {
+    vehicleUsageCategoryRows = [];
+  }
+  const vehicleUsageCategoryById = new Map(vehicleUsageCategoryRows.map((row) => [row.id, row]));
+  const usageCategoryFor = (row) => vehicleUsageCategoryById.get(row?.usage_category_id) || null;
+
   let ownTrips = null;
   if (moduleAccess.own_trips_view && linkedDriverRow) {
     const ownBookings = bookingRows
@@ -409,7 +448,7 @@ function getState(db, user, auth = null) {
       },
       canRequest: moduleAccess.own_trips_request,
       canExecute: moduleAccess.own_trips_execute,
-      vehicles: ownTripVehicleRows.map((row) => mapMinimalVehicle(row, costCenterFor(row))),
+      vehicles: ownTripVehicleRows.map((row) => mapMinimalVehicle(row, costCenterFor(row), usageCategoryFor(row))),
       bookings: ownBookings,
       requests: ownRequestRows.map((row) => mapBookingRequest(row, {
         vehicle: vehicleById.get(row.vehicle_id),
@@ -476,7 +515,7 @@ function getState(db, user, auth = null) {
       modules: moduleAccess,
       objects: objectAccess
     },
-    vehicles: visibleVehicleRows.map((row) => mapVehicle(row, costCenterFor(row), locationFor(row))),
+    vehicles: visibleVehicleRows.map((row) => mapVehicle(row, costCenterFor(row), locationFor(row), usageCategoryFor(row))),
     drivers: visibleDriverRows.map((row) => mapDriver(row, costCenterFor(row))),
     bookings: visibleBookingRows.map((row) => mapBooking(
       row,
@@ -492,6 +531,13 @@ function getState(db, user, auth = null) {
   };
 
   if (locationsEnabled) state.locations = locationRows;
+  let vehicleUsageCategories = [];
+  try {
+    vehicleUsageCategories = db.prepare('SELECT * FROM vehicle_usage_categories ORDER BY sort_order ASC, code ASC').all();
+  } catch {
+    vehicleUsageCategories = [];
+  }
+  state.vehicleUsageCategories = vehicleUsageCategories;
 
   const ownMfa = mfaByUserId.get(user.id) || null;
   const passkeys = listPasskeys(db, user.id);

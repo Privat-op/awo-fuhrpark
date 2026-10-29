@@ -125,7 +125,8 @@ function filteredVehicles() {
       .join(' ').toLowerCase().includes(query);
     const matchesType = ui.vehicleType === 'all' || vehicle.type === ui.vehicleType;
     const matchesStatus = ui.vehicleStatus === 'all' || vehicle.status === ui.vehicleStatus;
-    return matchesQuery && matchesType && matchesStatus;
+    const matchesUsageCategory = ui.vehicleUsageCategory === 'all' || !ui.vehicleUsageCategory || vehicle.usageCategoryId === ui.vehicleUsageCategory;
+    return matchesQuery && matchesType && matchesStatus && matchesUsageCategory;
   });
 }
 
@@ -152,21 +153,22 @@ function leasingCardMarkup(vehicle) {
 
 function leasingDetailMarkup(vehicle) {
   const leasing = vehicle.leasing;
-  if (!leasing) return '';
-  const warnings = Array.isArray(leasing.warnings) ? leasing.warnings : [];
+  if (!leasing && vehicle.leasing?.monthlyCost == null) return '';
+  const warnings = Array.isArray(leasing?.warnings) ? leasing.warnings : [];
   const warningMarkup = warnings.length
     ? warnings.map((warning) => `<div class="info-banner ${warning.severity === 'danger' ? 'is-danger' : ''}" style="margin-bottom:10px">${icon('alert')}<div><strong>${esc(warning.title)}</strong><p>${esc(warning.text)}</p></div></div>`).join('')
     : '';
-  const progress = leasing.percent === null ? null : Math.min(100, Math.max(0, leasing.percent));
+  const progress = leasing?.percent === null || leasing?.percent === undefined ? null : Math.min(100, Math.max(0, leasing.percent));
+  if (!leasing) return leasing?.monthlyCost != null ? `<div class="detail-card"><div class="detail-card-head"><div><strong>Leasing</strong><span>Monatliche Leasingkosten</span></div><span class="badge badge-gray">${esc(formatEuro(leasing.monthlyCost))}</span></div></div>` : '';
   return `
     ${warningMarkup}
     <div class="leasing-detail">
       <div class="leasing-detail-head">
         <div>
           <strong>Leasingüberwachung</strong>
-          <span>${leasing.start ? `Beginn ${formatDate(leasing.start)} · ` : ''}Ende ${formatDate(leasing.end)}${leasing.daysRemaining !== null ? ` (${leasing.daysRemaining < 0 ? `${Math.abs(leasing.daysRemaining)} Tage überfällig` : `in ${leasing.daysRemaining} Tagen`})` : ''}</span>
+          <span>${leasing.start ? `Beginn ${formatDate(leasing.start)} · ` : ''}${leasing.end ? `Ende ${formatDate(leasing.end)}` : ''}${leasing.daysRemaining !== null && leasing.daysRemaining !== undefined ? ` (${leasing.daysRemaining < 0 ? `${Math.abs(leasing.daysRemaining)} Tage überfällig` : `in ${leasing.daysRemaining} Tagen`})` : ''}</span>
         </div>
-        ${leasing.kmLimit ? `<span class="badge badge-${leasing.status === 'critical' ? 'red' : leasing.status === 'warning' ? 'amber' : 'green'} no-dot">${formatDecimal(leasing.percent, 1)} %</span>` : ''}
+        ${leasing.kmLimit ? `<span class="badge badge-${leasing.status === 'critical' ? 'red' : leasing.status === 'warning' ? 'amber' : 'green'} no-dot">${formatDecimal(leasing.percent, 1)} %</span>` : leasing.monthlyCost != null ? `<span class="badge badge-gray">${esc(formatEuro(leasing.monthlyCost))}</span>` : ''}
       </div>
       ${leasing.kmLimit ? `
         <div class="leasing-meter" role="img" aria-label="${esc(`Leasing-Kilometer zu ${formatDecimal(leasing.percent, 1)} Prozent verbraucht`)}">
@@ -189,6 +191,8 @@ function renderVehicleCard(vehicle) {
   const disabled = Boolean(unavailableReason);
   const blocked = Boolean(vehicle.blocked);
   const ownership = VEHICLE_OWNERSHIP[vehicle.ownershipType] || VEHICLE_OWNERSHIP.owned;
+  const usageCategory = vehicle.usageCategory?.name ? vehicle.usageCategory.name : '';
+  const monthlyCost = vehicle.ownershipType === 'leasing' && vehicle.leasing?.monthlyCost !== null && vehicle.leasing?.monthlyCost !== undefined ? vehicle.leasing.monthlyCost : null;
   const hasPhoto = Boolean(vehicle.image);
   const canManage = canOn('vehicle', vehicle.id, 'vehicles_manage');
 
@@ -212,13 +216,13 @@ function renderVehicleCard(vehicle) {
               <span class="plate">${esc(vehicle.plate)}</span>
               <span>·</span>
               <span class="badge badge-${ownership.badge} no-dot">${ownership.label}</span>
+              ${usageCategory ? `<span>·</span><span class="badge badge-gray no-dot">${esc(usageCategory)}</span>` : ''}
               <span>·</span>
               <span>${esc(vehicle.department)}</span>
               ${vehicle.costCenterCode ? `<span>·</span><span>${esc(vehicle.costCenterCode)}</span>` : ''}
+              ${monthlyCost !== null ? `<span>·</span><span>mtl. ${esc(formatEuro(monthlyCost))}</span>` : ''}
             </div>
           </div>
-          ${blocked ? '<span class="badge badge-red no-dot">Dauerhaft gesperrt</span>' : bookedToday ? `<span class="badge badge-blue no-dot">Heute gebucht</span>` : ''}
-        </div>
         ${blocked ? `<div class="info-banner" style="margin:12px 0 0;padding:10px 12px">${icon('alert')}<div><strong>Sperre aktiv</strong><p>${esc(vehicle.blockedReason || 'Keine Begründung hinterlegt.')}</p></div></div>` : ''}
         ${leasingCardMarkup(vehicle)}
         <div class="vehicle-specs">
@@ -270,6 +274,10 @@ function renderVehicles() {
         ${icon('search')}
         <input class="input" id="vehicleSearch" type="search" value="${esc(ui.vehicleQuery)}" placeholder="Fahrzeug, Kennzeichen, Standort …" aria-label="Fahrzeuge durchsuchen">
       </div>
+      <select class="select filter-select" id="vehicleUsageCategoryFilter" aria-label="Nach Einsatzkategorie filtern">
+        <option value="all" ${ui.vehicleUsageCategory === 'all' ? 'selected' : ''}>Alle Einsatzkategorien</option>
+        ${(db.vehicleUsageCategories || []).map((category) => `<option value="${category.id}" ${ui.vehicleUsageCategory === category.id ? 'selected' : ''}>${esc(category.name)}</option>`).join('')}
+      </select>
       <select class="select filter-select" id="vehicleStatusFilter" aria-label="Nach Status filtern">
         <option value="all" ${ui.vehicleStatus === 'all' ? 'selected' : ''}>Alle Status</option>
         ${Object.entries(VEHICLE_STATUS).map(([value, meta]) => `<option value="${value}" ${ui.vehicleStatus === value ? 'selected' : ''}>${meta.label}</option>`).join('')}

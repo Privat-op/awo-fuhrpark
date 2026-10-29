@@ -23,6 +23,13 @@ const VEHICLE_OWNERSHIP = {
   leasing: { label: 'Leasing', badge: 'blue' }
 };
 
+function formatEuro(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '';
+  return num.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+}
+
 function vehicleStatusLabel(status) {
   return VEHICLE_STATUS[status]?.label || status || 'Unbekannt';
 }

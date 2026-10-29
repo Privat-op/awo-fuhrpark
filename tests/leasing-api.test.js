@@ -139,13 +139,13 @@ function insertVehicle(id, name, plate, overrides = {}) {
   };
   db.prepare(`
     INSERT INTO vehicles
-      (id, name, plate, type, fuel, seats, location, department, status, ownership_type, mileage, blocked, blocked_reason, color, notes,
-       leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
-    VALUES (?, ?, ?, 'Pkw', 'Diesel', 5, '', '', 'available', ?, ?, 0, '', '#2563eb', '', ?, ?, ?, ?, ?, ?)
+      (id, name, plate, type, fuel, seats, location, department, status, ownership_type, usage_category_id, mileage, blocked, blocked_reason, color, notes,
+       leasing_start, leasing_end, leasing_start_km, leasing_km_limit, leasing_monthly_cost, created_at, updated_at)
+    VALUES (?, ?, ?, 'Pkw', 'Diesel', 5, '', '', 'available', ?, ?, ?, 0, '', '#2563eb', '', ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id, name, plate, values.leasingEnd || values.leasingKmLimit ? 'leasing' : 'owned', values.mileage,
+    id, name, plate, values.leasingEnd || values.leasingKmLimit ? 'leasing' : 'owned', null, values.mileage,
     values.leasingStart, values.leasingEnd,
-    values.leasingStartKm, values.leasingKmLimit, new Date().toISOString(), new Date().toISOString()
+    values.leasingStartKm, values.leasingKmLimit, null, new Date().toISOString(), new Date().toISOString()
   );
 }
 
@@ -255,7 +255,7 @@ after(async () => {
 });
 
 test('Migration 8 ist aktiv, Leasing-Spalten und Tabellen sind vorhanden', () => {
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 18);
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 19);
   const columns = db.prepare('PRAGMA table_info(vehicles)').all().map((column) => column.name);
   for (const column of ['leasing_start', 'leasing_end', 'leasing_start_km', 'leasing_km_limit']) {
     assert.ok(columns.includes(column), `Leasing-Spalte fehlt: ${column}`);

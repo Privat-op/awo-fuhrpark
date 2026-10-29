@@ -15,6 +15,7 @@ let ui = {
   vehicleQuery: '',
   vehicleType: 'all',
   vehicleStatus: 'all',
+  vehicleUsageCategory: 'all',
   bookingTab: 'calendar',
   weekOffset: 0,
   maintenanceFilter: 'all',
@@ -1593,6 +1594,7 @@ function dispatchAction(element) {
       ui.vehicleQuery = '';
       ui.vehicleType = 'all';
       ui.vehicleStatus = 'all';
+      ui.vehicleUsageCategory = 'all';
       renderCurrentView();
       break;
     case 'maintenance-filter': ui.maintenanceFilter = element.dataset.filter; renderCurrentView(); break;
@@ -1907,6 +1909,9 @@ function bindEvents() {
     }
     if (event.target.id === 'vehicleStatusFilter') {
       ui.vehicleStatus = event.target.value;
+      refreshVehicleGrid();
+    } else if (event.target.id === 'vehicleUsageCategoryFilter') {
+      ui.vehicleUsageCategory = event.target.value;
       refreshVehicleGrid();
     } else if (event.target.id === 'costCategoryFilter') {
       ui.costCategory = event.target.value;

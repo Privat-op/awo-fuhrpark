@@ -1,12 +1,12 @@
 'use strict';
 
-const VEHICLES_SCHEMA_VERSION = 18;
+const VEHICLES_SCHEMA_VERSION = 19;
 
 const VEHICLE_COLUMNS = [
   'id', 'name', 'plate', 'type', 'fuel', 'seats', 'location', 'department', 'status',
-  'ownership_type', 'mileage', 'blocked', 'blocked_reason', 'next_service', 'tuv', 'insurance',
+  'ownership_type', 'usage_category_id', 'mileage', 'blocked', 'blocked_reason', 'next_service', 'tuv', 'insurance',
   'acquired', 'color', 'notes', 'image_file', 'cost_center_id', 'location_id',
-  'leasing_start', 'leasing_end', 'leasing_start_km', 'leasing_km_limit', 'created_at', 'updated_at'
+  'leasing_start', 'leasing_end', 'leasing_start_km', 'leasing_km_limit', 'leasing_monthly_cost', 'created_at', 'updated_at'
 ];
 
 function tableExists(db, name) {
@@ -26,6 +26,7 @@ function createVehiclesTable(db, name = 'vehicles') {
       department TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'in_use', 'maintenance', 'defect', 'sold', 'not_drivable')),
       ownership_type TEXT NOT NULL DEFAULT 'owned' CHECK (ownership_type IN ('owned', 'leasing')),
+      usage_category_id TEXT REFERENCES vehicle_usage_categories(id) ON DELETE SET NULL,
       mileage INTEGER NOT NULL DEFAULT 0 CHECK (mileage >= 0),
       blocked INTEGER NOT NULL DEFAULT 0 CHECK (blocked IN (0, 1)),
       blocked_reason TEXT NOT NULL DEFAULT '',
@@ -42,6 +43,7 @@ function createVehiclesTable(db, name = 'vehicles') {
       leasing_end TEXT,
       leasing_start_km INTEGER,
       leasing_km_limit INTEGER,
+      leasing_monthly_cost REAL CHECK (leasing_monthly_cost IS NULL OR leasing_monthly_cost >= 0),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
@@ -58,27 +60,42 @@ function ensureVehicleIndexes(db) {
   }
 }
 
+function buildSelectExpression(columns, column) {
+  if (column === 'ownership_type') {
+    const hasOwnership = columns.includes('ownership_type');
+    if (hasOwnership) return 'ownership_type';
+    const leasingCondition = [
+      'leasing_start IS NOT NULL',
+      'leasing_end IS NOT NULL',
+      'leasing_start_km IS NOT NULL',
+      'leasing_km_limit IS NOT NULL'
+    ].join(' OR ');
+    return `CASE WHEN ${leasingCondition} THEN 'leasing' ELSE 'owned' END`;
+  }
+  if (column === 'usage_category_id') {
+    if (columns.includes('usage_category_id')) return 'usage_category_id';
+    return 'NULL';
+  }
+  if (column === 'leasing_monthly_cost') {
+    if (columns.includes('leasing_monthly_cost')) return 'leasing_monthly_cost';
+    return 'NULL';
+  }
+  if (columns.includes(column)) return column;
+  return 'NULL';
+}
+
 function rebuildVehicles(db) {
   const columns = db.prepare('PRAGMA table_info(vehicles)').all().map((column) => column.name);
-  const hasOwnership = columns.includes('ownership_type');
-  const leasingCondition = [
-    'leasing_start IS NOT NULL',
-    'leasing_end IS NOT NULL',
-    'leasing_start_km IS NOT NULL',
-    'leasing_km_limit IS NOT NULL'
-  ].join(' OR ');
-  const ownershipExpression = hasOwnership
-    ? 'ownership_type'
-    : `CASE WHEN ${leasingCondition} THEN 'leasing' ELSE 'owned' END`;
 
   const selectColumns = VEHICLE_COLUMNS
-    .map((column) => (column === 'ownership_type' ? ownershipExpression : column))
+    .map((column) => buildSelectExpression(columns, column))
     .join(', ');
+  const columnList = VEHICLE_COLUMNS.join(', ');
 
   db.exec('DROP TABLE IF EXISTS vehicles_new');
   createVehiclesTable(db, 'vehicles_new');
   db.prepare(`
-    INSERT INTO vehicles_new (${VEHICLE_COLUMNS.join(', ')})
+    INSERT INTO vehicles_new (${columnList})
     SELECT ${selectColumns}
     FROM vehicles
   `).run();
@@ -87,22 +104,59 @@ function rebuildVehicles(db) {
   ensureVehicleIndexes(db);
 }
 
+function ensureUsageCategoriesTable(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vehicle_usage_categories (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+      is_system INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0,1)),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+function seedUsageCategories(db) {
+  const defaults = [
+    { code: 'ARBEITSTIER', name: 'Arbeitstier', sortOrder: 0 },
+    { code: 'PERSONENBEFOERDERUNG', name: 'Personenbeförderungsfahrzeug', sortOrder: 1 },
+    { code: 'PRITSCHE', name: 'Pritsche', sortOrder: 2 },
+    { code: 'ANHAENGER', name: 'Anhänger', sortOrder: 3 },
+    { code: 'SONSTIGES', name: 'Sonstiges', sortOrder: 4 }
+  ];
+  const existing = db.prepare('SELECT COUNT(*) AS count FROM vehicle_usage_categories').get().count;
+  if (existing > 0) return;
+  const insert = db.prepare(`
+    INSERT INTO vehicle_usage_categories (id, code, name, sort_order, active, is_system, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `);
+  for (const entry of defaults) {
+    insert.run(`vuc-${entry.code.toLowerCase()}`, entry.code, entry.name, entry.sortOrder);
+  }
+}
+
 function migrateVehiclesSchema(db) {
   const previous = Number(db.pragma('user_version', { simple: true })) || 0;
   const foreignKeys = Number(db.pragma('foreign_keys', { simple: true })) === 1;
   db.pragma('foreign_keys = OFF');
   try {
     db.transaction(() => {
+      ensureUsageCategoriesTable(db);
+      seedUsageCategories(db);
       if (!tableExists(db, 'vehicles')) {
         createVehiclesTable(db);
       } else {
         const columns = db.prepare('PRAGMA table_info(vehicles)').all().map((column) => column.name);
         const sql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'vehicles'").get()?.sql || '';
-        const needsRebuild = !columns.includes('ownership_type') || !sql.includes("'defect'");
+        const needsRebuild = !columns.includes('ownership_type') || !sql.includes("'defect'")
+          || !columns.includes('usage_category_id') || !columns.includes('leasing_monthly_cost');
         if (needsRebuild) rebuildVehicles(db);
       }
       ensureVehicleIndexes(db);
-      if (previous < VEHICLES_SCHEMA_VERSION) {
+      if (previous < 18) {
         db.prepare(`
           UPDATE vehicles SET ownership_type = 'leasing'
           WHERE ownership_type = 'owned'

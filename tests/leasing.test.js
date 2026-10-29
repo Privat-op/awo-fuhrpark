@@ -63,13 +63,13 @@ function insertVehicle(database, overrides = {}) {
   };
   database.prepare(`
     INSERT INTO vehicles
-      (id, name, plate, type, fuel, seats, location, department, status, ownership_type, mileage, blocked, blocked_reason, color, notes,
-       leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, '', '', ?, ?, ?, 0, '', '#2563eb', '', ?, ?, ?, ?, '2026-01-01', '2026-01-01')
+      (id, name, plate, type, fuel, seats, location, department, status, ownership_type, usage_category_id, mileage, blocked, blocked_reason, color, notes,
+       leasing_start, leasing_end, leasing_start_km, leasing_km_limit, leasing_monthly_cost, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, 0, '', '#2563eb', '', ?, ?, ?, ?, ?, '2026-01-01', '2026-01-01')
   `).run(
     values.id, values.name, values.plate, values.type, values.fuel, values.seats, values.status,
-    values.leasingEnd || values.leasingKmLimit ? 'leasing' : 'owned', values.mileage,
-    values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit
+    values.leasingEnd || values.leasingKmLimit ? 'leasing' : 'owned', null, values.mileage,
+    values.leasingStart, values.leasingEnd, values.leasingStartKm, values.leasingKmLimit, null
   );
   return values;
 }
