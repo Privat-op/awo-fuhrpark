@@ -139,11 +139,12 @@ function insertVehicle(id, name, plate, overrides = {}) {
   };
   db.prepare(`
     INSERT INTO vehicles
-      (id, name, plate, type, fuel, seats, location, department, status, mileage, blocked, blocked_reason, color, notes,
+      (id, name, plate, type, fuel, seats, location, department, status, ownership_type, mileage, blocked, blocked_reason, color, notes,
        leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
-    VALUES (?, ?, ?, 'Pkw', 'Diesel', 5, '', '', 'available', ?, 0, '', '#2563eb', '', ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, 'Pkw', 'Diesel', 5, '', '', 'available', ?, ?, 0, '', '#2563eb', '', ?, ?, ?, ?, ?, ?)
   `).run(
-    id, name, plate, values.mileage, values.leasingStart, values.leasingEnd,
+    id, name, plate, values.leasingEnd || values.leasingKmLimit ? 'leasing' : 'owned', values.mileage,
+    values.leasingStart, values.leasingEnd,
     values.leasingStartKm, values.leasingKmLimit, new Date().toISOString(), new Date().toISOString()
   );
 }
@@ -165,6 +166,7 @@ function vehiclePayload(overrides = {}) {
     fuel: 'Diesel',
     seats: 5,
     status: 'available',
+    ownershipType: 'leasing',
     location: 'Hof',
     department: 'Pflege',
     mileage: 80000,
@@ -253,7 +255,7 @@ after(async () => {
 });
 
 test('Migration 8 ist aktiv, Leasing-Spalten und Tabellen sind vorhanden', () => {
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 17);
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 18);
   const columns = db.prepare('PRAGMA table_info(vehicles)').all().map((column) => column.name);
   for (const column of ['leasing_start', 'leasing_end', 'leasing_start_km', 'leasing_km_limit']) {
     assert.ok(columns.includes(column), `Leasing-Spalte fehlt: ${column}`);
@@ -302,6 +304,118 @@ test('Berechtigungen: Lesen erlaubt, Leasing bearbeiten und SMTP nur mit Admin-R
   assert.equal(viewerState.data.smtp, undefined);
   const vehicle = viewerState.data.vehicles.find((entry) => entry.id === 'vehicle-1');
   assert.equal(vehicle.leasing.percent, 80);
+});
+
+test('Ownership und neue Fahrzeugstatus: Bookability und Statuserhalt beim Abschluss', async () => {
+  const vehicleBase = {
+    name: 'Ohne Leasing',
+    plate: 'HB-O 2',
+    type: 'Pkw',
+    fuel: 'Diesel',
+    seats: 5,
+    location: '',
+    department: '',
+    mileage: 80000,
+    nextService: '',
+    tuv: '',
+    insurance: '',
+    notes: '',
+    color: '#2563eb',
+    blocked: false,
+    blockedReason: ''
+  };
+  const invalidOwnership = await apiJson(MANAGER_EMAIL, 'PATCH', '/api/vehicles/vehicle-2', {
+    ...vehicleBase,
+    status: 'available',
+    ownershipType: 'rental'
+  });
+  assert.equal(invalidOwnership.status, 400);
+
+  const createdVehicle = await apiJson(MANAGER_EMAIL, 'POST', '/api/vehicles', vehiclePayload({
+    name: 'Ownership-Create',
+    plate: 'HB-OC 1'
+  }));
+  assert.equal(createdVehicle.status, 201, createdVehicle.text);
+  const createdEntry = createdVehicle.data.vehicles.find((entry) => entry.plate === 'HB-OC 1');
+  assert.equal(createdEntry.ownershipType, 'leasing');
+  assert.equal(createdEntry.leasing.percent, 80);
+
+  const leasing = await apiJson(MANAGER_EMAIL, 'PATCH', '/api/vehicles/vehicle-2', {
+    ...vehicleBase,
+    status: 'available',
+    ownershipType: 'leasing',
+    leasingStart: '2026-01-01',
+    leasingEnd: isoDay(365),
+    leasingStartKm: 0,
+    leasingKmLimit: 100000
+  });
+  assert.equal(leasing.status, 200, leasing.text);
+  const leasedVehicle = leasing.data.vehicles.find((entry) => entry.id === 'vehicle-2');
+  assert.equal(leasedVehicle.ownershipType, 'leasing');
+  assert.equal(leasedVehicle.leasing.percent, 80);
+
+  const owned = await apiJson(MANAGER_EMAIL, 'PATCH', '/api/vehicles/vehicle-2', {
+    ...vehicleBase,
+    status: 'available',
+    ownershipType: 'owned',
+    leasingStart: '2026-01-01',
+    leasingEnd: isoDay(365),
+    leasingStartKm: 0,
+    leasingKmLimit: 100000
+  });
+  assert.equal(owned.status, 200, owned.text);
+  assert.equal(owned.data.vehicles.find((entry) => entry.id === 'vehicle-2').leasing, null);
+
+  for (const [status, pattern] of [
+    ['maintenance', /Wartung/],
+    ['defect', /defekt/],
+    ['sold', /veräußert/],
+    ['not_drivable', /nicht fahrbereit/]
+  ]) {
+    const patched = await apiJson(MANAGER_EMAIL, 'PATCH', '/api/vehicles/vehicle-2', {
+      ...vehicleBase,
+      status,
+      ownershipType: 'owned'
+    });
+    assert.equal(patched.status, 200, patched.text);
+    const booking = await apiJson(ADMIN_EMAIL, 'POST', '/api/bookings', {
+      vehicleId: 'vehicle-2',
+      driverId: 'driver-1',
+      date: isoDay(1),
+      startTime: '09:00',
+      endTime: '10:00',
+      purpose: `Status ${status}`
+    });
+    assert.equal(booking.status, 409, booking.text);
+    assert.match(booking.data.error, pattern);
+  }
+
+  await apiJson(MANAGER_EMAIL, 'PATCH', '/api/vehicles/vehicle-2', {
+    ...vehicleBase,
+    status: 'available',
+    ownershipType: 'owned'
+  });
+  const created = await apiJson(ADMIN_EMAIL, 'POST', '/api/bookings', {
+    vehicleId: 'vehicle-2',
+    driverId: 'driver-1',
+    date: isoDay(1),
+    startTime: '11:00',
+    endTime: '12:00',
+    purpose: 'Statuserhalt'
+  });
+  assert.equal(created.status, 201, created.text);
+  const bookingId = created.data.bookings.find((entry) => entry.purpose === 'Statuserhalt').id;
+  const started = await apiJson(ADMIN_EMAIL, 'POST', `/api/bookings/${bookingId}/start`);
+  assert.equal(started.status, 200, started.text);
+  const defect = await apiJson(MANAGER_EMAIL, 'PATCH', '/api/vehicles/vehicle-2', {
+    ...vehicleBase,
+    status: 'defect',
+    ownershipType: 'owned'
+  });
+  assert.equal(defect.status, 200, defect.text);
+  const ended = await apiJson(ADMIN_EMAIL, 'POST', `/api/bookings/${bookingId}/end`, { endKm: 80100 });
+  assert.equal(ended.status, 200, ended.text);
+  assert.equal(db.prepare("SELECT status FROM vehicles WHERE id = 'vehicle-2'").get().status, 'defect');
 });
 
 test('SMTP-Konfiguration ist admin-only, Passwort erscheint nicht in State oder Export', async () => {

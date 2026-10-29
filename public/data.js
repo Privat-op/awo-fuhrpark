@@ -12,8 +12,63 @@ const WEEKDAYS_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const VEHICLE_STATUS = {
   available: { label: 'Verfügbar', badge: 'green' },
   in_use: { label: 'Unterwegs', badge: 'blue' },
-  maintenance: { label: 'In Wartung', badge: 'amber' }
+  maintenance: { label: 'In Wartung', badge: 'amber' },
+  defect: { label: 'Defekt', badge: 'red' },
+  sold: { label: 'Veräußert', badge: 'gray' },
+  not_drivable: { label: 'Nicht fahrbereit', badge: 'amber' }
 };
+
+const VEHICLE_OWNERSHIP = {
+  owned: { label: 'Eigentum', badge: 'gray' },
+  leasing: { label: 'Leasing', badge: 'blue' }
+};
+
+function vehicleStatusLabel(status) {
+  return VEHICLE_STATUS[status]?.label || status || 'Unbekannt';
+}
+
+function vehicleOwnershipLabel(ownershipType) {
+  return (VEHICLE_OWNERSHIP[ownershipType] || VEHICLE_OWNERSHIP.owned).label;
+}
+
+function vehicleOwnershipMarkup(selected = 'owned') {
+  return Object.entries(VEHICLE_OWNERSHIP)
+    .map(([value, meta]) => `<label class="check-row"><input type="radio" name="ownershipType" value="${value}" ${selected === value ? 'checked' : ''}> ${meta.label}</label>`)
+    .join('');
+}
+
+function vehicleLeasingSectionHidden(ownershipType) {
+  return ownershipType === 'leasing' ? '' : 'hidden';
+}
+
+function vehicleChoiceOptionsMarkup(vehicles, selectedId = '') {
+  return (vehicles || []).map((vehicle) => {
+    const reason = vehicleUnavailableReason(vehicle);
+    const statusLabel = reason ? ` · ${vehicleStatusLabel(vehicle.status)}${vehicle.blocked ? ' (gesperrt)' : ''}` : '';
+    return `<option value="${vehicle.id}" ${vehicle.id === selectedId ? 'selected' : ''} ${reason ? 'disabled' : ''}>${esc(vehicle.name)} · ${esc(vehicle.plate)}${esc(statusLabel)}</option>`;
+  }).join('');
+}
+
+function vehicleUnavailableReason(vehicle) {
+  if (!vehicle) return 'Fahrzeug nicht gefunden.';
+  const name = vehicle.name || 'Das Fahrzeug';
+  if (vehicle.blocked) {
+    const reason = vehicle.blockedReason ? ` Grund: ${vehicle.blockedReason}` : '';
+    return `${name} ist dauerhaft gesperrt und für neue Buchungen oder Buchungsanfragen nicht verfügbar.${reason}`;
+  }
+  const messages = {
+    maintenance: 'befindet sich in Wartung.',
+    defect: 'ist defekt.',
+    sold: 'ist als veräußert markiert.',
+    not_drivable: 'ist nicht fahrbereit.'
+  };
+  const message = messages[vehicle.status];
+  return message ? `${name} ${message}` : null;
+}
+
+function vehicleIsBookable(vehicle) {
+  return !vehicleUnavailableReason(vehicle);
+}
 
 const BOOKING_STATUS = {
   planned: { label: 'Geplant', badge: 'blue' },

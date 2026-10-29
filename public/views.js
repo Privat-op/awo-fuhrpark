@@ -185,8 +185,10 @@ function renderVehicleCard(vehicle) {
   const tuvDays = daysUntil(vehicle.tuv);
   const tuvAlert = tuvDays !== null && tuvDays <= 60;
   const bookedToday = db.bookings.some((booking) => booking.vehicleId === vehicle.id && booking.start.slice(0, 10) === todayISO() && booking.status !== 'canceled');
-  const disabled = vehicle.status === 'maintenance';
+  const unavailableReason = vehicleUnavailableReason(vehicle);
+  const disabled = Boolean(unavailableReason);
   const blocked = Boolean(vehicle.blocked);
+  const ownership = VEHICLE_OWNERSHIP[vehicle.ownershipType] || VEHICLE_OWNERSHIP.owned;
   const hasPhoto = Boolean(vehicle.image);
   const canManage = canOn('vehicle', vehicle.id, 'vehicles_manage');
 
@@ -197,7 +199,8 @@ function renderVehicleCard(vehicle) {
           ? `<img class="vehicle-photo" src="${esc(vehicle.image)}" alt="${esc(vehicle.name)}"><span class="vehicle-photo-shade"></span>`
           : `<div class="vehicle-art">${vehicleArt(vehicle.type, vehicle.color)}</div>`}
         <div class="vehicle-visual-top">
-          ${blocked ? '<span class="badge badge-red">Gesperrt</span>' : `<span class="badge badge-${status.badge}">${status.label}</span>`}
+          <span class="badge badge-${status.badge}">${status.label}</span>
+          ${blocked ? '<span class="badge badge-red">Gesperrt</span>' : ''}
           <span class="vehicle-type">${icon('car')} ${esc(vehicle.type)}</span>
         </div>
       </div>
@@ -207,6 +210,8 @@ function renderVehicleCard(vehicle) {
             <h3 class="vehicle-name">${esc(vehicle.name)}</h3>
             <div class="vehicle-sub">
               <span class="plate">${esc(vehicle.plate)}</span>
+              <span>·</span>
+              <span class="badge badge-${ownership.badge} no-dot">${ownership.label}</span>
               <span>·</span>
               <span>${esc(vehicle.department)}</span>
               ${vehicle.costCenterCode ? `<span>·</span><span>${esc(vehicle.costCenterCode)}</span>` : ''}
@@ -230,7 +235,7 @@ function renderVehicleCard(vehicle) {
           <div class="vehicle-card-actions">
             ${canManage ? `<button class="btn btn-ghost btn-sm" type="button" data-action="toggle-vehicle-block" data-id="${vehicle.id}">${blocked ? icon('check-circle') : icon('alert')} ${blocked ? 'Entsperren' : 'Sperren'}</button>` : ''}
             <button class="btn btn-ghost btn-sm" type="button" data-action="vehicle-details" data-id="${vehicle.id}">Details</button>
-            ${canOn('vehicle', vehicle.id, 'bookings_create') ? `<button class="btn btn-soft btn-sm" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${disabled || blocked ? `disabled title="${blocked ? 'Fahrzeug ist dauerhaft gesperrt' : 'Fahrzeug befindet sich in Wartung'}"` : ''}>${icon('calendar')} Buchen</button>` : ''}
+            ${canOn('vehicle', vehicle.id, 'bookings_create') ? `<button class="btn btn-soft btn-sm" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${disabled ? `disabled title="${esc(unavailableReason)}"` : ''}>${icon('calendar')} Buchen</button>` : ''}
           </div>
         </div>
       </div>
@@ -267,9 +272,7 @@ function renderVehicles() {
       </div>
       <select class="select filter-select" id="vehicleStatusFilter" aria-label="Nach Status filtern">
         <option value="all" ${ui.vehicleStatus === 'all' ? 'selected' : ''}>Alle Status</option>
-        <option value="available" ${ui.vehicleStatus === 'available' ? 'selected' : ''}>Verfügbar</option>
-        <option value="in_use" ${ui.vehicleStatus === 'in_use' ? 'selected' : ''}>Unterwegs</option>
-        <option value="maintenance" ${ui.vehicleStatus === 'maintenance' ? 'selected' : ''}>In Wartung</option>
+        ${Object.entries(VEHICLE_STATUS).map(([value, meta]) => `<option value="${value}" ${ui.vehicleStatus === value ? 'selected' : ''}>${meta.label}</option>`).join('')}
       </select>
       <span class="toolbar-label" id="vehicleCount">${vehicleCountText(count)}</span>
     </div>
@@ -595,7 +598,7 @@ function renderWeekCalendar() {
   }).join('');
 
   const rows = db.vehicles.map((vehicle) => {
-    const vehicleCanCreate = canCreate && !vehicle.blocked && canOn('vehicle', vehicle.id, 'bookings_create');
+    const vehicleCanCreate = canCreate && vehicleIsBookable(vehicle) && canOn('vehicle', vehicle.id, 'bookings_create');
     const cells = days.map((dateISO) => {
       const dayBookings = sortByDateAsc(bookings.filter((booking) => booking.vehicleId === vehicle.id && booking.start.slice(0, 10) === dateISO));
       return `<div class="cal-cell ${dateISO === today ? 'is-today' : ''} ${vehicleCanCreate ? '' : 'is-readonly'}"

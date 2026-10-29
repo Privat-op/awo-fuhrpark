@@ -152,9 +152,8 @@ function openBookingModal(prefill = {}) {
   }
   const availableVehicles = db.vehicles;
   const prefillVehicle = prefill.vehicleId ? getVehicle(prefill.vehicleId) : null;
-  const selectedVehicle = (prefillVehicle && !prefillVehicle.blocked ? prefillVehicle : null)
-    || availableVehicles.find((vehicle) => !vehicle.blocked && vehicle.status === 'available')
-    || availableVehicles.find((vehicle) => !vehicle.blocked)
+  const selectedVehicle = (prefillVehicle && vehicleIsBookable(prefillVehicle) ? prefillVehicle : null)
+    || availableVehicles.find((vehicle) => vehicleIsBookable(vehicle))
     || availableVehicles[0];
   const drivers = db.drivers.filter((driver) => driver.status !== 'away');
   const selectedDriver = prefill.driverId ? getDriver(prefill.driverId) : drivers[0];
@@ -162,8 +161,8 @@ function openBookingModal(prefill = {}) {
     toast('Kein Fahrzeug vorhanden', 'Bitte legen Sie zuerst ein Fahrzeug an.', 'info');
     return;
   }
-  if (!availableVehicles.some((vehicle) => !vehicle.blocked)) {
-    toast('Alle Fahrzeuge gesperrt', 'Für neue Buchungen ist aktuell kein Fahrzeug freigegeben.', 'info');
+  if (!availableVehicles.some((vehicle) => vehicleIsBookable(vehicle))) {
+    toast('Kein buchbares Fahrzeug', 'Für neue Buchungen ist aktuell kein Fahrzeug freigegeben.', 'info');
     return;
   }
   if (!drivers.length) {
@@ -177,11 +176,7 @@ function openBookingModal(prefill = {}) {
   const canSelectCostCenter = can('cost_centers_view');
   const defaultCostCenterId = defaultBookingCostCenterId({ driver: selectedDriver, vehicle: selectedVehicle, user: currentUser });
 
-  const vehicleOptions = availableVehicles.map((vehicle) => {
-    const status = VEHICLE_STATUS[vehicle.status];
-    const blockedLabel = vehicle.blocked ? ' · Dauerhaft gesperrt' : vehicle.status === 'maintenance' ? ' · In Wartung' : '';
-    return `<option value="${vehicle.id}" ${vehicle.id === selectedVehicle?.id ? 'selected' : ''} ${vehicle.blocked ? 'disabled' : ''}>${esc(vehicle.name)} · ${esc(vehicle.plate)}${blockedLabel}</option>`;
-  }).join('');
+  const vehicleOptions = vehicleChoiceOptionsMarkup(availableVehicles, selectedVehicle?.id);
   const driverOptions = drivers.map((driver) => `<option value="${driver.id}" ${driver.id === selectedDriver?.id ? 'selected' : ''}>${esc(driver.name)} · ${esc(driver.role)}</option>`).join('');
 
   showModal({
@@ -334,22 +329,19 @@ function openBookingRequestModal(prefill = {}) {
     toast('Kein Fahrzeug vorhanden', 'Es ist aktuell kein Fahrzeug für Buchungsanfragen hinterlegt.', 'info');
     return;
   }
-  if (!vehicles.some((vehicle) => !vehicle.blocked)) {
-    toast('Alle Fahrzeuge gesperrt', 'Für neue Buchungsanfragen ist aktuell kein Fahrzeug freigegeben.', 'info');
+  if (!vehicles.some((vehicle) => vehicleIsBookable(vehicle))) {
+    toast('Kein buchbares Fahrzeug', 'Für neue Buchungsanfragen ist aktuell kein Fahrzeug freigegeben.', 'info');
     return;
   }
   const selectedVehicle = prefill.vehicleId
-    ? vehicles.find((vehicle) => vehicle.id === prefill.vehicleId && !vehicle.blocked)
-    : vehicles.find((vehicle) => !vehicle.blocked && vehicle.status !== 'maintenance') || vehicles.find((vehicle) => !vehicle.blocked) || vehicles[0];
+    ? vehicles.find((vehicle) => vehicle.id === prefill.vehicleId && vehicleIsBookable(vehicle))
+    : vehicles.find((vehicle) => vehicleIsBookable(vehicle)) || vehicles[0];
   const canSelectCostCenter = can('cost_centers_view');
   const defaultCostCenterId = defaultBookingCostCenterId({ driver: db.ownTrips.driver, vehicle: selectedVehicle, user: currentUser });
   const date = prefill.date || todayISO();
   const startTime = prefill.startTime || '09:00';
   const endTime = prefill.endTime || '11:00';
-  const vehicleOptions = vehicles.map((vehicle) => {
-    const statusLabel = vehicle.blocked ? ' · Dauerhaft gesperrt' : vehicle.status === 'maintenance' ? ' · In Wartung' : '';
-    return `<option value="${vehicle.id}" ${vehicle.id === selectedVehicle?.id ? 'selected' : ''} ${vehicle.blocked ? 'disabled' : ''}>${esc(vehicle.name)} · ${esc(vehicle.plate)}${statusLabel}</option>`;
-  }).join('');
+  const vehicleOptions = vehicleChoiceOptionsMarkup(vehicles, selectedVehicle?.id);
 
   showModal({
     title: 'Buchung anfragen',
@@ -761,12 +753,13 @@ function openVehicleModal(vehicleId = null) {
   }
   const existing = vehicleId ? getVehicle(vehicleId) : null;
   const defaults = {
-    name: '', plate: '', type: 'Pkw', fuel: 'Diesel', seats: 5, status: 'available',
+    name: '', plate: '', type: 'Pkw', fuel: 'Diesel', seats: 5, status: 'available', ownershipType: 'owned',
     location: '', department: '', mileage: 0, nextService: addDays(todayISO(), 90),
     tuv: addDays(todayISO(), 365), insurance: '', notes: '', image: '', blocked: false, blockedReason: '',
     leasing: null
   };
   const vehicle = existing || defaults;
+  const ownership = vehicle.ownershipType || (vehicle.leasing ? 'leasing' : 'owned');
   const leasing = vehicle.leasing || {};
   const title = existing ? 'Fahrzeug bearbeiten' : 'Fahrzeug anlegen';
   let pendingImage = vehicle.image || '';
@@ -833,6 +826,13 @@ function openVehicleModal(vehicleId = null) {
               ${Object.entries(VEHICLE_STATUS).map(([value, meta]) => `<option value="${value}" ${vehicle.status === value ? 'selected' : ''}>${meta.label}</option>`).join('')}
             </select>
           </div>
+          <div class="field field-full">
+            <label>Eigentum</label>
+            <div class="checkbox-grid" role="radiogroup" aria-label="Eigentum oder Leasing">
+              ${vehicleOwnershipMarkup(ownership)}
+            </div>
+            <p class="field-hint">Bei Eigentum werden Leasingfelder ignoriert; gespeicherte Werte bleiben erhalten.</p>
+          </div>
           <div class="field">
             <label for="vehicleLocation">Standort (Freitext)</label>
             <input class="input" id="vehicleLocation" name="location" type="text" value="${esc(vehicle.location)}" placeholder="z. B. Kita Pusteblume">
@@ -868,6 +868,7 @@ function openVehicleModal(vehicleId = null) {
             <label for="vehicleTuv">Nächste HU/AU</label>
             <input class="input" id="vehicleTuv" name="tuv" type="date" value="${esc(vehicle.tuv)}">
           </div>
+          <div id="vehicleLeasingSection" ${vehicleLeasingSectionHidden(ownership)}>
           <div class="form-section-title">Leasing</div>
           <div class="field">
             <label for="vehicleLeasingStart">Leasingbeginn <span class="optional">optional</span></label>
@@ -887,6 +888,7 @@ function openVehicleModal(vehicleId = null) {
           </div>
           <div class="field field-full">
             <p class="field-hint">Leasingende und Kilometerlimit gemeinsam hinterlegen. Ohne Angaben bleibt das Fahrzeug außerhalb der Leasingüberwachung; bestehende Daten bleiben unverändert.</p>
+          </div>
           </div>
           <div class="form-section-title">Dauerhafte Sperre</div>
           <div class="field field-full">
@@ -909,6 +911,15 @@ function openVehicleModal(vehicleId = null) {
   });
 
   const form = $('#vehicleForm');
+  const leasingSection = $('#vehicleLeasingSection');
+  const refreshOwnershipState = () => {
+    const selected = form?.querySelector('input[name="ownershipType"]:checked')?.value || 'owned';
+    if (leasingSection) leasingSection.hidden = selected !== 'leasing';
+  };
+  form?.querySelectorAll('input[name="ownershipType"]').forEach((input) => {
+    input.addEventListener('change', refreshOwnershipState);
+  });
+  refreshOwnershipState();
   const imageInput = $('#vehicleImageInput');
   const imagePreviewBox = $('#vehicleImagePreview');
   const removeImageButton = $('#vehicleImageRemove');
@@ -996,6 +1007,7 @@ function openVehicleModal(vehicleId = null) {
       fuel: String(data.get('fuel') || 'Diesel'),
       seats: Math.max(1, Number(data.get('seats')) || 1),
       status: String(data.get('status') || 'available'),
+      ownershipType: String(data.get('ownershipType') || 'owned'),
       location: String(data.get('location') || '').trim(),
       department: String(data.get('department') || '').trim(),
       costCenterId: String(data.get('costCenterId') || '') || null,
@@ -1043,6 +1055,7 @@ function vehicleMutationPayload(vehicle, overrides = {}) {
     fuel: vehicle.fuel,
     seats: vehicle.seats,
     status: vehicle.status,
+    ownershipType: vehicle.ownershipType || 'owned',
     location: vehicle.location || '',
     department: vehicle.department || '',
     costCenterId: vehicle.costCenterId || '',
@@ -1143,6 +1156,8 @@ function openVehicleDetails(vehicleId) {
   if (!vehicle) return;
   const canManageVehicle = canOn('vehicle', vehicleId, 'vehicles_manage');
   const canBookVehicle = canOn('vehicle', vehicleId, 'bookings_create');
+  const unavailableReason = vehicleUnavailableReason(vehicle);
+  const ownership = VEHICLE_OWNERSHIP[vehicle.ownershipType] || VEHICLE_OWNERSHIP.owned;
   const blocked = Boolean(vehicle.blocked);
   const showBookings = canOn('vehicle', vehicleId, 'bookings_view');
   const showMaintenance = canOn('vehicle', vehicleId, 'maintenance_view');
@@ -1185,11 +1200,12 @@ function openVehicleDetails(vehicleId) {
         <div class="detail-art ${vehicle.image ? 'has-photo' : ''}">${vehicle.image ? `<img src="${esc(vehicle.image)}" alt="${esc(vehicle.name)}">` : vehicleArt(vehicle.type, vehicle.color)}</div>
         <div class="detail-title">
           <h3>${esc(vehicle.name)}</h3>
-          <div class="vehicle-sub"><span class="plate">${esc(vehicle.plate)}</span><span>·</span><span>${esc(vehicle.location)}</span></div>
+          <div class="vehicle-sub"><span class="plate">${esc(vehicle.plate)}</span><span>·</span><span class="badge badge-${ownership.badge} no-dot">${ownership.label}</span><span>·</span><span>${esc(vehicle.location)}</span></div>
           <div style="margin-top:8px"><span class="badge badge-${status.badge}">${status.label}</span>${blocked ? ' <span class="badge badge-red">Dauerhaft gesperrt</span>' : ''}</div>
         </div>
       </div>
       ${blocked ? `<div class="info-banner" style="margin-bottom:16px">${icon('alert')}<div><strong>Dauerhafte Sperre aktiv</strong><p>${esc(vehicle.blockedReason || 'Keine Begründung hinterlegt.')} Neue Buchungen und Buchungsanfragen sind gesperrt; bestehende Buchungen bleiben unverändert.</p></div></div>` : ''}
+      ${!blocked && unavailableReason ? `<div class="info-banner" style="margin-bottom:16px">${icon('alert')}<div><strong>Nicht buchbar</strong><p>${esc(unavailableReason)}</p></div></div>` : ''}
       ${leasingDetailMarkup(vehicle)}
       <div class="detail-stats">
         <div class="detail-stat"><span>${icon('gauge')} Kilometerstand</span><strong>${formatKm(vehicle.mileage)}</strong></div>
@@ -1232,7 +1248,7 @@ function openVehicleDetails(vehicleId) {
     footer: [
       canManageVehicle ? `<button class="btn btn-ghost" type="button" data-action="edit-vehicle" data-id="${vehicle.id}">${icon('edit')} Bearbeiten</button>` : '',
       canManageVehicle ? `<button class="btn btn-ghost" type="button" data-action="toggle-vehicle-block" data-id="${vehicle.id}">${blocked ? icon('check-circle') : icon('alert')} ${blocked ? 'Entsperren' : 'Sperren'}</button>` : '',
-      canBookVehicle ? `<button class="btn btn-primary" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${vehicle.status === 'maintenance' || blocked ? `disabled title="${blocked ? 'Fahrzeug ist dauerhaft gesperrt' : 'Fahrzeug in Wartung'}"` : ''}>${icon('calendar')} Fahrzeug buchen</button>` : '',
+      canBookVehicle ? `<button class="btn btn-primary" type="button" data-action="book-vehicle" data-id="${vehicle.id}" ${unavailableReason ? `disabled title="${esc(unavailableReason)}"` : ''}>${icon('calendar')} Fahrzeug buchen</button>` : '',
       !canManageVehicle && !canBookVehicle ? `<button class="btn btn-ghost" type="button" data-close-modal>Schließen</button>` : ''
     ].join('')
   });

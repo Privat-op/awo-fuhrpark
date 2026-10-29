@@ -23,4 +23,4 @@
 ## Tests
 
 - Migration, Unique-Verhalten, Company-CRUD/Rechte, Kostenstellen-CRUD, State/Export, UI-Harness.
-- Vollständige Regression: **213/213 Tests PASS**.
+- Vollständige Regression: **218/218 Tests PASS**.

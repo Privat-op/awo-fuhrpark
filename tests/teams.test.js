@@ -46,13 +46,14 @@ function createDb() {
 function insertVehicle(db, id, values = {}) {
   db.prepare(`
     INSERT INTO vehicles
-      (id, name, plate, type, fuel, seats, status, mileage, tuv, next_service,
+      (id, name, plate, type, fuel, seats, status, ownership_type, mileage, tuv, next_service,
        leasing_start, leasing_end, leasing_start_km, leasing_km_limit, created_at, updated_at)
-    VALUES (?, ?, ?, 'Pkw', 'Diesel', 5, 'available', 1000, ?, ?, ?, ?, ?, ?, '2026-01-01', '2026-01-01')
+    VALUES (?, ?, ?, 'Pkw', 'Diesel', 5, 'available', ?, 1000, ?, ?, ?, ?, ?, ?, '2026-01-01', '2026-01-01')
   `).run(
     id,
     values.name || 'Teams-Fahrzeug',
     values.plate || `HB-T ${id}`,
+    values.leasingEnd || values.leasingKmLimit ? 'leasing' : 'owned',
     values.tuv || null,
     values.nextService || null,
     values.leasingStart || null,

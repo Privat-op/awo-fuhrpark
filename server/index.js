@@ -37,6 +37,7 @@ const { migrateLocationsSchema } = require('./lib/locations-schema');
 const { migrateIntegrationsSchema, migrateAdvancedSchema } = require('./lib/integrations-schema');
 const { migrateWebhooksSchema } = require('./lib/webhook-schema');
 const { migrateCompaniesSchema } = require('./lib/companies-schema');
+const { migrateVehiclesSchema } = require('./lib/vehicles-schema');
 const {
   FLOW_TTL_MS: SSO_FLOW_TTL_MS,
   getSsoConfig,
@@ -315,6 +316,11 @@ try {
   migrateCompaniesSchema(db);
 } catch (error) {
   logger.warn('Gesellschafts-Migration konnte nicht abgeschlossen werden.', { error });
+}
+try {
+  migrateVehiclesSchema(db);
+} catch (error) {
+  logger.warn('Fahrzeug-Migration konnte nicht abgeschlossen werden.', { error });
 }
 bootstrap(db);
 try {

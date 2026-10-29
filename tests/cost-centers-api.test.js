@@ -291,7 +291,7 @@ after(async () => {
 });
 
 test('Migration 17, Manager-Rechte und Kostenstellen-Tabellen sind aktiv', () => {
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 17);
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 18);
   const columns = db.prepare('PRAGMA table_info(vehicles)').all().map((column) => column.name);
   assert.ok(columns.includes('cost_center_id'));
   const companyColumns = db.prepare('PRAGMA table_info(companies)').all().map((column) => column.name);

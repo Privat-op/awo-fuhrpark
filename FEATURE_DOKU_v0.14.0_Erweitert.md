@@ -95,7 +95,7 @@ Zusätzlich sind auf der Integrationsseite SSO-, Teams- und ClamAV-Details ausge
 - Scheduler-Registry: Start, Stop, Neustart; Leasing-Scheduler respektiert DB-Aktivierung.
 - Passwort-Reset-Link nutzt DB-`APP_BASE_URL`, ENV gewinnt.
 - Systemstatus ohne Secrets; UI-Sichtbarkeit (eingeklappt, Advanced-Seite).
-- Vollständige Regression: **213/213 Tests**.
+- Vollständige Regression: **218/218 Tests**.
 
 ## 9. Offene Punkte
 

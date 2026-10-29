@@ -59,6 +59,7 @@ function leasingTerm(vehicle) {
 }
 
 function calculateLeasingState(vehicle, now = new Date()) {
+  if (vehicle?.ownership_type === 'owned') return null;
   const term = leasingTerm(vehicle);
   if (!term) return null;
   const mileage = Math.max(0, Number(vehicle?.mileage) || 0);
@@ -134,6 +135,7 @@ function collectLeasingNotifications(db, now = new Date()) {
   `).all();
   const notifications = [];
   for (const row of rows) {
+    if (row.ownership_type === 'owned') continue;
     const state = calculateLeasingState(row, now);
     if (!state) continue;
     const hash = termHash(state);

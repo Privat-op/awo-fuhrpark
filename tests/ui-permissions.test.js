@@ -642,6 +642,48 @@ test('Gesellschaften: Liste und Kostenstellen-Dropdown zeigen Gesellschaft, Code
   assert.match(optionHtml, /AWO-HB · KST-100 · Pflege/);
 });
 
+test('Fahrzeugstatus, Eigentum/Leasing und Buchungsoptionen im UI-Harness', () => {
+  const harness = createClientHarness();
+  applyClientSession(harness, clients.admin);
+  const statuses = vm.runInContext('Object.keys(VEHICLE_STATUS).sort().join(",")', harness.context);
+  assert.equal(statuses, 'available,defect,in_use,maintenance,not_drivable,sold');
+  const radios = vm.runInContext("vehicleOwnershipMarkup('leasing')", harness.context);
+  assert.match(radios, /name="ownershipType" value="owned"/);
+  assert.match(radios, /name="ownershipType" value="leasing" checked/);
+  assert.equal(vm.runInContext("vehicleLeasingSectionHidden('owned')", harness.context), 'hidden');
+  assert.equal(vm.runInContext("vehicleLeasingSectionHidden('leasing')", harness.context), '');
+
+  const vehicles = [
+    { id: 'v1', name: 'Frei', plate: 'HB-F 1', status: 'available', blocked: false, blockedReason: '' },
+    { id: 'v2', name: 'Unterwegs', plate: 'HB-U 1', status: 'in_use', blocked: false, blockedReason: '' },
+    { id: 'v3', name: 'Wartung', plate: 'HB-W 1', status: 'maintenance', blocked: false, blockedReason: '' },
+    { id: 'v4', name: 'Defekt', plate: 'HB-D 1', status: 'defect', blocked: false, blockedReason: '' },
+    { id: 'v5', name: 'Verkauft', plate: 'HB-V 1', status: 'sold', blocked: false, blockedReason: '' },
+    { id: 'v6', name: 'Steht', plate: 'HB-S 1', status: 'not_drivable', blocked: false, blockedReason: '' }
+  ];
+  const options = vm.runInContext(`vehicleChoiceOptionsMarkup(${JSON.stringify(vehicles)}, 'v1')`, harness.context);
+  assert.match(options, /value="v1" selected/);
+  assert.doesNotMatch(options, /value="v1"[^>]*disabled/);
+  assert.doesNotMatch(options, /value="v2"[^>]*disabled/);
+  for (const id of ['v3', 'v4', 'v5', 'v6']) {
+    assert.match(options, new RegExp(`value="${id}"[^>]*disabled`), `${id} muss deaktiviert sein`);
+  }
+
+  const cardClient = { ...clients.admin, state: JSON.parse(JSON.stringify(clients.admin.state)) };
+  cardClient.state.vehicles = [{
+    id: 'v-owned', name: 'Eigentum', plate: 'HB-E 1', type: 'Pkw', fuel: 'Diesel', seats: 5,
+    location: '', department: '', status: 'defect', ownershipType: 'owned', mileage: 1,
+    nextService: null, tuv: null, blocked: false, blockedReason: '', costCenterId: null,
+    locationId: null, leasing: null, image: '', color: '#2563eb'
+  }];
+  const cardHarness = createClientHarness();
+  applyClientSession(cardHarness, cardClient);
+  const card = vm.runInContext('renderVehicleCard(db.vehicles[0])', cardHarness.context);
+  assert.match(card, /Defekt/);
+  assert.match(card, /Eigentum/);
+  assert.match(card, /disabled title="Eigentum ist defekt\."/);
+});
+
 test('Mobile-Sidebar öffnet und schließt weiterhin korrekt', () => {
   const harness = createClientHarness();
   applyClientSession(harness, clients.viewer);

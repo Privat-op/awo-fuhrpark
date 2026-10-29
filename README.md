@@ -16,7 +16,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
 - Automatische Anonymisierung deaktivierter Konten nach einer global einstellbaren Frist
-- Fahrzeuge mit Bild-Upload, Standort, Kilometerstand, HU/AU und Service
+- Fahrzeuge mit Bild-Upload, Standort, Eigentum/Leasing, Kilometerstand, HU/AU, Service und erweiterten Statuswerten (Defekt, Veräußert, Nicht fahrbereit)
 - Leasingüberwachung mit Laufzeit, Gesamt-Kilometerlimit, Warnschwellen 80/90/100 % und Erinnerungen 90/30 Tage vor Leasingende
 - Optionaler E-Mail-Versand an Fuhrparkleitung und Administration bei Leasing-Schwellen, Buchungsanfragen sowie Wartungs-/TÜV-Erinnerungen; SMTP-Konfiguration ausschließlich für Administrator:innen
 - **Optionaler Teams-Webhook:** MessageCards für Leasing, Buchungsanfragen/-entscheidungen und Wartungs-/TÜV-Erinnerungen; ohne Graph/App-Registration, ohne URL in Logs
@@ -347,6 +347,15 @@ Unter **Benutzer → Benutzer-Ausnahmen** können Personen mit `users_manage` pe
 - **Keine Mandantentrennung:** Fahrzeuge, Benutzer, Buchungen und Kosten bleiben gesellschaftsneutral. Alle Berechtigten sehen alle Gesellschaften und Kostenstellen.
 - `GET /api/companies` ist für `cost_centers_view`/`cost_centers_manage` lesbar; Anlegen/Ändern/Löschen erfordert `settings_manage`. Löschen ist nur ohne Kostenstellen möglich.
 
+## Fahrzeugstatus und Eigentum/Leasing
+
+- **Eigentum/Leasing:** `vehicles.ownership_type` (`owned`/`leasing`), Default `owned`. Bei `owned` werden vorhandene Leasingfelder gespeichert, aber ignoriert; es entstehen keine Leasingwarnungen oder -benachrichtigungen. Die Migration ordnet Fahrzeuge mit Leasingfeldern automatisch `leasing` zu.
+- **Status:** `available` (Verfügbar), `in_use` (Unterwegs), `maintenance` (In Wartung), `defect` (Defekt), `sold` (Veräußert), `not_drivable` (Nicht fahrbereit).
+- **Nicht buchbar:** `maintenance`, `defect`, `sold`, `not_drivable` sowie dauerhaft gesperrte Fahrzeuge. `in_use` bleibt für zukünftige Zeiträume buchbar. Buchungsanlage, Buchungsanfrage, Genehmigung und Fahrtstart liefern `409` mit statusbezogener Meldung.
+- **Buchungsabschluss:** Setzt `maintenance`/`defect`/`sold`/`not_drivable` nicht auf verfügbar zurück; nur `in_use` wird zu `available` (bzw. `in_use` bei paralleler aktiver Fahrt).
+- **UI:** Eigentum/Leasing als Radio-Toggle; Leasingfelder werden bei Eigentum ausgeblendet, aber nicht gelöscht. Statusfilter und Dropdowns kennen alle sechs Werte; nicht buchbare Fahrzeuge sind in Buchungs-/Anfrage-Dropdowns deaktiviert. Karten und Detailansicht zeigen Status- und Eigentums-Badge.
+- Keine Änderung an Werkstatt-, Kosten- oder Buchungslogik außer den Statusprüfungen.
+
 ## Audit-Log
 
 Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichbar. Der sichtbare Bereich wird ausschließlich serverseitig bestimmt:
@@ -366,7 +375,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 17`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`; die Integrations-Migration ergänzt `integration_settings` mit einer Zeile; die Advanced-Migration ergänzt `app_base_url` und die Scheduler-Parameter; die Webhook-Migration ergänzt `webhooks` und übernimmt einen vorhandenen DB-Teams-Webhook; die Gesellschafts-Migration ergänzt `companies`, ordnet bestehende Kostenstellen der Standardgesellschaft zu und setzt den Unique-Index auf `(company_id, code)`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 18`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`; die Integrations-Migration ergänzt `integration_settings` mit einer Zeile; die Advanced-Migration ergänzt `app_base_url` und die Scheduler-Parameter; die Webhook-Migration ergänzt `webhooks` und übernimmt einen vorhandenen DB-Teams-Webhook; die Gesellschafts-Migration ergänzt `companies`, ordnet bestehende Kostenstellen der Standardgesellschaft zu und setzt den Unique-Index auf `(company_id, code)`; die Fahrzeug-Migration ergänzt `vehicles.ownership_type`, erweitert den Status-CHECK und rebuildet die Tabelle inklusive Fremdschlüsseln und Indizes. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 

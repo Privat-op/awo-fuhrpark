@@ -62,7 +62,7 @@ Die Migration legt eine Standardgesellschaft `STANDARD` an; Name aus `settings.o
 - Company-CRUD, Rechte, Validierung, Deaktivierung, Löschsperre, Audit.
 - Kostenstellen-CRUD mit `companyId`, State-/Export-Felder, CSV-Spalte.
 - UI-Harness: Gesellschaftsseite, Spalte/Filter, Formular-Select, Dropdown-Label.
-- Vollständige Regression: **213/213 Tests**.
+- Vollständige Regression: **218/218 Tests**.
 
 ## 7. Offene Punkte
 
