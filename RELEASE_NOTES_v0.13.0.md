@@ -29,4 +29,4 @@
 ## Tests
 
 - Neue Integrations-Tests: Migration, ENV-vor-DB, Secret-Hygiene, Validierung, Test-Endpunkte mit lokalen Mocks.
-- Vollständige Regression: **180/180 Tests PASS**.
+- Vollständige Regression: **187/187 Tests PASS**.

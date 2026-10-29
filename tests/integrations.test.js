@@ -12,7 +12,9 @@ const Database = require('better-sqlite3');
 
 const {
   INTEGRATIONS_SCHEMA_VERSION,
-  migrateIntegrationsSchema
+  ADVANCED_SCHEMA_VERSION,
+  migrateIntegrationsSchema,
+  migrateAdvancedSchema
 } = require('../server/lib/integrations-schema');
 const {
   safeIntegrationsConfig,
@@ -22,10 +24,23 @@ const {
   getClamavIntegrationConfig,
   getWebAuthnIntegrationConfig,
   getLocationsIntegrationConfig,
+  getAppBaseUrl,
+  getAppBaseUrlConfig,
+  getLeasingSchedulerConfig,
+  getReminderSchedulerConfig,
+  getRetentionSchedulerConfig,
+  getSystemStatus,
   validHttpUrl,
   webAuthnValid
 } = require('../server/lib/integrations');
 const { getIntegrationsKey, KEY_FILE } = require('../server/lib/integrations-crypto');
+const {
+  registerScheduler,
+  startAllSchedulers,
+  restartAllSchedulers,
+  resetSchedulers
+} = require('../server/lib/scheduler-control');
+const { startLeasingScheduler } = require('../server/lib/leasing');
 
 const ROOT = path.join(__dirname, '..');
 const SCHEMA = fs.readFileSync(path.join(ROOT, 'server', 'schema.sql'), 'utf8');
@@ -187,7 +202,7 @@ function startMockClamd() {
   });
 }
 
-test('Migration 13→14 ist idempotent, legt Tabelle und eine Zeile an', () => {
+test('Migration 14→15 ist idempotent und ergänzt die Advanced-Spalten', () => {
   const database = createDb();
   try {
     database.pragma('user_version = 13');
@@ -200,6 +215,19 @@ test('Migration 13→14 ist idempotent, legt Tabelle und eine Zeile an', () => {
     assert.equal(row.teams_enabled, 0);
     assert.equal(row.clamav_enabled, 0);
     assert.equal(row.locations_enabled, 0);
+
+    assert.equal(migrateAdvancedSchema(database), true);
+    assert.equal(Number(database.pragma('user_version', { simple: true })), ADVANCED_SCHEMA_VERSION);
+    const advanced = database.prepare('SELECT * FROM integration_settings WHERE id = 1').get();
+    assert.equal(advanced.app_base_url, '');
+    assert.equal(advanced.leasing_scheduler_enabled, 1);
+    assert.equal(advanced.leasing_interval_ms, 21600000);
+    assert.equal(advanced.leasing_initial_delay_ms, 5000);
+    assert.equal(advanced.leasing_debounce_ms, 3000);
+    assert.equal(advanced.reminder_interval_ms, 21600000);
+    assert.equal(advanced.retention_interval_ms, 86400000);
+    assert.equal(advanced.webauthn_enabled, 1);
+    assert.equal(migrateAdvancedSchema(database), false);
     assert.equal(migrateIntegrationsSchema(database), false);
   } finally {
     database.close();
@@ -322,7 +350,14 @@ test('Validierung lehnt ungültige und unvollständige Konfigurationen ab', () =
       webauthnOrigin: 'https://example.invalid, https://sub.example.invalid'
     }, { dataDir });
     assert.equal(accepted.config.webauthn.enabled, true);
+    assert.equal(accepted.config.webauthn.enabledFlag, true);
+    assert.equal(accepted.config.webauthn.configured, true);
     assert.equal(getWebAuthnIntegrationConfig(database).origins.length, 2);
+
+    const switchedOff = updateIntegrations(database, { webauthnEnabled: false }, { dataDir });
+    assert.equal(switchedOff.config.webauthn.enabled, false);
+    assert.equal(switchedOff.config.webauthn.enabledFlag, false);
+    assert.equal(switchedOff.config.webauthn.configured, true);
   } finally {
     database.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
@@ -348,6 +383,160 @@ test('Ein Schlüssel wird deterministisch erzeugt und wiederverwendet', () => {
     const second = getIntegrationsKey(dataDir);
     assert.deepEqual(second, first);
   } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('Advanced: Defaults, Normalisierung, ENV-Vorrang und Validierung', () => {
+  const database = createDb();
+  const dataDir = fs.mkdtempSync(path.join(TEST_TMP_ROOT, 'awo-advanced-unit-'));
+  try {
+    migrateIntegrationsSchema(database);
+    migrateAdvancedSchema(database);
+
+    assert.equal(getAppBaseUrl(database), '');
+    const defaultLeasing = getLeasingSchedulerConfig(database);
+    assert.equal(defaultLeasing.enabled, true);
+    assert.equal(defaultLeasing.intervalMs, 21600000);
+    assert.equal(defaultLeasing.initialDelayMs, 5000);
+    assert.equal(defaultLeasing.debounceMs, 3000);
+    assert.equal(getReminderSchedulerConfig(database).intervalMs, 21600000);
+    assert.equal(getRetentionSchedulerConfig(database).intervalMs, 86400000);
+
+    updateIntegrations(database, {
+      appBaseUrl: 'https://fuhrpark.example.invalid/',
+      leasingSchedulerEnabled: false,
+      leasingIntervalMs: 120000,
+      reminderIntervalMs: 90000,
+      reminderInitialDelayMs: 0,
+      retentionSchedulerEnabled: true,
+      retentionIntervalMs: 60000,
+      retentionInitialDelayMs: 0
+    }, { dataDir });
+    assert.equal(getAppBaseUrl(database), 'https://fuhrpark.example.invalid');
+    assert.equal(getAppBaseUrlConfig(database).source, 'db');
+    assert.equal(getLeasingSchedulerConfig(database).enabled, false);
+    assert.equal(getLeasingSchedulerConfig(database).intervalMs, 120000);
+    assert.equal(getReminderSchedulerConfig(database).intervalMs, 90000);
+    assert.equal(getReminderSchedulerConfig(database).initialDelayMs, 0);
+    assert.equal(getRetentionSchedulerConfig(database).intervalMs, 60000);
+
+    assert.throws(() => updateIntegrations(database, { appBaseUrl: 'ftp://invalid.example' }, { dataDir }), /APP_BASE_URL/);
+    assert.throws(() => updateIntegrations(database, { leasingIntervalMs: 59999 }, { dataDir }), /Leasing-Intervall/);
+    assert.throws(() => updateIntegrations(database, { reminderInitialDelayMs: 86400001 }, { dataDir }), /Wartungs-Startverzögerung/);
+    assert.equal(getLeasingSchedulerConfig(database).intervalMs, 120000);
+
+    process.env.APP_BASE_URL = 'https://env.example.invalid/';
+    process.env.LEASING_SCHEDULER_DISABLED = 'true';
+    process.env.LEASING_INTERVAL_MS = '180000';
+    try {
+      assert.equal(getAppBaseUrl(database), 'https://env.example.invalid');
+      assert.equal(getAppBaseUrlConfig(database).envLocked, true);
+      const envConfig = getLeasingSchedulerConfig(database);
+      assert.equal(envConfig.enabled, false);
+      assert.equal(envConfig.intervalMs, 180000);
+      assert.equal(envConfig.envLocked.enabled, true);
+      assert.equal(envConfig.envLocked.intervalMs, true);
+
+      updateIntegrations(database, {
+        appBaseUrl: 'https://ignored.example.invalid',
+        leasingSchedulerEnabled: true,
+        leasingIntervalMs: 300000
+      }, { dataDir });
+      assert.equal(getAppBaseUrl(database), 'https://env.example.invalid');
+      assert.equal(getLeasingSchedulerConfig(database).enabled, false);
+      assert.equal(getLeasingSchedulerConfig(database).intervalMs, 180000);
+    } finally {
+      delete process.env.APP_BASE_URL;
+      delete process.env.LEASING_SCHEDULER_DISABLED;
+      delete process.env.LEASING_INTERVAL_MS;
+    }
+  } finally {
+    database.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('Systemstatus zeigt nur Quellen und keine Secrets', () => {
+  const dataDir = fs.mkdtempSync(path.join(TEST_TMP_ROOT, 'awo-status-unit-'));
+  const previousDataDir = process.env.DATA_DIR;
+  const previousMfaKey = process.env.MFA_ENCRYPTION_KEY;
+  const previousIntegrationsKey = process.env.INTEGRATIONS_ENCRYPTION_KEY;
+  const previousSuperadminFile = process.env.SUPERADMIN_FILE;
+  try {
+    delete process.env.MFA_ENCRYPTION_KEY;
+    delete process.env.INTEGRATIONS_ENCRYPTION_KEY;
+    delete process.env.SUPERADMIN_FILE;
+    process.env.DATA_DIR = dataDir;
+    fs.writeFileSync(path.join(dataDir, 'mfa.key'), 'dummy');
+    fs.writeFileSync(path.join(dataDir, 'integrations.key'), 'dummy');
+
+    const status = getSystemStatus();
+    assert.equal(status.mfaKeySource, 'file');
+    assert.equal(status.integrationsKeySource, 'file');
+    assert.equal(status.superadminFile.configured, false);
+    assert.ok(status.nodeEnv);
+    assert.ok(status.dataDir.endsWith(path.basename(dataDir)));
+    assert.equal(Object.prototype.hasOwnProperty.call(status, 'mfaKey'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(status, 'integrationsKey'), false);
+    assert.doesNotMatch(JSON.stringify(status), /dummy/);
+
+    process.env.MFA_ENCRYPTION_KEY = 'env-value';
+    assert.equal(getSystemStatus().mfaKeySource, 'env');
+  } finally {
+    if (previousDataDir === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = previousDataDir;
+    if (previousMfaKey === undefined) delete process.env.MFA_ENCRYPTION_KEY;
+    else process.env.MFA_ENCRYPTION_KEY = previousMfaKey;
+    if (previousIntegrationsKey === undefined) delete process.env.INTEGRATIONS_ENCRYPTION_KEY;
+    else process.env.INTEGRATIONS_ENCRYPTION_KEY = previousIntegrationsKey;
+    if (previousSuperadminFile === undefined) delete process.env.SUPERADMIN_FILE;
+    else process.env.SUPERADMIN_FILE = previousSuperadminFile;
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test('Scheduler-Registry startet, stoppt und startet bei Konfigurationsänderung neu', () => {
+  resetSchedulers();
+  const calls = [];
+  try {
+    registerScheduler('leasing', () => {
+      calls.push('start:leasing');
+      return { stop() { calls.push('stop:leasing'); } };
+    });
+    registerScheduler('maintenance', () => {
+      calls.push('start:maintenance');
+      return { stop() { calls.push('stop:maintenance'); } };
+    });
+    startAllSchedulers();
+    restartAllSchedulers();
+    assert.deepEqual(calls, [
+      'start:leasing',
+      'start:maintenance',
+      'stop:leasing',
+      'start:leasing',
+      'stop:maintenance',
+      'start:maintenance'
+    ]);
+  } finally {
+    resetSchedulers();
+  }
+});
+
+test('Leasing-Scheduler respektiert die Datenbank-Aktivierung', () => {
+  const database = createDb();
+  const dataDir = fs.mkdtempSync(path.join(TEST_TMP_ROOT, 'awo-scheduler-unit-'));
+  try {
+    migrateIntegrationsSchema(database);
+    migrateAdvancedSchema(database);
+    database.prepare('UPDATE integration_settings SET leasing_scheduler_enabled = 0 WHERE id = 1').run();
+    assert.equal(startLeasingScheduler(database, { dataDir, initialDelayMs: 60000, intervalMs: 60000 }), null);
+    database.prepare('UPDATE integration_settings SET leasing_scheduler_enabled = 1 WHERE id = 1').run();
+    const handle = startLeasingScheduler(database, { dataDir, initialDelayMs: 60000, intervalMs: 60000 });
+    assert.ok(handle);
+    handle.stop();
+  } finally {
+    database.close();
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
@@ -509,6 +698,55 @@ test('API: SSO-Discovery, Teams-Testkarte, ClamAV-Testscan und WebAuthn-Prüfung
     webauthnOrigin: 'https://other.invalid'
   });
   assert.equal(invalid.status, 400);
+});
+
+test('API: Advanced-Einstellungen, Validierung und Systemstatus ohne Secrets', async () => {
+  const client = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
+
+  const initial = await apiJson(client, 'GET', '/api/integrations');
+  assert.equal(initial.status, 200, initial.text);
+  assert.equal(initial.data.integrations.advanced.leasing.enabled, false);
+  assert.equal(initial.data.integrations.advanced.leasing.envLocked.enabled, true);
+  assert.equal(initial.data.integrations.advanced.leasing.intervalMs, 21600000);
+  assert.equal(initial.data.integrations.advanced.retention.intervalMs, 86400000);
+  assert.equal(initial.data.integrations.system.nodeEnv, 'test');
+  assert.ok(['env', 'file', 'missing'].includes(initial.data.integrations.system.mfaKeySource));
+  assert.ok(['env', 'file', 'missing'].includes(initial.data.integrations.system.integrationsKeySource));
+  assert.equal(initial.data.integrations.system.superadminFile.configured, false);
+  assert.doesNotMatch(initial.text, /mfa\.key|integrations\.key/);
+
+  const badUrl = await apiJson(client, 'PATCH', '/api/integrations', { appBaseUrl: 'ftp://invalid.example' });
+  assert.equal(badUrl.status, 400);
+  assert.match(badUrl.data.error, /APP_BASE_URL/);
+
+  const badInterval = await apiJson(client, 'PATCH', '/api/integrations', { leasingIntervalMs: 1000 });
+  assert.equal(badInterval.status, 400);
+  assert.match(badInterval.data.error, /Leasing-Intervall/);
+
+  const saved = await apiJson(client, 'PATCH', '/api/integrations', {
+    appBaseUrl: 'https://fuhrpark.example.invalid/',
+    leasingSchedulerEnabled: false,
+    leasingIntervalMs: 120000,
+    leasingInitialDelayMs: 0,
+    leasingDebounceMs: 0,
+    reminderIntervalMs: 90000,
+    reminderInitialDelayMs: 0,
+    retentionIntervalMs: 60000,
+    retentionInitialDelayMs: 0
+  });
+  assert.equal(saved.status, 200, saved.text);
+  const advanced = saved.data.integrations.advanced;
+  assert.equal(advanced.appBaseUrl.value, 'https://fuhrpark.example.invalid');
+  assert.equal(advanced.leasing.enabled, false);
+  assert.equal(advanced.leasing.intervalMs, 120000);
+  assert.equal(advanced.reminder.intervalMs, 90000);
+  assert.equal(advanced.retention.intervalMs, 60000);
+  assert.doesNotMatch(saved.text, /Leasing-Prüfung fehlgeschlagen/);
+
+  const audits = db.prepare("SELECT details FROM audit_logs WHERE entity_type = 'integrations'").all();
+  for (const entry of audits) {
+    assert.doesNotMatch(entry.details || '', /https:\/\/fuhrpark\.example\.invalid/);
+  }
 });
 
 test('API: Secret entfernen und unvollständige Aktivierung ablehnen', async () => {

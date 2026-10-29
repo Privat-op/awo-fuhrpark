@@ -31,19 +31,19 @@ const EMAILS = {
 const NAV_GROUPS = [
   ['dashboard', 'buchungen', 'meine-fahrten', 'anfragen', 'fahrtenbuch'],
   ['fahrzeuge', 'wartung', 'kosten'],
-  ['fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen']
+  ['fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen', 'erweitert']
 ];
 const ALL_NAV_ROUTES = NAV_GROUPS.flat();
 
 const SESSION_ROLES = {
   admin: {
-    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen'],
+    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen', 'erweitert'],
     settings: { organisation: true, branding: true, costCenters: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: true },
     eyebrow: 'Organisation',
     subtitle: 'Organisation, Erscheinungsbild, Kostenstellen, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
   },
   manager: {
-    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen'],
+    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen', 'erweitert'],
     settings: { organisation: true, branding: false, costCenters: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Organisation',
     subtitle: 'Organisation, Kostenstellen, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
@@ -79,7 +79,7 @@ const SESSION_ROLES = {
     subtitle: 'Erscheinungsbild sowie Ihr Konto verwalten.'
   },
   settingsOnly: {
-    nav: ['dashboard', 'audit', 'einstellungen', 'integrationen'],
+    nav: ['dashboard', 'audit', 'einstellungen', 'integrationen', 'erweitert'],
     settings: { organisation: true, branding: false, export: false, users: false, roles: false, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Organisation',
     subtitle: 'Organisation sowie Ihr Konto verwalten.'
@@ -546,6 +546,7 @@ test('Integrationsseite rendert Karten, maskiert Secrets und bleibt Berechtigten
   assert.match(html, /id="integrationLocationsForm"/);
   assert.match(html, /id="retentionForm"/);
   assert.match(html, /data-integration="sso"/);
+  assert.match(html, /class="integration-details" hidden/);
   assert.doesNotMatch(html, /type="password"[^>]*value="[^"]+"/);
   assert.doesNotMatch(html, /localStorage/);
 
@@ -561,6 +562,31 @@ test('Integrationsseite rendert Karten, maskiert Secrets und bleibt Berechtigten
   assert.match(restricted, /id="integrationSsoForm"/);
   assert.doesNotMatch(restricted, /id="retentionForm"/);
   assert.doesNotMatch(restricted, /id="integrationLocationsForm"/);
+});
+
+test('Erweitert rendert eingeklappte Karten und Systemstatus ohne Secrets', () => {
+  const harness = createClientHarness();
+  applyClientSession(harness, clients.admin);
+  const html = vm.runInContext('renderAdvanced()', harness.context);
+  assert.match(html, /id="advanced-general"/);
+  assert.match(html, /id="advanced-leasing"/);
+  assert.match(html, /id="advanced-reminder"/);
+  assert.match(html, /id="advanced-retention"/);
+  assert.match(html, /id="advanced-system"/);
+  assert.match(html, /id="appBaseUrl"/);
+  assert.match(html, /Systemstatus/);
+  assert.doesNotMatch(html, /id="advanced-[a-z]+"[^>]*\sopen(?:\s|>)/);
+  assert.doesNotMatch(html, /mfa\.key|integrations\.key/);
+
+  const manager = createClientHarness();
+  applyClientSession(manager, clients.manager);
+  const managerHtml = vm.runInContext('renderAdvanced()', manager.context);
+  assert.match(managerHtml, /id="advanced-general"/);
+
+  const settingsOnly = createClientHarness();
+  applyClientSession(settingsOnly, clients.settingsOnly);
+  const restricted = vm.runInContext('renderAdvanced()', settingsOnly.context);
+  assert.match(restricted, /id="advanced-general"/);
 });
 
 test('Mobile-Sidebar öffnet und schließt weiterhin korrekt', () => {

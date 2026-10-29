@@ -331,7 +331,19 @@ CREATE TABLE IF NOT EXISTS integration_settings (
   webauthn_rp_id TEXT NOT NULL DEFAULT '',
   webauthn_rp_name TEXT NOT NULL DEFAULT '',
   webauthn_origin TEXT NOT NULL DEFAULT '',
+  webauthn_enabled INTEGER NOT NULL DEFAULT 1 CHECK (webauthn_enabled IN (0, 1)),
   locations_enabled INTEGER NOT NULL DEFAULT 0 CHECK (locations_enabled IN (0, 1)),
+  app_base_url TEXT NOT NULL DEFAULT '',
+  leasing_scheduler_enabled INTEGER NOT NULL DEFAULT 1 CHECK (leasing_scheduler_enabled IN (0, 1)),
+  leasing_interval_ms INTEGER NOT NULL DEFAULT 21600000,
+  leasing_initial_delay_ms INTEGER NOT NULL DEFAULT 5000,
+  leasing_debounce_ms INTEGER NOT NULL DEFAULT 3000,
+  reminder_scheduler_enabled INTEGER NOT NULL DEFAULT 1 CHECK (reminder_scheduler_enabled IN (0, 1)),
+  reminder_interval_ms INTEGER NOT NULL DEFAULT 21600000,
+  reminder_initial_delay_ms INTEGER NOT NULL DEFAULT 5000,
+  retention_scheduler_enabled INTEGER NOT NULL DEFAULT 1 CHECK (retention_scheduler_enabled IN (0, 1)),
+  retention_interval_ms INTEGER NOT NULL DEFAULT 86400000,
+  retention_initial_delay_ms INTEGER NOT NULL DEFAULT 10000,
   updated_at TEXT NOT NULL
 );
 

@@ -9,6 +9,7 @@ const {
   sanitizeSmtpError,
   validateSmtpConfig
 } = require('./smtp');
+const { getAppBaseUrl } = require('./integrations');
 
 const TOKEN_TTL_MS = 60 * 60 * 1000;
 const TOKEN_BYTES = 32;
@@ -104,7 +105,7 @@ async function requestPasswordReset(db, {
     return { requested: true, sent: false };
   }
 
-  const origin = String(baseUrl || process.env.APP_BASE_URL || 'http://localhost').replace(/\/+$/, '');
+  const origin = String(baseUrl || getAppBaseUrl(db) || 'http://localhost').replace(/\/+$/, '');
   const link = `${origin}/reset-password?token=${encodeURIComponent(token)}`;
   const organization = headerSafe(organizationName(db));
   try {

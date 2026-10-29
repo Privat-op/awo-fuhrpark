@@ -129,7 +129,7 @@ function firstAllowedRoute() {
     if (routeAllowed('meine-fahrten')) return 'meine-fahrten';
     if (routeAllowed('anfragen')) return 'anfragen';
   }
-  const order = ['dashboard', 'meine-fahrten', 'anfragen', 'fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'einstellungen', 'integrationen'];
+  const order = ['dashboard', 'meine-fahrten', 'anfragen', 'fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'einstellungen', 'integrationen', 'erweitert'];
   return order.find((route) => routeAllowed(route)) || 'dashboard';
 }
 
@@ -1407,6 +1407,7 @@ function integrationPayload(form) {
   }
   if (kind === 'webauthn') {
     return {
+      webauthnEnabled: bool('webauthnEnabled'),
       webauthnRpId: text('webauthnRpId'),
       webauthnRpName: text('webauthnRpName'),
       webauthnOrigin: text('webauthnOrigin')
@@ -1438,6 +1439,63 @@ async function saveIntegrationForm(form) {
       const message = errorBox.querySelector('p');
       if (message) message.textContent = error.message;
     }
+    toast('Speichern fehlgeschlagen', error.message, 'error');
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
+}
+
+function advancedPayload(form) {
+  const kind = form.dataset.advanced;
+  const data = new FormData(form);
+  const text = (key) => String(data.get(key) || '').trim();
+  const bool = (key) => data.get(key) === 'on';
+  const int = (key) => {
+    const raw = String(data.get(key) || '').trim();
+    if (raw === '') return undefined;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : NaN;
+  };
+  if (kind === 'general') return { appBaseUrl: text('appBaseUrl') };
+  if (kind === 'leasing') {
+    return {
+      leasingSchedulerEnabled: bool('leasingSchedulerEnabled'),
+      leasingIntervalMs: int('leasingIntervalMs'),
+      leasingInitialDelayMs: int('leasingInitialDelayMs'),
+      leasingDebounceMs: int('leasingDebounceMs')
+    };
+  }
+  if (kind === 'reminder') {
+    return {
+      reminderSchedulerEnabled: bool('reminderSchedulerEnabled'),
+      reminderIntervalMs: int('reminderIntervalMs'),
+      reminderInitialDelayMs: int('reminderInitialDelayMs')
+    };
+  }
+  if (kind === 'retention') {
+    return {
+      retentionSchedulerEnabled: bool('retentionSchedulerEnabled'),
+      retentionIntervalMs: int('retentionIntervalMs'),
+      retentionInitialDelayMs: int('retentionInitialDelayMs')
+    };
+  }
+  return {};
+}
+
+async function saveAdvancedForm(form) {
+  const payload = advancedPayload(form);
+  if (Object.values(payload).some((value) => value === undefined || (typeof value === 'number' && !Number.isFinite(value)))) {
+    toast('Ungültiger Wert', 'Bitte alle Zeitangaben als ganze Zahl in Millisekunden angeben.', 'error');
+    return;
+  }
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const state = await apiFetch('/api/integrations', { method: 'PATCH', body: payload });
+    applyServerState(state);
+    renderCurrentView();
+    toast('Erweiterte Einstellungen gespeichert', 'Die Konfiguration gilt sofort; Scheduler wurden neu gestartet.');
+  } catch (error) {
     toast('Speichern fehlgeschlagen', error.message, 'error');
   } finally {
     if (submitButton) submitButton.disabled = false;
@@ -1802,6 +1860,21 @@ function bindEvents() {
   });
 
   view?.addEventListener('change', (event) => {
+    const toggleTarget = {
+      ssoEnabled: 'sso',
+      teamsEnabled: 'teams',
+      clamavEnabled: 'clamav',
+      webauthnEnabled: 'webauthn',
+      leasingSchedulerEnabled: 'leasing',
+      reminderSchedulerEnabled: 'reminder',
+      retentionSchedulerEnabled: 'retention'
+    }[event.target.name];
+    if (toggleTarget) {
+      const form = event.target.closest('form');
+      const details = form?.querySelector('.integration-details');
+      if (details && details.tagName !== 'DETAILS') details.hidden = !event.target.checked;
+      return;
+    }
     if (event.target.id === 'vehicleStatusFilter') {
       ui.vehicleStatus = event.target.value;
       refreshVehicleGrid();
@@ -1958,6 +2031,12 @@ function bindEvents() {
       } finally {
         if (submitButton) submitButton.disabled = false;
       }
+      return;
+    }
+
+    if (form.dataset.advanced) {
+      event.preventDefault();
+      await saveAdvancedForm(form);
       return;
     }
 

@@ -336,5 +336,6 @@ const ROUTE_PERMISSIONS = {
   fahrer: 'drivers_view',
   benutzer: 'users_manage',
   rollen: 'roles_manage',
-  integrationen: 'settings_manage'
+  integrationen: 'settings_manage',
+  erweitert: 'settings_manage'
 };

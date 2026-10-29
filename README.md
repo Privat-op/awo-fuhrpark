@@ -11,6 +11,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - **Optionales SSO:** generischer OIDC-Authorization-Code-Flow mit PKCE, State und Nonce, Entra-ID-Gruppenmapping, optionalem JIT-Provisioning; lokaler Login bleibt Fallback
 - **Optionale Standorte:** Stammdaten, Benutzer-/Fahrzeugzuordnung, standortbezogene Sichtbarkeit und Freigaberouting; standardmäßig aus (`LOCATIONS_ENABLED=false`)
 - **Integrationsseite:** SSO, Teams, ClamAV, WebAuthn, Retention und Standorte zentral unter **Einstellungen → Integrationen**; ENV-Variablen bleiben Override, Secrets werden AES-256-GCM verschlüsselt
+- **Erweitert:** APP_BASE_URL, Scheduler-Parameter und Read-only-Systemstatus unter **Einstellungen → Erweitert**; Scheduler starten nach dem Speichern ohne Prozessneustart neu
 - Rollen: **Administrator**, **Fuhrparkleitung**, **Standardbenutzer** sowie frei anlegbare Rollen
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
@@ -354,7 +355,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 14`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`; die Integrations-Migration ergänzt `integration_settings` mit einer Zeile. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 15`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`; die Integrations-Migration ergänzt `integration_settings` mit einer Zeile; die Advanced-Migration ergänzt `app_base_url` und die Scheduler-Parameter. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 
@@ -403,6 +404,18 @@ Unter **Einstellungen → Integrationen** bündelt die Anwendung SSO, Teams, Cla
 - **Standorte:** `LOCATIONS_ENABLED` ist als Feature-Toggle enthalten, inklusive Hinweis auf Sichtbarkeit und Freigaberouting.
 
 Änderungen an RP-ID/Origin können bestehende Passkeys ungültig machen; die Seite warnt davor. Infrastruktur- und Bootstrap-Werte (`SESSION_SECRET`, `DATA_DIR`, `PORT`, `HOST`, `SUPERADMIN_FILE`, `MFA_ENCRYPTION_KEY`, `TRUST_PROXY`, `COOKIE_SECURE`, `NODE_ENV`) bleiben ausschließlich ENV-verwaltet.
+
+## Erweitert (Admin)
+
+Unter **Einstellungen → Erweitert** liegen Basis-URL und Scheduler-Parameter. Die Seite ist für `settings_manage` sichtbar; alle Karten sind standardmäßig eingeklappt.
+
+- **APP_BASE_URL:** Öffentliche Basis-URL für Passwort-Reset-Links. Wird als http(s) validiert und ohne abschließenden Schrägstrich gespeichert. Ohne Wert nutzt die Anwendung die Host-Information der Anfrage; eine ENV-Variable hat Vorrang.
+- **Leasing-Scheduler:** Aktiv-Schalter (invers zu `LEASING_SCHEDULER_DISABLED`), Intervall, Startverzögerung und Debounce. Minimum für Intervalle: 60.000 ms.
+- **Wartungs-/TÜV-Scheduler:** Aktiv-Schalter (invers zu `REMINDER_SCHEDULER_DISABLED`), Intervall und Startverzögerung.
+- **Retention-Scheduler:** Aktiv-Schalter (invers zu `RETENTION_SCHEDULER_DISABLED`), Intervall und Startverzögerung. Die Aufbewahrungsfristen selbst bleiben in der Retention-Karte unter **Integrationen**.
+- **Sofortige Wirkung:** Nach dem Speichern werden die Scheduler ohne Prozessneustart neu gestartet. In `NODE_ENV=test` bleiben die Scheduler deaktiviert.
+- **Systemstatus:** Zeigt `NODE_ENV`, `HOST`, `PORT`, `DATA_DIR`, `TRUST_PROXY`, `COOKIE_SECURE`, den Superadmin-Dateistatus sowie die Schlüsselquelle für MFA und Integrationen. Es werden keine Secrets oder Schlüsselwerte ausgegeben.
+- **Warum ENV-only:** Diese Infrastruktur-, Bootstrap- und Sicherheitswerte betreffen Container, Datenverzeichnis und Schlüsselverwaltung. Sie sind bewusst nicht über die UI änderbar, damit eine kompromittierte Admin-Sitzung die Laufzeitumgebung nicht umkonfigurieren kann.
 
 ## Teams-Benachrichtigungen (optional)
 
@@ -587,12 +600,16 @@ Der Lasttest ist kein Produktions-Benchmark und darf nicht gegen den Produktivse
 | `VIRUS_SCAN_ENABLED` | `1` aktiviert die ClamAV-Prüfung; Standard aus. |
 | `CLAMAV_HOST`, `CLAMAV_PORT` | clamd-Ziel, Standard `127.0.0.1:3310`. |
 | `VIRUS_SCAN_FAIL_CLOSED` | `true` (Standard bei aktivierter Prüfung) blockiert bei Scannerfehlern. |
-| `RETENTION_INTERVAL_MS` | Intervall des Retention-Schedulers, Standard 24 Stunden. |
+| `RETENTION_INTERVAL_MS` | Intervall des Retention-Schedulers, Standard 24 Stunden; Minimum 60.000 ms. |
 | `RETENTION_INITIAL_DELAY_MS` | Verzögerung des ersten Retention-Laufs, Standard 10 Sekunden. |
 | `RETENTION_SCHEDULER_DISABLED` | `true` deaktiviert den automatischen Retention-Lauf. |
+| `LEASING_INTERVAL_MS` | Intervall des Leasing-Schedulers, Standard sechs Stunden; Minimum 60.000 ms. |
+| `LEASING_INITIAL_DELAY_MS` | Verzögerung des ersten Leasing-Laufs, Standard fünf Sekunden. |
+| `LEASING_DEBOUNCE_MS` | Debounce nach Fahrzeug-/SMTP-Änderungen, Standard drei Sekunden. |
+| `LEASING_SCHEDULER_DISABLED` | `true` deaktiviert den Leasing-Scheduler. |
 | `LOCATIONS_ENABLED` | `true` aktiviert Standorte, Sichtbarkeitsfilter und Freigaberouting; Standard aus. |
-| `APP_BASE_URL` | Öffentliche Basis-URL für Passwort-Reset-Links, z. B. `https://fuhrpark.example.org`. Fehlt sie, wird die Host-Information der Anfrage verwendet. |
-| `REMINDER_INTERVAL_MS` | Intervall des Wartungs-/TÜV-Schedulers in Millisekunden, Standard sechs Stunden. |
+| `APP_BASE_URL` | Öffentliche Basis-URL für Passwort-Reset-Links, z. B. `https://fuhrpark.example.org`. ENV gewinnt; sonst gilt der Wert aus **Erweitert**. Ohne Wert wird die Host-Information der Anfrage verwendet. |
+| `REMINDER_INTERVAL_MS` | Intervall des Wartungs-/TÜV-Schedulers in Millisekunden, Standard sechs Stunden; Minimum 60.000 ms. |
 | `REMINDER_INITIAL_DELAY_MS` | Verzögerung des ersten Wartungs-/TÜV-Laufs, Standard fünf Sekunden. |
 | `REMINDER_SCHEDULER_DISABLED` | `true` deaktiviert den Wartungs-/TÜV-Scheduler. |
 

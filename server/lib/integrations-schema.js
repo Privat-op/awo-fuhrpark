@@ -1,6 +1,22 @@
 'use strict';
 
 const INTEGRATIONS_SCHEMA_VERSION = 14;
+const ADVANCED_SCHEMA_VERSION = 15;
+
+const ADVANCED_COLUMNS = [
+  ['webauthn_enabled', 'INTEGER NOT NULL DEFAULT 1'],
+  ['app_base_url', "TEXT NOT NULL DEFAULT ''"],
+  ['leasing_scheduler_enabled', 'INTEGER NOT NULL DEFAULT 1'],
+  ['leasing_interval_ms', 'INTEGER NOT NULL DEFAULT 21600000'],
+  ['leasing_initial_delay_ms', 'INTEGER NOT NULL DEFAULT 5000'],
+  ['leasing_debounce_ms', 'INTEGER NOT NULL DEFAULT 3000'],
+  ['reminder_scheduler_enabled', 'INTEGER NOT NULL DEFAULT 1'],
+  ['reminder_interval_ms', 'INTEGER NOT NULL DEFAULT 21600000'],
+  ['reminder_initial_delay_ms', 'INTEGER NOT NULL DEFAULT 5000'],
+  ['retention_scheduler_enabled', 'INTEGER NOT NULL DEFAULT 1'],
+  ['retention_interval_ms', 'INTEGER NOT NULL DEFAULT 86400000'],
+  ['retention_initial_delay_ms', 'INTEGER NOT NULL DEFAULT 10000']
+];
 
 function ensureIntegrationsTable(db) {
   db.exec(`
@@ -31,6 +47,17 @@ function ensureIntegrationsTable(db) {
       webauthn_rp_name TEXT NOT NULL DEFAULT '',
       webauthn_origin TEXT NOT NULL DEFAULT '',
       locations_enabled INTEGER NOT NULL DEFAULT 0 CHECK (locations_enabled IN (0, 1)),
+      app_base_url TEXT NOT NULL DEFAULT '',
+      leasing_scheduler_enabled INTEGER NOT NULL DEFAULT 1 CHECK (leasing_scheduler_enabled IN (0, 1)),
+      leasing_interval_ms INTEGER NOT NULL DEFAULT 21600000,
+      leasing_initial_delay_ms INTEGER NOT NULL DEFAULT 5000,
+      leasing_debounce_ms INTEGER NOT NULL DEFAULT 3000,
+      reminder_scheduler_enabled INTEGER NOT NULL DEFAULT 1 CHECK (reminder_scheduler_enabled IN (0, 1)),
+      reminder_interval_ms INTEGER NOT NULL DEFAULT 21600000,
+      reminder_initial_delay_ms INTEGER NOT NULL DEFAULT 5000,
+      retention_scheduler_enabled INTEGER NOT NULL DEFAULT 1 CHECK (retention_scheduler_enabled IN (0, 1)),
+      retention_interval_ms INTEGER NOT NULL DEFAULT 86400000,
+      retention_initial_delay_ms INTEGER NOT NULL DEFAULT 10000,
       updated_at TEXT NOT NULL
     )
   `);
@@ -39,6 +66,13 @@ function ensureIntegrationsTable(db) {
     VALUES (1, ?)
     ON CONFLICT(id) DO NOTHING
   `).run(new Date().toISOString());
+}
+
+function ensureAdvancedColumns(db) {
+  const columns = db.prepare('PRAGMA table_info(integration_settings)').all().map((column) => column.name);
+  for (const [name, definition] of ADVANCED_COLUMNS) {
+    if (!columns.includes(name)) db.exec(`ALTER TABLE integration_settings ADD COLUMN ${name} ${definition}`);
+  }
 }
 
 function migrateIntegrationsSchema(db) {
@@ -50,7 +84,20 @@ function migrateIntegrationsSchema(db) {
   return previous < INTEGRATIONS_SCHEMA_VERSION;
 }
 
+function migrateAdvancedSchema(db) {
+  const previous = Number(db.pragma('user_version', { simple: true })) || 0;
+  db.transaction(() => {
+    ensureIntegrationsTable(db);
+    ensureAdvancedColumns(db);
+    if (previous < ADVANCED_SCHEMA_VERSION) db.pragma(`user_version = ${ADVANCED_SCHEMA_VERSION}`);
+  })();
+  return previous < ADVANCED_SCHEMA_VERSION;
+}
+
 module.exports = {
   INTEGRATIONS_SCHEMA_VERSION,
-  migrateIntegrationsSchema
+  ADVANCED_SCHEMA_VERSION,
+  ADVANCED_COLUMNS,
+  migrateIntegrationsSchema,
+  migrateAdvancedSchema
 };

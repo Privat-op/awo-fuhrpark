@@ -303,6 +303,42 @@ test('Fake-Transport: Reset-Mail enthält nur Link/Token, Token wird nur gehasht
   }
 });
 
+test('APP_BASE_URL aus der Datenbank wird für Reset-Links genutzt, ENV hat Vorrang', async () => {
+  const database = createDb();
+  try {
+    database.prepare(`
+      INSERT INTO integration_settings (id, app_base_url, updated_at)
+      VALUES (1, 'https://db.example.invalid/', '2026-01-01')
+    `).run();
+    insertUser(database, { id: 'base-user-1', email: 'base-user-1@example.invalid' });
+    const transport = fakeTransport();
+    await requestPasswordReset(database, {
+      email: 'base-user-1@example.invalid',
+      dataDir: unitDir,
+      transportFactory: transport.factory,
+      logger: fakeLogger()
+    });
+    assert.match(transport.messages[0].text, /https:\/\/db\.example\.invalid\/reset-password\?token=/);
+    assert.doesNotMatch(transport.messages[0].text, /db\.example\.invalid\/\//);
+
+    process.env.APP_BASE_URL = 'https://env.example.invalid/';
+    try {
+      insertUser(database, { id: 'base-user-2', email: 'base-user-2@example.invalid' });
+      await requestPasswordReset(database, {
+        email: 'base-user-2@example.invalid',
+        dataDir: unitDir,
+        transportFactory: transport.factory,
+        logger: fakeLogger()
+      });
+      assert.match(transport.messages[1].text, /https:\/\/env\.example\.invalid\/reset-password\?token=/);
+    } finally {
+      delete process.env.APP_BASE_URL;
+    }
+  } finally {
+    database.close();
+  }
+});
+
 test('Unbekannte Konten und Superadmin erzeugen weder Mail noch Token', async () => {
   const database = createDb();
   try {

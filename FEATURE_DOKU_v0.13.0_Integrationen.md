@@ -1,7 +1,7 @@
 # Feature-Doku v0.13.0 – Integrationen (Admin)
 
 **Status:** implementiert auf `dev`; keine QS-Freigabe, kein Tag, kein Deploy.  
-**Migration:** `user_version = 14` (`integration_settings`).  
+**Migration:** `user_version = 14` (`integration_settings`); v0.14.0 erweitert auf 15.  
 **Zugriff:** `settings_manage` bzw. Administrator:innen; Inhalte werden nur an berechtigte Konten im State ausgeliefert.
 
 ## 1. Ziel
@@ -81,7 +81,7 @@ Alle Endpunkte benötigen CSRF und `settings_manage`.
 - Validierungsfehler und Rollback.
 - API: ENV-Sperre, Secret setzen/entfernen, Auto-Deaktivierung von Teams.
 - Test-Endpunkte gegen lokale Mocks: OIDC-Discovery/JWKS, Teams-Webhook, clamd, WebAuthn.
-- Vollständige Regression: 180/180 Tests.
+- Vollständige Regression: 187/187 Tests.
 
 ## 9. Offene Punkte
 

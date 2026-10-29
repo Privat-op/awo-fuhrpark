@@ -82,6 +82,7 @@ const {
 const { getDiscovery, getJwks } = require('../lib/sso');
 const { deliverTeams } = require('../lib/teams');
 const { scanBuffer } = require('../lib/virus-scan');
+const { restartAllSchedulers } = require('../lib/scheduler-control');
 const {
   isLocationsEnabled,
   getLocation,
@@ -2026,6 +2027,7 @@ router.get('/integrations', requirePermission('settings_manage'), (req, res, nex
 router.patch('/integrations', requirePermission('settings_manage'), (req, res, next) => {
   try {
     const result = updateIntegrations(db, req.body || {}, { dataDir: DATA_DIR });
+    restartAllSchedulers();
     audit(req, 'update', 'integrations', '1', {
       changed: result.changed,
       ssoEnabled: result.config.sso.enabled,

@@ -10,7 +10,7 @@ const {
   validateSmtpConfig
 } = require('./smtp');
 const { teamsConfigured, deliverTeams } = require('./teams');
-const { getTeamsIntegrationConfig } = require('./integrations');
+const { getTeamsIntegrationConfig, getLeasingSchedulerConfig } = require('./integrations');
 
 const KM_THRESHOLDS = [80, 90, 100];
 const END_THRESHOLDS = [90, 30];
@@ -317,8 +317,8 @@ async function runLeasingNotifications(db, options = {}) {
   };
 }
 
-function schedulerDisabled() {
-  return String(process.env.LEASING_SCHEDULER_DISABLED || '').toLowerCase() === 'true';
+function schedulerDisabled(db) {
+  return !getLeasingSchedulerConfig(db).enabled;
 }
 
 function runSafely(db, options) {
@@ -336,9 +336,10 @@ function runSafely(db, options) {
 }
 
 function startLeasingScheduler(db, options = {}) {
-  if (schedulerDisabled()) return null;
-  const initialDelay = Math.max(0, Number(options.initialDelayMs ?? process.env.LEASING_INITIAL_DELAY_MS ?? 5000));
-  const intervalMs = Math.max(60000, Number(options.intervalMs ?? process.env.LEASING_INTERVAL_MS ?? 6 * 60 * 60 * 1000));
+  const config = getLeasingSchedulerConfig(db);
+  if (!config.enabled) return null;
+  const initialDelay = Math.max(0, Number(options.initialDelayMs ?? config.initialDelayMs));
+  const intervalMs = Math.max(60000, Number(options.intervalMs ?? config.intervalMs));
   const initialTimer = setTimeout(() => runSafely(db, options), initialDelay);
   initialTimer.unref?.();
   const intervalTimer = setInterval(() => runSafely(db, options), intervalMs);
@@ -354,9 +355,10 @@ function startLeasingScheduler(db, options = {}) {
 let triggerTimer = null;
 
 function triggerLeasingCheck(db, options = {}) {
-  if (schedulerDisabled()) return;
+  const config = getLeasingSchedulerConfig(db);
+  if (!config.enabled) return;
   if (triggerTimer) clearTimeout(triggerTimer);
-  const delay = Math.max(0, Number(process.env.LEASING_DEBOUNCE_MS ?? 3000));
+  const delay = Math.max(0, Number(options.debounceMs ?? config.debounceMs));
   triggerTimer = setTimeout(() => {
     triggerTimer = null;
     runSafely(db, options);

@@ -8,7 +8,7 @@ const {
   validateSmtpConfig
 } = require('./smtp');
 const { teamsConfigured, deliverTeams } = require('./teams');
-const { getTeamsIntegrationConfig } = require('./integrations');
+const { getTeamsIntegrationConfig, getReminderSchedulerConfig } = require('./integrations');
 
 const THRESHOLDS = [30, 14, 7];
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
@@ -270,9 +270,9 @@ async function runMaintenanceNotifications(db, options = {}) {
   };
 }
 
-function schedulerDisabled() {
+function schedulerDisabled(db) {
   if (process.env.NODE_ENV === 'test') return true;
-  return String(process.env.REMINDER_SCHEDULER_DISABLED || '').toLowerCase() === 'true';
+  return !getReminderSchedulerConfig(db).enabled;
 }
 
 function runSafely(db, options) {
@@ -290,9 +290,10 @@ function runSafely(db, options) {
 }
 
 function startMaintenanceReminderScheduler(db, options = {}) {
-  if (schedulerDisabled()) return null;
-  const initialDelay = Math.max(0, Number(options.initialDelayMs ?? process.env.REMINDER_INITIAL_DELAY_MS ?? 5000));
-  const intervalMs = Math.max(60000, Number(options.intervalMs ?? process.env.REMINDER_INTERVAL_MS ?? 6 * 60 * 60 * 1000));
+  if (schedulerDisabled(db)) return null;
+  const config = getReminderSchedulerConfig(db);
+  const initialDelay = Math.max(0, Number(options.initialDelayMs ?? config.initialDelayMs));
+  const intervalMs = Math.max(60000, Number(options.intervalMs ?? config.intervalMs));
   const initialTimer = setTimeout(() => runSafely(db, options), initialDelay);
   initialTimer.unref?.();
   const intervalTimer = setInterval(() => runSafely(db, options), intervalMs);

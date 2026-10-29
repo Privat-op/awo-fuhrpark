@@ -1,10 +1,15 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { HttpError } = require('./validation');
 const { getRetentionSettings } = require('./retention');
 const { encryptIntegrationSecret, decryptIntegrationSecret } = require('./integrations-crypto');
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
+const MIN_INTERVAL_MS = 60000;
+const MAX_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_DELAY_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULTS = {
   sso_enabled: 0,
@@ -31,7 +36,19 @@ const DEFAULTS = {
   webauthn_rp_id: '',
   webauthn_rp_name: '',
   webauthn_origin: '',
+  webauthn_enabled: 1,
   locations_enabled: 0,
+  app_base_url: '',
+  leasing_scheduler_enabled: 1,
+  leasing_interval_ms: 21600000,
+  leasing_initial_delay_ms: 5000,
+  leasing_debounce_ms: 3000,
+  reminder_scheduler_enabled: 1,
+  reminder_interval_ms: 21600000,
+  reminder_initial_delay_ms: 5000,
+  retention_scheduler_enabled: 1,
+  retention_interval_ms: 86400000,
+  retention_initial_delay_ms: 10000,
   updated_at: null
 };
 
@@ -240,9 +257,12 @@ function getWebAuthnIntegrationConfig(db) {
     reason = 'WEBAUTHN_RP_ID ist ungültig.';
   } else if (!parsed || !parsed.length) reason = 'WEBAUTHN_ORIGIN ist ungültig.';
   else if (!webAuthnValid(rpID.value, origins.value)) reason = 'WEBAUTHN_ORIGIN passt nicht zu WEBAUTHN_RP_ID.';
+  const enabledFlag = Boolean(Number(row.webauthn_enabled ?? 1));
   return {
-    enabled: !reason,
-    reason: reason || null,
+    enabled: enabledFlag && !reason,
+    enabledFlag,
+    configured: !reason,
+    reason: reason || (enabledFlag ? null : 'WebAuthn ist deaktiviert.'),
     rpID: rpID.value,
     rpName: rpName.value,
     origins: parsed ? [...new Set(parsed)] : [],
@@ -261,6 +281,122 @@ function getLocationsIntegrationConfig(db) {
   return {
     enabled: enabled.value,
     envLocked: { enabled: enabled.source === 'env' }
+  };
+}
+
+function normalizeBaseUrl(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function getAppBaseUrlConfig(db) {
+  const row = rowFor(db);
+  const env = envValue('APP_BASE_URL');
+  return {
+    value: normalizeBaseUrl(env !== null ? env : row.app_base_url),
+    source: env !== null ? 'env' : 'db',
+    envLocked: env !== null
+  };
+}
+
+function getAppBaseUrl(db) {
+  return getAppBaseUrlConfig(db).value;
+}
+
+function schedulerEnabledSetting(rowValue, envName) {
+  const env = envValue(envName);
+  if (env !== null) return { value: !truthy(env), source: 'env' };
+  return { value: Boolean(Number(rowValue ?? 1)), source: 'db' };
+}
+
+function numericSetting(rowValue, envName, fallback, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const env = envValue(envName);
+  const raw = env !== null ? Number(env) : Number(rowValue);
+  const value = Number.isFinite(raw) ? raw : fallback;
+  return { value: Math.min(max, Math.max(min, Math.trunc(value))), source: env !== null ? 'env' : 'db' };
+}
+
+function schedulerConfig(row, prefix, envPrefix, defaults) {
+  const enabled = schedulerEnabledSetting(row[`${prefix}_scheduler_enabled`], `${envPrefix}_SCHEDULER_DISABLED`);
+  const interval = numericSetting(row[`${prefix}_interval_ms`], `${envPrefix}_INTERVAL_MS`, defaults.intervalMs, {
+    min: MIN_INTERVAL_MS,
+    max: MAX_INTERVAL_MS
+  });
+  const initialDelay = numericSetting(row[`${prefix}_initial_delay_ms`], `${envPrefix}_INITIAL_DELAY_MS`, defaults.initialDelayMs, {
+    min: 0,
+    max: MAX_DELAY_MS
+  });
+  return {
+    enabled: enabled.value,
+    intervalMs: interval.value,
+    initialDelayMs: initialDelay.value,
+    envLocked: {
+      enabled: enabled.source === 'env',
+      intervalMs: interval.source === 'env',
+      initialDelayMs: initialDelay.source === 'env'
+    }
+  };
+}
+
+function getLeasingSchedulerConfig(db) {
+  const row = rowFor(db);
+  const config = schedulerConfig(row, 'leasing', 'LEASING', { intervalMs: 21600000, initialDelayMs: 5000 });
+  const debounce = numericSetting(row.leasing_debounce_ms, 'LEASING_DEBOUNCE_MS', 3000, {
+    min: 0,
+    max: 60 * 60 * 1000
+  });
+  return {
+    ...config,
+    debounceMs: debounce.value,
+    envLocked: { ...config.envLocked, debounceMs: debounce.source === 'env' }
+  };
+}
+
+function getReminderSchedulerConfig(db) {
+  return schedulerConfig(rowFor(db), 'reminder', 'REMINDER', { intervalMs: 21600000, initialDelayMs: 5000 });
+}
+
+function getRetentionSchedulerConfig(db) {
+  return schedulerConfig(rowFor(db), 'retention', 'RETENTION', { intervalMs: 86400000, initialDelayMs: 10000 });
+}
+
+function defaultDataDir() {
+  return process.env.DATA_DIR
+    ? path.resolve(process.env.DATA_DIR)
+    : path.join(__dirname, '..', '..', 'data');
+}
+
+function keySource(envName, fileName) {
+  if (envValue(envName) !== null) return 'env';
+  try {
+    return fs.existsSync(path.join(defaultDataDir(), fileName)) ? 'file' : 'missing';
+  } catch {
+    return 'missing';
+  }
+}
+
+function getSystemStatus() {
+  const superadminFile = envValue('SUPERADMIN_FILE');
+  let superadminExists = false;
+  if (superadminFile) {
+    try {
+      superadminExists = fs.existsSync(path.resolve(superadminFile));
+    } catch {
+      superadminExists = false;
+    }
+  }
+  return {
+    nodeEnv: process.env.NODE_ENV || 'development',
+    host: process.env.HOST || '0.0.0.0',
+    port: Number(process.env.PORT) || 3000,
+    dataDir: defaultDataDir(),
+    trustProxy: process.env.TRUST_PROXY || '0',
+    cookieSecure: truthy(process.env.COOKIE_SECURE),
+    superadminFile: {
+      configured: Boolean(superadminFile),
+      exists: superadminExists
+    },
+    mfaKeySource: keySource('MFA_ENCRYPTION_KEY', 'mfa.key'),
+    integrationsKeySource: keySource('INTEGRATIONS_ENCRYPTION_KEY', 'integrations.key')
   };
 }
 
@@ -307,6 +443,8 @@ function safeIntegrationsConfig(db, { dataDir } = {}) {
     },
     webauthn: {
       enabled: webauthn.enabled,
+      enabledFlag: webauthn.enabledFlag,
+      configured: webauthn.configured,
       reason: webauthn.reason,
       rpID: webauthn.rpID,
       rpName: webauthn.rpName,
@@ -317,6 +455,13 @@ function safeIntegrationsConfig(db, { dataDir } = {}) {
       enabled: locations.enabled,
       envLocked: locations.envLocked
     },
+    advanced: {
+      appBaseUrl: getAppBaseUrlConfig(db),
+      leasing: getLeasingSchedulerConfig(db),
+      reminder: getReminderSchedulerConfig(db),
+      retention: getRetentionSchedulerConfig(db)
+    },
+    system: getSystemStatus(),
     retention: getRetentionSettings(db)
   };
 }
@@ -384,12 +529,24 @@ const FIELD_MAP = [
   ['teamsSendMaintenance', 'teams_send_maintenance', null, 'bool'],
   ['clamavEnabled', 'clamav_enabled', 'VIRUS_SCAN_ENABLED', 'bool'],
   ['clamavHost', 'clamav_host', 'CLAMAV_HOST', 'string'],
-  ['clamavPort', 'clamav_port', 'CLAMAV_PORT', 'int'],
+  ['clamavPort', 'clamav_port', 'CLAMAV_PORT', 'int', { min: 1, max: 65535, label: 'ClamAV-Port' }],
   ['clamavFailClosed', 'clamav_fail_closed', 'VIRUS_SCAN_FAIL_CLOSED', 'bool'],
+  ['webauthnEnabled', 'webauthn_enabled', null, 'bool'],
   ['webauthnRpId', 'webauthn_rp_id', 'WEBAUTHN_RP_ID', 'string'],
   ['webauthnRpName', 'webauthn_rp_name', 'WEBAUTHN_RP_NAME', 'string'],
   ['webauthnOrigin', 'webauthn_origin', 'WEBAUTHN_ORIGIN', 'string'],
-  ['locationsEnabled', 'locations_enabled', 'LOCATIONS_ENABLED', 'bool']
+  ['locationsEnabled', 'locations_enabled', 'LOCATIONS_ENABLED', 'bool'],
+  ['appBaseUrl', 'app_base_url', 'APP_BASE_URL', 'string', { baseUrl: true }],
+  ['leasingSchedulerEnabled', 'leasing_scheduler_enabled', 'LEASING_SCHEDULER_DISABLED', 'bool'],
+  ['leasingIntervalMs', 'leasing_interval_ms', 'LEASING_INTERVAL_MS', 'int', { min: MIN_INTERVAL_MS, max: MAX_INTERVAL_MS, label: 'Leasing-Intervall' }],
+  ['leasingInitialDelayMs', 'leasing_initial_delay_ms', 'LEASING_INITIAL_DELAY_MS', 'int', { min: 0, max: MAX_DELAY_MS, label: 'Leasing-Startverzögerung' }],
+  ['leasingDebounceMs', 'leasing_debounce_ms', 'LEASING_DEBOUNCE_MS', 'int', { min: 0, max: 60 * 60 * 1000, label: 'Leasing-Debounce' }],
+  ['reminderSchedulerEnabled', 'reminder_scheduler_enabled', 'REMINDER_SCHEDULER_DISABLED', 'bool'],
+  ['reminderIntervalMs', 'reminder_interval_ms', 'REMINDER_INTERVAL_MS', 'int', { min: MIN_INTERVAL_MS, max: MAX_INTERVAL_MS, label: 'Wartungs-Intervall' }],
+  ['reminderInitialDelayMs', 'reminder_initial_delay_ms', 'REMINDER_INITIAL_DELAY_MS', 'int', { min: 0, max: MAX_DELAY_MS, label: 'Wartungs-Startverzögerung' }],
+  ['retentionSchedulerEnabled', 'retention_scheduler_enabled', 'RETENTION_SCHEDULER_DISABLED', 'bool'],
+  ['retentionIntervalMs', 'retention_interval_ms', 'RETENTION_INTERVAL_MS', 'int', { min: MIN_INTERVAL_MS, max: MAX_INTERVAL_MS, label: 'Retention-Intervall' }],
+  ['retentionInitialDelayMs', 'retention_initial_delay_ms', 'RETENTION_INITIAL_DELAY_MS', 'int', { min: 0, max: MAX_DELAY_MS, label: 'Retention-Startverzögerung' }]
 ];
 
 function updateIntegrations(db, input, { dataDir } = {}) {
@@ -399,7 +556,7 @@ function updateIntegrations(db, input, { dataDir } = {}) {
   const values = { updated_at: new Date().toISOString() };
   const changed = [];
 
-  for (const [key, column, envName, type] of FIELD_MAP) {
+  for (const [key, column, envName, type, options = {}] of FIELD_MAP) {
     if (envName && envValue(envName) !== null) continue;
     if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
     const raw = body[key];
@@ -407,10 +564,19 @@ function updateIntegrations(db, input, { dataDir } = {}) {
     if (type === 'bool') next = truthy(raw) ? 1 : 0;
     else if (type === 'int') {
       next = Number(raw);
-      if (!Number.isInteger(next) || next < 1 || next > 65535) {
-        throw new HttpError(400, 'ClamAV-Port muss zwischen 1 und 65535 liegen.');
+      if (!Number.isInteger(next) || next < options.min || next > options.max) {
+        const range = `${options.min} und ${options.max}`;
+        throw new HttpError(400, `${options.label || 'Wert'} muss zwischen ${range} liegen.`);
       }
-    } else next = String(raw ?? '');
+    } else {
+      next = String(raw ?? '');
+      if (options.baseUrl) {
+        next = normalizeBaseUrl(next);
+        if (next && !validHttpUrl(next)) {
+          throw new HttpError(400, 'APP_BASE_URL muss eine gültige http(s)-URL sein.');
+        }
+      }
+    }
     if (String(row[column] ?? '') === String(next ?? '')) continue;
     values[column] = next;
     changed.push(column);
@@ -455,6 +621,7 @@ function updateIntegrations(db, input, { dataDir } = {}) {
 
 module.exports = {
   DEFAULTS,
+  MIN_INTERVAL_MS,
   envValue,
   truthy,
   splitList,
@@ -467,6 +634,12 @@ module.exports = {
   getClamavIntegrationConfig,
   getWebAuthnIntegrationConfig,
   getLocationsIntegrationConfig,
+  getAppBaseUrlConfig,
+  getAppBaseUrl,
+  getLeasingSchedulerConfig,
+  getReminderSchedulerConfig,
+  getRetentionSchedulerConfig,
+  getSystemStatus,
   safeIntegrationsConfig,
   updateIntegrations
 };

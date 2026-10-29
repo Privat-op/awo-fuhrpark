@@ -33,7 +33,7 @@ const { migratePasskeySchema } = require('./lib/passkey-schema');
 const { migrateSsoSchema } = require('./lib/sso-schema');
 const { migrateRetentionSchema } = require('./lib/retention-schema');
 const { migrateLocationsSchema } = require('./lib/locations-schema');
-const { migrateIntegrationsSchema } = require('./lib/integrations-schema');
+const { migrateIntegrationsSchema, migrateAdvancedSchema } = require('./lib/integrations-schema');
 const {
   FLOW_TTL_MS: SSO_FLOW_TTL_MS,
   getSsoConfig,
@@ -69,6 +69,8 @@ const {
 const { startLeasingScheduler } = require('./lib/leasing');
 const { startMaintenanceReminderScheduler } = require('./lib/maintenance-reminders');
 const { startRetentionScheduler } = require('./lib/retention');
+const { registerScheduler, startAllSchedulers } = require('./lib/scheduler-control');
+const { getRetentionSchedulerConfig, getAppBaseUrl } = require('./lib/integrations');
 const {
   ensureRoles,
   getRolePermissions,
@@ -285,6 +287,7 @@ migrateSsoSchema(db);
 migrateRetentionSchema(db);
 migrateLocationsSchema(db);
 migrateIntegrationsSchema(db);
+migrateAdvancedSchema(db);
 getMfaKey(DATA_DIR);
 try {
   getIntegrationsKey(DATA_DIR);
@@ -302,21 +305,10 @@ try {
 } catch (error) {
   console.warn('Automatische Anonymisierung konnte nicht gestartet werden:', error.message);
 }
-try {
-  startLeasingScheduler(db, { dataDir: DATA_DIR });
-} catch (error) {
-  console.warn('Leasing-Prüfung konnte nicht gestartet werden:', error.message);
-}
-try {
-  startMaintenanceReminderScheduler(db, { dataDir: DATA_DIR });
-} catch (error) {
-  console.warn('Wartungs-Erinnerungen konnten nicht gestartet werden:', error.message);
-}
-try {
-  startRetentionScheduler(db);
-} catch (error) {
-  console.warn('Retention-Scheduler konnte nicht gestartet werden:', error.message);
-}
+registerScheduler('leasing', () => startLeasingScheduler(db, { dataDir: DATA_DIR }));
+registerScheduler('maintenance', () => startMaintenanceReminderScheduler(db, { dataDir: DATA_DIR }));
+registerScheduler('retention', () => startRetentionScheduler(db, { config: getRetentionSchedulerConfig(db) }));
+startAllSchedulers();
 
 app.disable('x-powered-by');
 if (trustProxy) app.set('trust proxy', 1);
@@ -634,7 +626,7 @@ app.post('/forgot-password', passwordResetRequestLimiter, async (req, res, next)
         email
       });
     }
-    const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = getAppBaseUrl(db) || `${req.protocol}://${req.get('host')}`;
     requestPasswordReset(db, { email, dataDir: DATA_DIR, baseUrl })
       .catch(() => console.warn('Passwort-Reset konnte nicht verarbeitet werden.'));
     return renderForgotPassword(req, res, { notice: PASSWORD_RESET_NOTICE, email });

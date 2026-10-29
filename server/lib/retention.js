@@ -105,8 +105,9 @@ function runRetention(db, { now = new Date(), dryRun = false, settings = null } 
   return { dryRun, counts, total };
 }
 
-function schedulerDisabled() {
+function schedulerDisabled(options = {}) {
   if (process.env.NODE_ENV === 'test') return true;
+  if (options.config) return !options.config.enabled;
   return String(process.env.RETENTION_SCHEDULER_DISABLED || '').toLowerCase() === 'true';
 }
 
@@ -122,9 +123,14 @@ function runSafely(db, options) {
 }
 
 function startRetentionScheduler(db, options = {}) {
-  if (schedulerDisabled()) return null;
-  const initialDelay = Math.max(0, Number(options.initialDelayMs ?? process.env.RETENTION_INITIAL_DELAY_MS ?? 10000));
-  const intervalMs = Math.max(60000, Number(options.intervalMs ?? process.env.RETENTION_INTERVAL_MS ?? DAY_MS));
+  if (schedulerDisabled(options)) return null;
+  const config = options.config || {};
+  const initialDelay = Math.max(0, Number(
+    options.initialDelayMs ?? config.initialDelayMs ?? process.env.RETENTION_INITIAL_DELAY_MS ?? 10000
+  ));
+  const intervalMs = Math.max(60000, Number(
+    options.intervalMs ?? config.intervalMs ?? process.env.RETENTION_INTERVAL_MS ?? DAY_MS
+  ));
   const initialTimer = setTimeout(() => runSafely(db, options), initialDelay);
   initialTimer.unref?.();
   const intervalTimer = setInterval(() => runSafely(db, options), intervalMs);

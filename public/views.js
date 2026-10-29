@@ -1753,29 +1753,34 @@ function renderSsoIntegrationCard(integrations) {
         <div class="form-grid">
           <div class="field field-full">
             <label class="check-row"><input type="checkbox" name="ssoEnabled" ${sso.enabled ? 'checked' : ''} ${locked.enabled ? 'disabled' : ''}> SSO aktivieren${locked.enabled ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+            <p class="field-hint">Solange SSO aus ist, werden die Detailfelder ausgeblendet.</p>
           </div>
-          ${integrationField({ id: 'ssoIssuer', label: 'Issuer', value: sso.issuer || '', locked: locked.issuer, placeholder: 'https://login.microsoftonline.com/<tenant>/v2.0', hint: 'Nur http(s); der Issuer wird ohne abschließenden Schrägstrich gespeichert.' })}
-          ${integrationField({ id: 'ssoRedirectUri', label: 'Redirect-URI', value: sso.redirectUri || '', locked: locked.redirectUri, placeholder: 'https://fuhrpark.example.de/auth/sso/callback' })}
-          ${integrationField({ id: 'ssoClientId', label: 'Client-ID', value: sso.clientId || '', locked: locked.clientId })}
-          ${integrationSecretField({ id: 'ssoClientSecret', label: 'Client-Secret', clearName: 'clearSsoClientSecret', set: Boolean(sso.clientSecretSet), locked: locked.clientSecret, hint: 'Wird verschlüsselt gespeichert und nie angezeigt.' })}
-          ${integrationField({ id: 'ssoScopes', label: 'Scopes', value: sso.scopes || '', locked: locked.scopes })}
-          ${integrationField({ id: 'ssoAllowedDomains', label: 'Erlaubte Domains', value: sso.allowedDomains || '', locked: locked.allowedDomains, placeholder: 'awo-bremerhaven.de, example.de', hint: 'Kommagetrennt. Leer = alle vom IdP bestätigten Domains.' })}
-          <div class="field">
-            <label class="check-row"><input type="checkbox" name="ssoAutoProvision" ${sso.autoProvision ? 'checked' : ''} ${locked.autoProvision ? 'disabled' : ''}> JIT-Provisioning aktivieren${locked.autoProvision ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
-          </div>
-          <div class="field">
-            <label for="ssoDefaultRole">Standardrolle für JIT</label>
-            ${roles.length ? `<select class="select" id="ssoDefaultRole" name="ssoDefaultRole" ${locked.defaultRole ? 'disabled' : ''}>
-              ${sso.defaultRole && !roles.some((role) => role.id === sso.defaultRole) ? `<option value="${esc(sso.defaultRole)}" selected>${esc(sso.defaultRole)}</option>` : ''}
-              ${roles.map((role) => `<option value="${esc(role.id)}" ${role.id === (sso.defaultRole || 'user') ? 'selected' : ''}>${esc(role.name)}</option>`).join('')}
-            </select>` : `<input class="input" id="ssoDefaultRole" name="ssoDefaultRole" value="${esc(sso.defaultRole || 'user')}" ${locked.defaultRole ? 'disabled' : ''}>`}
-            ${locked.defaultRole ? '<p class="field-hint">durch Umgebung gesetzt</p>' : '<p class="field-hint">Die Rolle <code>user</code> legt zusätzlich ein verknüpftes Fahrerprofil an.</p>'}
-          </div>
-          ${integrationField({ id: 'ssoGroupClaim', label: 'Gruppen-Claim', value: sso.groupClaim || '', locked: locked.groupClaim })}
-          ${integrationField({ id: 'ssoAdminGroup', label: 'Admin-Gruppe', value: sso.adminGroup || '', locked: locked.adminGroup })}
-          ${integrationField({ id: 'ssoManagerGroup', label: 'Fuhrparkleitungs-Gruppe', value: sso.managerGroup || '', locked: locked.managerGroup })}
         </div>
-        <div class="info-banner" style="margin-top:16px">${icon('shield')}<div><strong>ENV hat Vorrang</strong><p>Felder mit „durch Umgebung gesetzt“ werden aus der Serverumgebung gelesen und können hier nicht geändert werden. Änderungen wirken ohne Neustart.</p></div></div>
+        <div class="integration-details" ${sso.enabled ? '' : 'hidden'}>
+          <div class="form-grid">
+            ${integrationField({ id: 'ssoIssuer', label: 'Issuer', value: sso.issuer || '', locked: locked.issuer, placeholder: 'https://login.microsoftonline.com/<tenant>/v2.0', hint: 'Nur http(s); der Issuer wird ohne abschließenden Schrägstrich gespeichert.' })}
+            ${integrationField({ id: 'ssoRedirectUri', label: 'Redirect-URI', value: sso.redirectUri || '', locked: locked.redirectUri, placeholder: 'https://fuhrpark.example.de/auth/sso/callback' })}
+            ${integrationField({ id: 'ssoClientId', label: 'Client-ID', value: sso.clientId || '', locked: locked.clientId })}
+            ${integrationSecretField({ id: 'ssoClientSecret', label: 'Client-Secret', clearName: 'clearSsoClientSecret', set: Boolean(sso.clientSecretSet), locked: locked.clientSecret, hint: 'Wird verschlüsselt gespeichert und nie angezeigt.' })}
+            ${integrationField({ id: 'ssoScopes', label: 'Scopes', value: sso.scopes || '', locked: locked.scopes })}
+            ${integrationField({ id: 'ssoAllowedDomains', label: 'Erlaubte Domains', value: sso.allowedDomains || '', locked: locked.allowedDomains, placeholder: 'awo-bremerhaven.de, example.de', hint: 'Kommagetrennt. Leer = alle vom IdP bestätigten Domains.' })}
+            <div class="field">
+              <label class="check-row"><input type="checkbox" name="ssoAutoProvision" ${sso.autoProvision ? 'checked' : ''} ${locked.autoProvision ? 'disabled' : ''}> JIT-Provisioning aktivieren${locked.autoProvision ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+            </div>
+            <div class="field">
+              <label for="ssoDefaultRole">Standardrolle für JIT</label>
+              ${roles.length ? `<select class="select" id="ssoDefaultRole" name="ssoDefaultRole" ${locked.defaultRole ? 'disabled' : ''}>
+                ${sso.defaultRole && !roles.some((role) => role.id === sso.defaultRole) ? `<option value="${esc(sso.defaultRole)}" selected>${esc(sso.defaultRole)}</option>` : ''}
+                ${roles.map((role) => `<option value="${esc(role.id)}" ${role.id === (sso.defaultRole || 'user') ? 'selected' : ''}>${esc(role.name)}</option>`).join('')}
+              </select>` : `<input class="input" id="ssoDefaultRole" name="ssoDefaultRole" value="${esc(sso.defaultRole || 'user')}" ${locked.defaultRole ? 'disabled' : ''}>`}
+              ${locked.defaultRole ? '<p class="field-hint">durch Umgebung gesetzt</p>' : '<p class="field-hint">Die Rolle <code>user</code> legt zusätzlich ein verknüpftes Fahrerprofil an.</p>'}
+            </div>
+            ${integrationField({ id: 'ssoGroupClaim', label: 'Gruppen-Claim', value: sso.groupClaim || '', locked: locked.groupClaim })}
+            ${integrationField({ id: 'ssoAdminGroup', label: 'Admin-Gruppe', value: sso.adminGroup || '', locked: locked.adminGroup })}
+            ${integrationField({ id: 'ssoManagerGroup', label: 'Fuhrparkleitungs-Gruppe', value: sso.managerGroup || '', locked: locked.managerGroup })}
+          </div>
+          <div class="info-banner" style="margin-top:16px">${icon('shield')}<div><strong>ENV hat Vorrang</strong><p>Felder mit „durch Umgebung gesetzt“ werden aus der Serverumgebung gelesen und können hier nicht geändert werden. Änderungen wirken ohne Neustart.</p></div></div>
+        </div>
       </div>
       <div class="card-footer">
         <span class="text-muted">Der Test prüft Discovery und JWKS, ohne eine Anmeldung auszulösen.</span>
@@ -1800,16 +1805,21 @@ function renderTeamsIntegrationCard(integrations) {
         <div class="form-grid">
           <div class="field field-full">
             <label class="check-row"><input type="checkbox" name="teamsEnabled" ${teams.enabled ? 'checked' : ''} ${locked.enabled ? 'disabled' : ''}> Teams-Benachrichtigungen aktivieren${locked.enabled ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+            <p class="field-hint">Solange Teams aus ist, werden die Detailfelder ausgeblendet.</p>
           </div>
-          ${integrationSecretField({ id: 'teamsWebhookUrl', label: 'Webhook-URL', clearName: 'clearTeamsWebhook', set: Boolean(teams.webhookSet), locked: locked.webhookUrl, hint: 'Die URL ist ein Secret und wird verschlüsselt gespeichert.' })}
-          <div class="field">
-            <label class="check-row"><input type="checkbox" name="teamsSendLeasing" ${teams.sendLeasing ? 'checked' : ''}> Leasing-Schwellen senden</label>
-          </div>
-          <div class="field">
-            <label class="check-row"><input type="checkbox" name="teamsSendBookingRequests" ${teams.sendBookingRequests ? 'checked' : ''}> Buchungsanfragen senden</label>
-          </div>
-          <div class="field">
-            <label class="check-row"><input type="checkbox" name="teamsSendMaintenance" ${teams.sendMaintenance ? 'checked' : ''}> Wartung/TÜV senden</label>
+        </div>
+        <div class="integration-details" ${teams.enabled ? '' : 'hidden'}>
+          <div class="form-grid">
+            ${integrationSecretField({ id: 'teamsWebhookUrl', label: 'Webhook-URL', clearName: 'clearTeamsWebhook', set: Boolean(teams.webhookSet), locked: locked.webhookUrl, hint: 'Die URL ist ein Secret und wird verschlüsselt gespeichert.' })}
+            <div class="field">
+              <label class="check-row"><input type="checkbox" name="teamsSendLeasing" ${teams.sendLeasing ? 'checked' : ''}> Leasing-Schwellen senden</label>
+            </div>
+            <div class="field">
+              <label class="check-row"><input type="checkbox" name="teamsSendBookingRequests" ${teams.sendBookingRequests ? 'checked' : ''}> Buchungsanfragen senden</label>
+            </div>
+            <div class="field">
+              <label class="check-row"><input type="checkbox" name="teamsSendMaintenance" ${teams.sendMaintenance ? 'checked' : ''}> Wartung/TÜV senden</label>
+            </div>
           </div>
         </div>
       </div>
@@ -1836,11 +1846,16 @@ function renderClamavIntegrationCard(integrations) {
         <div class="form-grid">
           <div class="field field-full">
             <label class="check-row"><input type="checkbox" name="clamavEnabled" ${clamav.enabled ? 'checked' : ''} ${locked.enabled ? 'disabled' : ''}> Virenscan aktivieren${locked.enabled ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+            <p class="field-hint">Solange der Scan aus ist, werden die Detailfelder ausgeblendet.</p>
           </div>
-          ${integrationField({ id: 'clamavHost', label: 'clamd-Host', value: clamav.host || '', locked: locked.host })}
-          ${integrationField({ id: 'clamavPort', label: 'clamd-Port', value: Number(clamav.port) || 3310, locked: locked.port, type: 'number', min: 1, max: 65535 })}
-          <div class="field field-full">
-            <label class="check-row"><input type="checkbox" name="clamavFailClosed" ${clamav.failClosed ? 'checked' : ''} ${locked.failClosed ? 'disabled' : ''}> Fail-closed: Uploads bei Scanfehler ablehnen${locked.failClosed ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+        </div>
+        <div class="integration-details" ${clamav.enabled ? '' : 'hidden'}>
+          <div class="form-grid">
+            ${integrationField({ id: 'clamavHost', label: 'clamd-Host', value: clamav.host || '', locked: locked.host })}
+            ${integrationField({ id: 'clamavPort', label: 'clamd-Port', value: Number(clamav.port) || 3310, locked: locked.port, type: 'number', min: 1, max: 65535 })}
+            <div class="field field-full">
+              <label class="check-row"><input type="checkbox" name="clamavFailClosed" ${clamav.failClosed ? 'checked' : ''} ${locked.failClosed ? 'disabled' : ''}> Fail-closed: Uploads bei Scanfehler ablehnen${locked.failClosed ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+            </div>
           </div>
         </div>
       </div>
@@ -1865,10 +1880,19 @@ function renderWebauthnIntegrationCard(integrations) {
       </div>
       <div class="card-body">
         <div class="form-grid">
-          ${integrationField({ id: 'webauthnRpId', label: 'RP-ID', value: webauthn.rpID || '', locked: locked.rpID, placeholder: 'fuhrpark.example.de' })}
-          ${integrationField({ id: 'webauthnRpName', label: 'RP-Name', value: webauthn.rpName || '', locked: locked.rpName, placeholder: 'AWO Fuhrparkmanagement' })}
-          ${integrationField({ id: 'webauthnOrigin', label: 'Origins', value: webauthn.origins || '', locked: locked.origins, placeholder: 'https://fuhrpark.example.de', hint: 'Kommagetrennt. Jede Origin muss zur RP-ID passen.' })}
-          <div class="info-banner field-full">${icon('alert')}<div><strong>Bestehende Passkeys können ungültig werden</strong><p>Eine Änderung von RP-ID oder Origin macht bereits registrierte Passkeys unbrauchbar. Prüfen Sie die Werte vor dem Speichern.</p></div></div>
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" name="webauthnEnabled" ${webauthn.enabledFlag ? 'checked' : ''}> WebAuthn / Passkeys aktivieren</label>
+            <p class="field-hint">Solange WebAuthn aus ist, werden die Detailfelder ausgeblendet.</p>
+          </div>
+        </div>
+        <div class="integration-details" ${webauthn.enabledFlag ? '' : 'hidden'}>
+          <div class="form-grid">
+            ${integrationField({ id: 'webauthnRpId', label: 'RP-ID', value: webauthn.rpID || '', locked: locked.rpID, placeholder: 'fuhrpark.example.de' })}
+            ${integrationField({ id: 'webauthnRpName', label: 'RP-Name', value: webauthn.rpName || '', locked: locked.rpName, placeholder: 'AWO Fuhrparkmanagement' })}
+            ${integrationField({ id: 'webauthnOrigin', label: 'Origins', value: webauthn.origins || '', locked: locked.origins, placeholder: 'https://fuhrpark.example.de', hint: 'Kommagetrennt. Jede Origin muss zur RP-ID passen.' })}
+            <div class="info-banner field-full">${icon('alert')}<div><strong>Bestehende Passkeys können ungültig werden</strong><p>Eine Änderung von RP-ID oder Origin macht bereits registrierte Passkeys unbrauchbar. Prüfen Sie die Werte vor dem Speichern.</p></div></div>
+          </div>
+          <p class="field-hint" style="margin-top:8px">WebAuthn ist aktiv, sobald der Schalter an ist und RP-ID, RP-Name und eine passende Origin gespeichert sind.</p>
         </div>
       </div>
       <div class="card-footer">
@@ -1899,6 +1923,178 @@ function renderLocationsToggleCard(integrations) {
         <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
       </div>
     </form>`;
+}
+
+function formatDurationMs(value) {
+  const ms = Math.max(0, Number(value) || 0);
+  if (ms < 60000) return `${Math.round(ms / 1000)} Sek.`;
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes} Min.`;
+  const hours = minutes / 60;
+  if (Number.isInteger(hours)) return `${hours} Std.`;
+  return `${hours.toFixed(1)} Std.`;
+}
+
+function advancedCard({ id, title, subtitle, badge = '', content }) {
+  return `
+    <details class="card settings-card advanced-card" id="${id}">
+      <summary class="card-head bordered">
+        <div><h3 class="card-title">${title}</h3><p class="card-sub">${subtitle}</p></div>
+        ${badge}
+      </summary>
+      ${content}
+    </details>`;
+}
+
+function advancedNumberField({ id, label, value, locked, min, max, hint }) {
+  return integrationField({ id, label, value, locked, type: 'number', min, max, hint });
+}
+
+function schedulerAdvancedCard({ kind, title, subtitle, config, fields }) {
+  const locked = config.envLocked || {};
+  const formId = `advanced${kind[0].toUpperCase()}${kind.slice(1)}Form`;
+  return advancedCard({
+    id: `advanced-${kind}`,
+    title,
+    subtitle,
+    badge: integrationStatusBadge({ enabled: Boolean(config.enabled), configured: true }),
+    content: `
+      <form id="${formId}" data-advanced="${kind}">
+        <div class="card-body">
+          <label class="check-row"><input type="checkbox" name="${kind}SchedulerEnabled" ${config.enabled ? 'checked' : ''} ${locked.enabled ? 'disabled' : ''}> Scheduler aktivieren${locked.enabled ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+          <div class="integration-details" ${config.enabled ? '' : 'hidden'}>
+            <div class="form-grid" style="margin-top:16px">
+              ${fields.map((field) => advancedNumberField({ ...field, locked: locked[field.lockKey] })).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <span class="text-muted">Änderungen starten den Scheduler sofort neu, ohne Prozessneustart.</span>
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+        </div>
+      </form>`
+  });
+}
+
+function renderAdvanced() {
+  const integrations = db.integrations;
+  if (!integrations) {
+    return `${pageHead('Einstellungen', 'Erweitert', 'Betriebsparameter und Systemstatus.', '')}
+      <section class="card">${emptyState('shield', 'Keine erweiterten Einstellungen verfügbar', 'Diese Seite ist für Rollen mit der Berechtigung „Organisation bearbeiten“ vorgesehen.')}</section>`;
+  }
+  const advanced = integrations.advanced || {};
+  const system = integrations.system || {};
+  const appBaseUrl = advanced.appBaseUrl || {};
+  const leasing = advanced.leasing || {};
+  const reminder = advanced.reminder || {};
+  const retention = advanced.retention || {};
+  const keySourceLabel = (value) => (value === 'env'
+    ? 'Umgebungsvariable'
+    : value === 'file'
+      ? 'Datei im Datenverzeichnis'
+      : 'nicht vorhanden');
+
+  const generalCard = advancedCard({
+    id: 'advanced-general',
+    title: 'Allgemein / Betrieb',
+    subtitle: 'Öffentliche Basis-URL für Links in E-Mails.',
+    badge: appBaseUrl.envLocked
+      ? '<span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>'
+      : '',
+    content: `
+      <form id="advancedGeneralForm" data-advanced="general">
+        <div class="card-body">
+          <div class="form-grid">
+            ${integrationField({
+              id: 'appBaseUrl',
+              label: 'APP_BASE_URL',
+              value: appBaseUrl.value || '',
+              locked: Boolean(appBaseUrl.envLocked),
+              placeholder: 'https://fuhrpark.example.de',
+              hint: 'Wird für Passwort-Reset-Links verwendet. Ohne Wert wird die Host-Information der Anfrage genutzt. Kein abschließender Schrägstrich.'
+            })}
+          </div>
+        </div>
+        <div class="card-footer">
+          <span class="text-muted">Nur http(s). Änderungen gelten sofort für neue E-Mails.</span>
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+        </div>
+      </form>`
+  });
+
+  const leasingCard = schedulerAdvancedCard({
+    kind: 'leasing',
+    title: 'Leasing-Scheduler',
+    subtitle: 'Prüft Leasing-Schwellen und versendet Warnungen.',
+    config: leasing,
+    fields: [
+      { id: 'leasingIntervalMs', label: 'Intervall (ms)', value: leasing.intervalMs, lockKey: 'intervalMs', min: 60000, max: 2592000000, hint: `Aktuell: ${formatDurationMs(leasing.intervalMs)}; Minimum 60.000 ms.` },
+      { id: 'leasingInitialDelayMs', label: 'Startverzögerung (ms)', value: leasing.initialDelayMs, lockKey: 'initialDelayMs', min: 0, max: 86400000 },
+      { id: 'leasingDebounceMs', label: 'Debounce (ms)', value: leasing.debounceMs, lockKey: 'debounceMs', min: 0, max: 3600000, hint: 'Verzögerung nach Änderungen an Fahrzeugen oder SMTP.' }
+    ]
+  });
+
+  const reminderCard = schedulerAdvancedCard({
+    kind: 'reminder',
+    title: 'Wartungs-/TÜV-Scheduler',
+    subtitle: 'Erinnert an fällige Wartungen und TÜV-Termine.',
+    config: reminder,
+    fields: [
+      { id: 'reminderIntervalMs', label: 'Intervall (ms)', value: reminder.intervalMs, lockKey: 'intervalMs', min: 60000, max: 2592000000, hint: `Aktuell: ${formatDurationMs(reminder.intervalMs)}; Minimum 60.000 ms.` },
+      { id: 'reminderInitialDelayMs', label: 'Startverzögerung (ms)', value: reminder.initialDelayMs, lockKey: 'initialDelayMs', min: 0, max: 86400000 }
+    ]
+  });
+
+  const retentionCard = schedulerAdvancedCard({
+    kind: 'retention',
+    title: 'Retention-Scheduler',
+    subtitle: 'Bereinigt technische Daten gemäß den Aufbewahrungsfristen.',
+    config: retention,
+    fields: [
+      { id: 'retentionIntervalMs', label: 'Intervall (ms)', value: retention.intervalMs, lockKey: 'intervalMs', min: 60000, max: 2592000000, hint: `Aktuell: ${formatDurationMs(retention.intervalMs)}; Minimum 60.000 ms.` },
+      { id: 'retentionInitialDelayMs', label: 'Startverzögerung (ms)', value: retention.initialDelayMs, lockKey: 'initialDelayMs', min: 0, max: 86400000 }
+    ]
+  });
+
+  const statusRows = [
+    ['NODE_ENV', system.nodeEnv || '—'],
+    ['HOST', system.host || '—'],
+    ['PORT', String(system.port || '—')],
+    ['DATA_DIR', system.dataDir || '—'],
+    ['TRUST_PROXY', String(system.trustProxy ?? '0')],
+    ['COOKIE_SECURE', system.cookieSecure ? 'true' : 'false'],
+    ['SUPERADMIN_FILE', system.superadminFile?.configured
+      ? (system.superadminFile.exists ? 'gesetzt, Datei vorhanden' : 'gesetzt, Datei fehlt')
+      : 'nicht gesetzt'],
+    ['MFA-Schlüssel', keySourceLabel(system.mfaKeySource)],
+    ['Integrations-Schlüssel', keySourceLabel(system.integrationsKeySource)]
+  ];
+  const systemCard = advancedCard({
+    id: 'advanced-system',
+    title: 'Systemstatus',
+    subtitle: 'Nur lesen. Diese Werte bleiben bewusst ENV-only.',
+    badge: '<span class="badge badge-gray no-dot">Read-only</span>',
+    content: `
+      <div class="card-body">
+        <div class="detail-list">
+          ${statusRows.map(([label, value]) => `<div class="detail-list-item">
+            <span class="mini-icon tint-blue">${icon('monitor')}</span>
+            <div class="main"><strong>${esc(label)}</strong><span>${esc(value)}</span></div>
+          </div>`).join('')}
+        </div>
+        <div class="info-banner" style="margin-top:16px">${icon('shield')}<div><strong>Infrastruktur bleibt in der Umgebung</strong><p>Diese Werte betreffen Bootstrap, Sicherheit und Container und sind deshalb nicht über die UI änderbar. Secrets werden nur als „gesetzt/nicht gesetzt“ und Quelle angezeigt.</p></div></div>
+      </div>`
+  });
+
+  return `
+    ${pageHead('Einstellungen', 'Erweitert', 'Betriebsparameter, Scheduler und Systemstatus. Karten sind standardmäßig eingeklappt.', '<span class="badge badge-gray no-dot">Eingeklappt</span>')}
+    <div class="stack">
+      ${generalCard}
+      ${leasingCard}
+      ${reminderCard}
+      ${retentionCard}
+      ${systemCard}
+    </div>`;
 }
 
 function renderIntegrations() {
@@ -1976,6 +2172,20 @@ function renderSettings() {
           <a class="btn btn-ghost btn-sm" href="#/integrationen">Integrationen öffnen ${icon('arrow-right')}</a>
         </div>
       </section>` : '',
+    canManageIntegrations ? `
+      <details class="card settings-card advanced-card" id="advancedSettingsEntry">
+        <summary class="card-head bordered">
+          <div><h3 class="card-title">Erweitert</h3><p class="card-sub">Basis-URL, Scheduler und Systemstatus.</p></div>
+          <span class="badge badge-gray no-dot">Eingeklappt</span>
+        </summary>
+        <div class="card-body">
+          <p class="text-muted">Betriebsparameter und Scheduler sind bewusst auf einer separaten Seite gebündelt und dort zusätzlich eingeklappt.</p>
+        </div>
+        <div class="card-footer">
+          <span class="text-muted">Infrastruktur- und Bootstrap-Werte bleiben ENV-only.</span>
+          <a class="btn btn-ghost btn-sm" href="#/erweitert">Erweitert öffnen ${icon('arrow-right')}</a>
+        </div>
+      </details>` : '',
     canEditSettings ? `
       <form class="card settings-card" id="settingsForm">
         <div class="card-head bordered">
@@ -2695,6 +2905,7 @@ const ROUTES = {
   benutzer: renderUsers,
   rollen: renderRoles,
   einstellungen: renderSettings,
-  integrationen: renderIntegrations
+  integrationen: renderIntegrations,
+  erweitert: renderAdvanced
 };
 
