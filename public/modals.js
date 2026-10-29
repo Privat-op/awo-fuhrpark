@@ -585,7 +585,7 @@ function openBookingDetails(bookingId) {
           </div>
           <div class="detail-list-item">
             <span class="mini-icon tint-gray">${icon('receipt')}</span>
-            <div class="main"><strong>Kostenstelle</strong><span>${booking.costCenterId ? esc(`${booking.costCenterCode || ''}${booking.costCenterName ? ` · ${booking.costCenterName}` : ''}`) : 'Ohne Kostenstelle'}</span></div>
+            <div class="main"><strong>Kostenstelle</strong><span>${booking.costCenterId ? esc(costCenterLabel({ companyCode: booking.companyCode, code: booking.costCenterCode, name: booking.costCenterName })) : 'Ohne Kostenstelle'}</span></div>
           </div>
           <div class="detail-list-item">
             <span class="mini-icon tint-gray">${icon('book')}</span>
@@ -1335,20 +1335,35 @@ function openCostCenterModal(costCenterId = null) {
     return;
   }
   const existing = costCenterId ? (db.costCenters || []).find((entry) => entry.id === costCenterId) : null;
-  const costCenter = existing || { code: '', name: '', description: '', active: true };
+  const defaultCompany = (db.companies || []).find((company) => company.active) || (db.companies || [])[0] || null;
+  const costCenter = existing || { companyId: defaultCompany?.id || '', code: '', name: '', description: '', active: true };
+  const companyOptions = (db.companies || [])
+    .filter((company) => company.active || company.id === costCenter.companyId)
+    .map((company) => `<option value="${company.id}" ${company.id === costCenter.companyId ? 'selected' : ''}>${esc(company.code)} · ${esc(company.name)}${company.active ? '' : ' · inaktiv'}</option>`)
+    .join('');
+  const companyLabel = (db.companies || []).find((company) => company.id === costCenter.companyId);
   showModal({
     title: existing ? 'Kostenstelle bearbeiten' : 'Kostenstelle anlegen',
     eyebrow: 'Kostenstellen',
-    subtitle: existing ? `${costCenter.code} · ${costCenter.name}` : 'Neue Kostenstelle für die Zuordnung von Fahrzeugen, Buchungen und Kosten.',
+    subtitle: existing
+      ? `${companyLabel ? `${companyLabel.code} · ` : ''}${costCenter.code} · ${costCenter.name}`
+      : 'Neue Kostenstelle für die Zuordnung von Fahrzeugen, Buchungen und Kosten.',
     size: 'modal-sm',
     body: `
       <form id="costCenterForm" novalidate autocomplete="off">
         ${formAlertMarkup()}
         <div class="form-grid">
           <div class="field field-full">
+            <label for="costCenterCompany">Gesellschaft <span class="optional">*</span></label>
+            <select class="select" id="costCenterCompany" name="companyId" required ${companyOptions ? '' : 'disabled'}>
+              ${companyOptions || '<option value="">Keine Gesellschaft vorhanden</option>'}
+            </select>
+            <p class="field-hint">Codes sind je Gesellschaft case-insensitiv eindeutig.</p>
+          </div>
+          <div class="field field-full">
             <label for="costCenterCode">Code <span class="optional">*</span></label>
             <input class="input" id="costCenterCode" name="code" type="text" value="${esc(costCenter.code)}" placeholder="z. B. KST-100" maxlength="40" required>
-            <p class="field-hint">Wird normalisiert (Großschreibung, Leerzeichen als Bindestrich) und muss eindeutig sein.</p>
+            <p class="field-hint">Wird normalisiert (Großschreibung, Leerzeichen als Bindestrich) und muss innerhalb der Gesellschaft eindeutig sein.</p>
           </div>
           <div class="field field-full">
             <label for="costCenterName">Bezeichnung <span class="optional">*</span></label>
@@ -1374,8 +1389,13 @@ function openCostCenterModal(costCenterId = null) {
     event.preventDefault();
     clearFormError(form);
     const data = new FormData(form);
+    const companyId = String(data.get('companyId') || '').trim();
     const code = String(data.get('code') || '').trim();
     const name = String(data.get('name') || '').trim();
+    if (!companyId) {
+      showFormError(form, 'Bitte wählen Sie eine Gesellschaft aus.');
+      return;
+    }
     if (!code || !name) {
       showFormError(form, 'Bitte geben Sie Code und Bezeichnung an.');
       return;
@@ -1386,6 +1406,7 @@ function openCostCenterModal(costCenterId = null) {
       const state = await apiFetch(existing ? `/api/cost-centers/${encodeURIComponent(existing.id)}` : '/api/cost-centers', {
         method: existing ? 'PATCH' : 'POST',
         body: {
+          companyId,
           code,
           name,
           description: String(data.get('description') || '').trim(),
@@ -2641,6 +2662,123 @@ function openAnonymizeUserConfirm(userId) {
         toast('Konto anonymisiert', 'Die persönlichen Kontodaten wurden entfernt.');
       } catch (error) {
         toast('Anonymisierung fehlgeschlagen', error.message, 'error');
+      }
+    }
+  });
+}
+
+function openCompanyModal(companyId = null) {
+  if (!can('settings_manage')) {
+    toast('Keine Berechtigung', 'Gesellschaften sind Administrator:innen vorbehalten.', 'error');
+    return;
+  }
+  const existing = companyId ? (db.companies || []).find((entry) => entry.id === companyId) : null;
+  const company = existing || { code: '', name: '', active: true };
+  showModal({
+    title: existing ? 'Gesellschaft bearbeiten' : 'Gesellschaft anlegen',
+    eyebrow: 'Gesellschaften',
+    subtitle: 'Kostenstellencodes werden je Gesellschaft eindeutig geprüft.',
+    size: 'modal-sm',
+    body: `
+      <form id="companyForm" novalidate autocomplete="off">
+        ${formAlertMarkup()}
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="companyCode">Code <span class="optional">*</span></label>
+            <input class="input" id="companyCode" name="code" type="text" value="${esc(company.code)}" placeholder="z. B. AWO-HB" maxlength="40" required data-autofocus>
+            <p class="field-hint">Großschreibung, Leerzeichen werden zu Bindestrichen.</p>
+          </div>
+          <div class="field field-full">
+            <label for="companyName">Name <span class="optional">*</span></label>
+            <input class="input" id="companyName" name="name" type="text" value="${esc(company.name)}" placeholder="z. B. AWO Bremerhaven" maxlength="160" required>
+          </div>
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" name="active" ${company.active ? 'checked' : ''}> Gesellschaft aktiv</label>
+            <p class="field-hint">Inaktive Gesellschaften bleiben sichtbar; neue Kostenstellen können ihnen nicht zugeordnet werden.</p>
+          </div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="companyForm">${icon('check')} Speichern</button>`
+  });
+  const form = $('#companyForm');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const code = String(data.get('code') || '').trim();
+    const name = String(data.get('name') || '').trim();
+    if (!code || !name) {
+      showFormError(form, 'Bitte geben Sie Code und Name an.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="companyForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const state = await apiFetch(existing ? `/api/companies/${encodeURIComponent(existing.id)}` : '/api/companies', {
+        method: existing ? 'PATCH' : 'POST',
+        body: { code, name, active: data.get('active') === 'on' }
+      });
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast(existing ? 'Gesellschaft gespeichert' : 'Gesellschaft angelegt', `${name} wurde gespeichert.`);
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function toggleCompanyActive(companyId) {
+  const company = (db.companies || []).find((entry) => entry.id === companyId);
+  if (!company) return;
+  const nextActive = !company.active;
+  openConfirm({
+    title: nextActive ? 'Gesellschaft aktivieren?' : 'Gesellschaft deaktivieren?',
+    text: nextActive
+      ? `<strong>${esc(company.code)} · ${esc(company.name)}</strong> kann danach wieder für neue Kostenstellen genutzt werden.`
+      : `<strong>${esc(company.code)} · ${esc(company.name)}</strong> bleibt sichtbar, kann aber nicht mehr für neue Kostenstellen gewählt werden. Bestehende Kostenstellen bleiben unverändert.`,
+    confirmLabel: nextActive ? 'Aktivieren' : 'Deaktivieren',
+    danger: !nextActive,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/companies/${encodeURIComponent(company.id)}`, {
+          method: 'PATCH',
+          body: { code: company.code, name: company.name, active: nextActive }
+        });
+        applyServerState(state);
+        renderCurrentView();
+        toast(nextActive ? 'Gesellschaft aktiviert' : 'Gesellschaft deaktiviert', `${company.code} wurde aktualisiert.`);
+      } catch (error) {
+        toast('Gesellschaft konnte nicht aktualisiert werden', error.message, 'error');
+      }
+    }
+  });
+}
+
+function deleteCompany(companyId) {
+  const company = (db.companies || []).find((entry) => entry.id === companyId);
+  if (!company) return;
+  if (Number(company.costCenterCount) > 0) {
+    toast('Gesellschaft wird verwendet', 'Löschen ist nur ohne Kostenstellen möglich. Deaktivieren Sie die Gesellschaft stattdessen.', 'error');
+    return;
+  }
+  openConfirm({
+    title: 'Gesellschaft löschen?',
+    text: `<strong>${esc(company.code)} · ${esc(company.name)}</strong> wird dauerhaft entfernt.`,
+    confirmLabel: 'Gesellschaft löschen',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/companies/${encodeURIComponent(company.id)}`, { method: 'DELETE' });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Gesellschaft gelöscht', `${company.code} wurde entfernt.`);
+      } catch (error) {
+        toast('Löschen fehlgeschlagen', error.message, 'error');
       }
     }
   });

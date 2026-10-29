@@ -79,7 +79,7 @@ UI: Karte **Webhooks** auf der Integrationsseite mit Liste (Name, Host, Format, 
 - Formate inkl. Discord-Limit; HMAC-Signatur.
 - Dispatch: Event-Filter, mehrere/disabled Webhooks, Dedupe, Retry, HTTP-/Timeout-Fehler.
 - API-CRUD, Test-Endpunkt, Audit.
-- Vollständige Regression: **207/207 Tests**.
+- Vollständige Regression: **213/213 Tests**.
 
 ## 8. Offene Punkte
 

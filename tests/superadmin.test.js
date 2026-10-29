@@ -273,7 +273,7 @@ test('Bootstrap: Datei legt aktiven Superadmin an, Migration ist idempotent, Log
   const health = await fetch(`${baseUrl}/healthz`);
   assert.equal(health.status, 200);
 
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 16);
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 17);
   const role = db.prepare("SELECT * FROM roles WHERE id = 'superadmin'").get();
   assert.equal(role.name, 'Superadmin');
   assert.equal(role.rank, 2000000);
@@ -778,7 +778,7 @@ test('Frische Installation ohne Superadmin-Datei: Warnung, kein Konto, Admin-Log
 
     const isolated = new Database(isolatedDb);
     try {
-      assert.equal(Number(isolated.pragma('user_version', { simple: true })), 16);
+      assert.equal(Number(isolated.pragma('user_version', { simple: true })), 17);
       assert.equal(isolated.prepare("SELECT COUNT(*) AS count FROM roles WHERE id = 'superadmin' AND rank = 2000000 AND is_system = 1").get().count, 1);
       assert.equal(isolated.prepare("SELECT COUNT(*) AS count FROM users WHERE id = 'superadmin' OR role = 'superadmin'").get().count, 0);
     } finally {

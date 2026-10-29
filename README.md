@@ -31,7 +31,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Fahrtenbuch mit Fahrtstart, Fahrtende und manueller Nachtragung
 - Wartungsplan mit automatischer Kostenübernahme bei Erledigung
 - Kostenverwaltung inklusive Beleg-Upload (JPG, PNG, PDF)
-- Kostenstellen als Stammdatum mit Zuordnung zu Fahrzeugen, Fahrer:innen und Benutzerkonten, Default-Übernahme in Buchungen/Kosten, Filtern, Summen und Export
+- Kostenstellen als Stammdatum je Gesellschaft mit Zuordnung zu Fahrzeugen, Fahrer:innen und Benutzerkonten, Default-Übernahme in Buchungen/Kosten, Filtern, Summen und Export
 - Dashboard, Suche und Benachrichtigungen mit Gelesen-Status
 - **Auto-Refresh:** Übersichten aktualisieren den Server-State alle 60 Sekunden, nur bei sichtbarem Tab und pausiert bei Modals, Formularfokus und verstecktem Tab
 - **Globales Erscheinungsbild:** Allgemeines AWO-Theme mit offiziellem Logo oder neutrales Theme mit eigenem Anzeigenamen, optionalem Logo, Akzentfarbe, weiteren Farben und Sidebar-Stil inklusive Live-Vorschau
@@ -338,6 +338,15 @@ Unter **Benutzer → Benutzer-Ausnahmen** können Personen mit `users_manage` pe
 - Setzen und Aufheben der Sperre werden ebenso wie die Begründung auditiert.
 - `POST /api/bookings` und `POST /api/booking-requests` antworten für ein gesperrtes Fahrzeug mit `409` und einer klaren Meldung. Eine Buchungsanfrage kann nach einer späteren Sperre nicht mehr genehmigt werden; sie bleibt offen.
 - Bestehende Buchungen bleiben unverändert. Fahrtstart, Fahrtende und Stornierung unterliegen weiterhin den bisherigen Regeln und werden durch die Sperre nicht blockiert.
+## Gesellschaften und Kostenstellen
+
+- **Gesellschaften** sind ein Stammdatum unter **Einstellungen → Gesellschaften** (Code, Name, aktiv). Codes sind global eindeutig; Kostenstellencodes nur je Gesellschaft.
+- Bestehende Kostenstellen werden bei Migration 17 der Standardgesellschaft (`STANDARD`, Name aus `ORG_NAME`) zugeordnet. Der bisherige globale Unique-Index auf `cost_centers.code` wird durch `UNIQUE (company_id, code COLLATE NOCASE)` ersetzt; IDs und Zuordnungen bleiben unverändert.
+- Kostenstellen haben eine Pflicht-Gesellschaft. API und UI prüfen Duplikate je Gesellschaft case-insensitiv; Fehlermeldung: „Eine Kostenstelle mit diesem Code existiert in dieser Gesellschaft bereits.“
+- Dropdowns zeigen `Gesellschaft · Code · Name`. Die Kostenstellenliste bietet Gesellschaftsfilter und Suche nach Code/Name; JSON-Export und Fahrtenbuch-CSV enthalten die Gesellschaft.
+- **Keine Mandantentrennung:** Fahrzeuge, Benutzer, Buchungen und Kosten bleiben gesellschaftsneutral. Alle Berechtigten sehen alle Gesellschaften und Kostenstellen.
+- `GET /api/companies` ist für `cost_centers_view`/`cost_centers_manage` lesbar; Anlegen/Ändern/Löschen erfordert `settings_manage`. Löschen ist nur ohne Kostenstellen möglich.
+
 ## Audit-Log
 
 Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichbar. Der sichtbare Bereich wird ausschließlich serverseitig bestimmt:
@@ -357,7 +366,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 16`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`; die Integrations-Migration ergänzt `integration_settings` mit einer Zeile; die Advanced-Migration ergänzt `app_base_url` und die Scheduler-Parameter; die Webhook-Migration ergänzt `webhooks` und übernimmt einen vorhandenen DB-Teams-Webhook. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 17`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`; die Integrations-Migration ergänzt `integration_settings` mit einer Zeile; die Advanced-Migration ergänzt `app_base_url` und die Scheduler-Parameter; die Webhook-Migration ergänzt `webhooks` und übernimmt einen vorhandenen DB-Teams-Webhook; die Gesellschafts-Migration ergänzt `companies`, ordnet bestehende Kostenstellen der Standardgesellschaft zu und setzt den Unique-Index auf `(company_id, code)`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 

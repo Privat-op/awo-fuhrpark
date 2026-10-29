@@ -56,6 +56,12 @@ const {
   resolveCostCostCenter,
   getCostCenterUsage
 } = require('../lib/cost-centers');
+const {
+  parseCompanyPayload,
+  listCompanies,
+  getCompany,
+  assertCompanyAssignable
+} = require('../lib/companies');
 const { COLOR_MODES } = require('../lib/color-mode');
 const { leasingWarningForVehicle, triggerLeasingCheck } = require('../lib/leasing');
 const {
@@ -457,7 +463,7 @@ router.get('/export/logbook.csv', requirePermission('logbook_export'), (req, res
     const vehicles = new Map(state.vehicles.map((vehicle) => [vehicle.id, vehicle]));
     const drivers = new Map(state.drivers.map((driver) => [driver.id, driver]));
     const rows = [
-      ['Datum', 'Fahrzeug', 'Kennzeichen', 'Fahrer:in', 'Zweck', 'Von', 'Bis', 'Start-km', 'End-km', 'Distanz-km', 'Kostenstelle'],
+      ['Datum', 'Fahrzeug', 'Kennzeichen', 'Fahrer:in', 'Zweck', 'Von', 'Bis', 'Start-km', 'End-km', 'Distanz-km', 'Gesellschaft', 'Kostenstelle'],
       ...trips.map((trip) => {
         const vehicle = vehicles.get(trip.vehicleId);
         const driver = drivers.get(trip.driverId);
@@ -476,6 +482,7 @@ router.get('/export/logbook.csv', requirePermission('logbook_export'), (req, res
           trip.startKm ?? '',
           trip.endKm ?? '',
           distance,
+          trip.companyCode || trip.companyName || '',
           costCenter
         ];
       })
@@ -616,23 +623,146 @@ router.post('/notifications/read', (req, res) => {
 });
 
 /* =========================================================
+   Gesellschaften
+   ========================================================= */
+function requireCostCenterRead(req, res, next) {
+  if (hasEffectivePermission(req, 'cost_centers_view') || hasEffectivePermission(req, 'cost_centers_manage')) {
+    return next();
+  }
+  return next(new HttpError(403, 'Für diese Aktion fehlt die erforderliche Berechtigung.'));
+}
+
+function costCenterAssignmentDetails(db, costCenterId, previousCostCenterId) {
+  const costCenter = costCenterId ? getCostCenter(db, costCenterId) : null;
+  const previous = previousCostCenterId ? getCostCenter(db, previousCostCenterId) : null;
+  const company = costCenter ? getCompany(db, costCenter.company_id) : null;
+  const previousCompany = previous ? getCompany(db, previous.company_id) : null;
+  return {
+    costCenterId: costCenter?.id || null,
+    costCenterCode: costCenter?.code || '',
+    costCenterName: costCenter?.name || '',
+    companyId: company?.id || null,
+    companyCode: company?.code || '',
+    companyName: company?.name || '',
+    previousCostCenterId: previous?.id || null,
+    previousCostCenterCode: previous?.code || '',
+    previousCompanyCode: previousCompany?.code || ''
+  };
+}
+
+function costCenterAuditDetails(db, values, extra = {}) {
+  const company = getCompany(db, values.companyId);
+  return {
+    companyId: values.companyId,
+    companyCode: company?.code || '',
+    companyName: company?.name || '',
+    code: values.code,
+    name: values.name,
+    active: values.active,
+    ...extra
+  };
+}
+
+router.get('/companies', requireCostCenterRead, (req, res, next) => {
+  try {
+    res.json({ companies: listCompanies(db) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/companies', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const values = parseCompanyPayload(req.body || {});
+    const duplicate = db.prepare('SELECT id FROM companies WHERE code = ? COLLATE NOCASE').get(values.code);
+    if (duplicate) throw new HttpError(409, 'Eine Gesellschaft mit diesem Code existiert bereits.');
+    const id = crypto.randomUUID();
+    const now = isoNow();
+    db.prepare(`
+      INSERT INTO companies (id, code, name, active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, values.code, values.name, values.active ? 1 : 0, now, now);
+    audit(req, 'create', 'company', id, { companyId: id, code: values.code, name: values.name, active: values.active });
+    sendState(req, res, 201);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Gesellschaft mit diesem Code existiert bereits.'));
+    next(error);
+  }
+});
+
+router.patch('/companies/:id', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const existing = getCompany(db, req.params.id);
+    if (!existing) throw new HttpError(404, 'Gesellschaft wurde nicht gefunden.');
+    const values = parseCompanyPayload(req.body || {}, existing);
+    const duplicate = db.prepare('SELECT id FROM companies WHERE code = ? COLLATE NOCASE AND id <> ?').get(values.code, existing.id);
+    if (duplicate) throw new HttpError(409, 'Eine Gesellschaft mit diesem Code existiert bereits.');
+    const activeChanged = Boolean(existing.active) !== values.active;
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE companies SET code = ?, name = ?, active = ?, updated_at = ? WHERE id = ?
+      `).run(values.code, values.name, values.active ? 1 : 0, isoNow(), existing.id);
+      audit(req, 'update', 'company', existing.id, {
+        companyId: existing.id,
+        code: values.code,
+        name: values.name,
+        active: values.active,
+        previousCode: existing.code,
+        previousName: existing.name,
+        previousActive: Boolean(existing.active)
+      });
+      if (activeChanged) {
+        audit(req, values.active ? 'activate' : 'deactivate', 'company', existing.id, { code: values.code });
+      }
+    })();
+    sendState(req, res);
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Gesellschaft mit diesem Code existiert bereits.'));
+    next(error);
+  }
+});
+
+router.delete('/companies/:id', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const existing = getCompany(db, req.params.id);
+    if (!existing) throw new HttpError(404, 'Gesellschaft wurde nicht gefunden.');
+    if (String(existing.code).toUpperCase() === 'STANDARD') {
+      throw new HttpError(409, 'Die Standardgesellschaft kann nicht gelöscht werden.');
+    }
+    const count = Number(db.prepare('SELECT COUNT(*) AS count FROM cost_centers WHERE company_id = ?').get(existing.id).count) || 0;
+    if (count > 0) {
+      throw new HttpError(409, 'Die Gesellschaft wird noch von Kostenstellen verwendet. Deaktivieren Sie sie stattdessen.');
+    }
+    db.prepare('DELETE FROM companies WHERE id = ?').run(existing.id);
+    audit(req, 'delete', 'company', existing.id, { companyId: existing.id, code: existing.code, name: existing.name });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* =========================================================
    Kostenstellen
    ========================================================= */
 router.post('/cost-centers', requirePermission('cost_centers_manage'), (req, res, next) => {
   try {
     const values = parseCostCenterPayload(req.body || {});
-    const duplicate = db.prepare('SELECT id FROM cost_centers WHERE code = ? COLLATE NOCASE').get(values.code);
-    if (duplicate) throw new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert bereits.');
+    assertCompanyAssignable(db, values.companyId);
+    const duplicate = db.prepare('SELECT id FROM cost_centers WHERE company_id = ? AND code = ? COLLATE NOCASE')
+      .get(values.companyId, values.code);
+    if (duplicate) throw new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert in dieser Gesellschaft bereits.');
     const id = crypto.randomUUID();
     const now = isoNow();
     db.prepare(`
-      INSERT INTO cost_centers (id, code, name, description, active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, values.code, values.name, values.description, values.active ? 1 : 0, now, now);
-    audit(req, 'create', 'cost_center', id, values);
+      INSERT INTO cost_centers (id, company_id, code, name, description, active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, values.companyId, values.code, values.name, values.description, values.active ? 1 : 0, now, now);
+    audit(req, 'create', 'cost_center', id, costCenterAuditDetails(db, values));
     sendState(req, res, 201);
   } catch (error) {
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert bereits.'));
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return next(new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert in dieser Gesellschaft bereits.'));
+    }
     next(error);
   }
 });
@@ -642,30 +772,35 @@ router.patch('/cost-centers/:id', requirePermission('cost_centers_manage'), (req
     const existing = getCostCenter(db, req.params.id);
     if (!existing) throw new HttpError(404, 'Kostenstelle wurde nicht gefunden.');
     const values = parseCostCenterPayload(req.body || {}, existing);
-    const duplicate = db.prepare('SELECT id FROM cost_centers WHERE code = ? COLLATE NOCASE AND id <> ?').get(values.code, existing.id);
-    if (duplicate) throw new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert bereits.');
+    assertCompanyAssignable(db, values.companyId, { existingId: existing.company_id });
+    const duplicate = db.prepare('SELECT id FROM cost_centers WHERE company_id = ? AND code = ? COLLATE NOCASE AND id <> ?')
+      .get(values.companyId, values.code, existing.id);
+    if (duplicate) throw new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert in dieser Gesellschaft bereits.');
     const activeChanged = Boolean(existing.active) !== values.active;
+    const previousCompany = getCompany(db, existing.company_id);
     db.transaction(() => {
       db.prepare(`
         UPDATE cost_centers
-        SET code = ?, name = ?, description = ?, active = ?, updated_at = ?
+        SET company_id = ?, code = ?, name = ?, description = ?, active = ?, updated_at = ?
         WHERE id = ?
-      `).run(values.code, values.name, values.description, values.active ? 1 : 0, isoNow(), existing.id);
-      audit(req, 'update', 'cost_center', existing.id, {
-        code: values.code,
-        name: values.name,
-        active: values.active,
+      `).run(values.companyId, values.code, values.name, values.description, values.active ? 1 : 0, isoNow(), existing.id);
+      audit(req, 'update', 'cost_center', existing.id, costCenterAuditDetails(db, values, {
         previousCode: existing.code,
         previousName: existing.name,
-        previousActive: Boolean(existing.active)
-      });
+        previousActive: Boolean(existing.active),
+        previousCompanyId: existing.company_id,
+        previousCompanyCode: previousCompany?.code || '',
+        previousCompanyName: previousCompany?.name || ''
+      }));
       if (activeChanged) {
         audit(req, values.active ? 'activate' : 'deactivate', 'cost_center', existing.id, { code: values.code });
       }
     })();
     sendState(req, res);
   } catch (error) {
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return next(new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert bereits.'));
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return next(new HttpError(409, 'Eine Kostenstelle mit diesem Code existiert in dieser Gesellschaft bereits.'));
+    }
     next(error);
   }
 });
@@ -676,7 +811,12 @@ router.post('/cost-centers/:id/deactivate', requirePermission('cost_centers_mana
     if (!existing) throw new HttpError(404, 'Kostenstelle wurde nicht gefunden.');
     if (existing.active) {
       db.prepare('UPDATE cost_centers SET active = 0, updated_at = ? WHERE id = ?').run(isoNow(), existing.id);
-      audit(req, 'deactivate', 'cost_center', existing.id, { code: existing.code });
+      audit(req, 'deactivate', 'cost_center', existing.id, costCenterAuditDetails(db, {
+        companyId: existing.company_id,
+        code: existing.code,
+        name: existing.name,
+        active: false
+      }));
     }
     sendState(req, res);
   } catch (error) {
@@ -697,7 +837,12 @@ router.delete('/cost-centers/:id', requirePermission('cost_centers_manage'), (re
       );
     }
     db.prepare('DELETE FROM cost_centers WHERE id = ?').run(existing.id);
-    audit(req, 'delete', 'cost_center', existing.id, { code: existing.code, name: existing.name });
+    audit(req, 'delete', 'cost_center', existing.id, costCenterAuditDetails(db, {
+      companyId: existing.company_id,
+      code: existing.code,
+      name: existing.name,
+      active: Boolean(existing.active)
+    }));
     sendState(req, res);
   } catch (error) {
     next(error);
@@ -939,10 +1084,7 @@ router.patch('/vehicles/:id', async (req, res, next) => {
         });
       }
       if (costCenterChanged) {
-        audit(req, 'assign_cost_center', 'vehicle', existing.id, {
-          costCenterId: values.costCenterId,
-          previousCostCenterId: existing.cost_center_id || null
-        });
+        audit(req, 'assign_cost_center', 'vehicle', existing.id, costCenterAssignmentDetails(db, values.costCenterId, existing.cost_center_id));
       }
       if (blockedChanged) {
         audit(req, values.blocked ? 'block' : 'unblock', 'vehicle', existing.id, {
@@ -1038,10 +1180,7 @@ router.patch('/drivers/:id', (req, res, next) => {
       `).run(values.name, values.role, values.department, values.phone, values.email, JSON.stringify(values.license), values.status, values.color, values.costCenterId, isoNow(), existing.id);
       audit(req, 'update', 'driver', existing.id, { name: values.name, costCenterId: values.costCenterId });
       if (costCenterChanged) {
-        audit(req, 'assign_cost_center', 'driver', existing.id, {
-          costCenterId: values.costCenterId,
-          previousCostCenterId: existing.cost_center_id || null
-        });
+        audit(req, 'assign_cost_center', 'driver', existing.id, costCenterAssignmentDetails(db, values.costCenterId, existing.cost_center_id));
       }
     })();
     sendState(req, res);
@@ -1922,10 +2061,7 @@ router.patch('/users/:id', requirePermission('users_manage'), (req, res, next) =
         });
       }
       if (costCenterChanged) {
-        audit(req, 'assign_cost_center', 'user', existing.id, {
-          costCenterId,
-          previousCostCenterId: existing.cost_center_id || null
-        });
+        audit(req, 'assign_cost_center', 'user', existing.id, costCenterAssignmentDetails(db, costCenterId, existing.cost_center_id));
       }
       if (linkChanged) {
         audit(req, nextDriverId ? 'link_driver' : 'unlink_driver', 'user', existing.id, {

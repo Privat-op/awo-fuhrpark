@@ -36,6 +36,7 @@ const { migrateRetentionSchema } = require('./lib/retention-schema');
 const { migrateLocationsSchema } = require('./lib/locations-schema');
 const { migrateIntegrationsSchema, migrateAdvancedSchema } = require('./lib/integrations-schema');
 const { migrateWebhooksSchema } = require('./lib/webhook-schema');
+const { migrateCompaniesSchema } = require('./lib/companies-schema');
 const {
   FLOW_TTL_MS: SSO_FLOW_TTL_MS,
   getSsoConfig,
@@ -309,6 +310,11 @@ try {
   migrateWebhooksSchema(db, { dataDir: DATA_DIR });
 } catch (error) {
   logger.warn('Webhook-Migration konnte nicht abgeschlossen werden.', { error });
+}
+try {
+  migrateCompaniesSchema(db);
+} catch (error) {
+  logger.warn('Gesellschafts-Migration konnte nicht abgeschlossen werden.', { error });
 }
 bootstrap(db);
 try {

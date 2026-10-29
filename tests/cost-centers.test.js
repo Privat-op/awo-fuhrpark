@@ -29,14 +29,18 @@ function createDb() {
     INSERT INTO settings (org_name, seeded_at, updated_at)
     VALUES ('Test', '2026-01-01', '2026-01-01')
   `).run();
+  db.prepare(`
+    INSERT INTO companies (id, code, name, active, created_at, updated_at)
+    VALUES ('standard', 'STANDARD', 'Test', 1, '2026-01-01', '2026-01-01')
+  `).run();
   return db;
 }
 
-function insertCostCenter(db, { id, code, name, active = 1 }) {
+function insertCostCenter(db, { id, code, name, active = 1, companyId = 'standard' }) {
   db.prepare(`
-    INSERT INTO cost_centers (id, code, name, description, active, created_at, updated_at)
-    VALUES (?, ?, ?, '', ?, '2026-01-01', '2026-01-01')
-  `).run(id, code, name, active);
+    INSERT INTO cost_centers (id, company_id, code, name, description, active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, '', ?, '2026-01-01', '2026-01-01')
+  `).run(id, companyId, code, name, active);
 }
 
 test('Kostenstellencode wird normalisiert und validiert', () => {
@@ -49,12 +53,14 @@ test('Kostenstellencode wird normalisiert und validiert', () => {
 
 test('Payload validiert Pflichtfelder, Beschreibung und Aktivstatus', () => {
   const values = parseCostCenterPayload({
+    companyId: 'company-1',
     code: ' kst 200 ',
     name: '  Pflege  ',
     description: '  Stationär  ',
     active: false
   });
   assert.deepEqual(values, {
+    companyId: 'company-1',
     code: 'KST-200',
     name: 'Pflege',
     description: 'Stationär',

@@ -22,6 +22,7 @@ const ENTITY_LABELS = {
   retention_settings: 'Datenaufbewahrung',
   webhook: 'Webhook',
   cost_center: 'Kostenstelle',
+  company: 'Gesellschaft',
   branding: 'Erscheinungsbild',
   logbook: 'Fahrtenbuch',
   data: 'Datenexport',
@@ -322,7 +323,7 @@ function targetVisibleFor(req, db, cache, entityType, entityId, row) {
   }
   if (entityType === 'user') return hasEffectivePermission(req, 'users_manage');
   if (entityType === 'role' || entityType === 'role_object_permissions') return hasEffectivePermission(req, 'roles_manage');
-  if (entityType === 'settings' || entityType === 'user_policy' || entityType === 'integrations' || entityType === 'retention_settings' || entityType === 'webhook') {
+  if (entityType === 'settings' || entityType === 'user_policy' || entityType === 'integrations' || entityType === 'retention_settings' || entityType === 'webhook' || entityType === 'company') {
     return hasEffectivePermission(req, 'settings_manage');
   }
   if (entityType === 'smtp') return Boolean(req.auth?.isAdmin || req.auth?.isSuperadmin);

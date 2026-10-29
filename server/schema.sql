@@ -1,13 +1,24 @@
 PRAGMA foreign_keys = ON;
 
-CREATE TABLE IF NOT EXISTS cost_centers (
+CREATE TABLE IF NOT EXISTS companies (
   id TEXT PRIMARY KEY,
   code TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  name TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS cost_centers (
+  id TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL REFERENCES companies(id),
+  code TEXT NOT NULL COLLATE NOCASE,
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (company_id, code COLLATE NOCASE)
 );
 
 CREATE TABLE IF NOT EXISTS locations (
@@ -368,6 +379,7 @@ CREATE INDEX IF NOT EXISTS idx_booking_requests_vehicle ON booking_requests (veh
 CREATE INDEX IF NOT EXISTS idx_booking_requests_driver ON booking_requests (driver_id, status);
 CREATE INDEX IF NOT EXISTS idx_costs_date ON costs (date);
 CREATE INDEX IF NOT EXISTS idx_costs_vehicle ON costs (vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_cost_centers_company ON cost_centers (company_id);
 CREATE INDEX IF NOT EXISTS idx_maintenance_due ON maintenance (due_date);
 CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions (expire);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs (created_at);

@@ -996,7 +996,7 @@ function renderCosts() {
     const key = cost.costCenterId || '';
     const entry = costCenterTotals.get(key) || {
       id: key,
-      label: cost.costCenterCode ? `${cost.costCenterCode} · ${cost.costCenterName || ''}`.trim() : 'Ohne Kostenstelle',
+      label: cost.costCenterCode ? costCenterLabel({ companyCode: cost.companyCode, code: cost.costCenterCode, name: cost.costCenterName }) : 'Ohne Kostenstelle',
       amount: 0
     };
     entry.amount += Number(cost.amount);
@@ -1064,7 +1064,7 @@ function renderCosts() {
           ${can('cost_centers_view') ? `<select class="select select-sm" id="costCenterFilter" aria-label="Kostenstelle filtern">
             <option value="all">Alle Kostenstellen</option>
             <option value="none" ${ui.costCenter === 'none' ? 'selected' : ''}>Ohne Kostenstelle</option>
-            ${(db.costCenters || []).map((costCenter) => `<option value="${costCenter.id}" ${ui.costCenter === costCenter.id ? 'selected' : ''}>${esc(costCenter.code)} · ${esc(costCenter.name)}${costCenter.active ? '' : ' · inaktiv'}</option>`).join('')}
+            ${(db.costCenters || []).map((costCenter) => `<option value="${costCenter.id}" ${ui.costCenter === costCenter.id ? 'selected' : ''}>${esc(costCenterLabel(costCenter))}${costCenter.active ? '' : ' · inaktiv'}</option>`).join('')}
           </select>` : ''}
         </div>
         ${filteredCosts.length ? `<div class="table-wrap is-scroll"><table class="data-table">
@@ -1138,7 +1138,7 @@ function renderLogbook() {
           ${can('cost_centers_view') ? `<select class="select select-sm" id="logCostCenterFilter" style="width:auto" aria-label="Kostenstelle filtern">
             <option value="all">Alle Kostenstellen</option>
             <option value="none" ${ui.logCostCenter === 'none' ? 'selected' : ''}>Ohne Kostenstelle</option>
-            ${(db.costCenters || []).map((costCenter) => `<option value="${costCenter.id}" ${ui.logCostCenter === costCenter.id ? 'selected' : ''}>${esc(costCenter.code)} · ${esc(costCenter.name)}${costCenter.active ? '' : ' · inaktiv'}</option>`).join('')}
+            ${(db.costCenters || []).map((costCenter) => `<option value="${costCenter.id}" ${ui.logCostCenter === costCenter.id ? 'selected' : ''}>${esc(costCenterLabel(costCenter))}${costCenter.active ? '' : ' · inaktiv'}</option>`).join('')}
           </select>` : ''}
           <select class="select select-sm" id="logPeriod" style="width:auto" aria-label="Zeitraum auswählen">
             <option value="30" ${ui.logPeriod === '30' ? 'selected' : ''}>Letzte 30 Tage</option>
@@ -1520,11 +1520,16 @@ function renderCostCentersCard() {
   if (!can('cost_centers_view')) return '';
   const canManage = can('cost_centers_manage');
   const centers = db.costCenters || [];
+  const companies = db.companies || [];
+  const companyFilter = ui.costCenterCompany || 'all';
+  const query = String(ui.costCenterQuery || '').trim();
   const rows = centers.map((costCenter) => {
     const usage = costCenter.usage || {};
     const usageTotal = Number(usage.total) || 0;
+    const search = `${costCenter.companyCode || ''} ${costCenter.companyName || ''} ${costCenter.code || ''} ${costCenter.name || ''}`.trim().toLowerCase();
     return `
-      <tr>
+      <tr data-cost-center-row data-company-id="${esc(costCenter.companyId || '')}" data-search="${esc(search)}">
+        <td>${costCenter.companyId ? `<span class="badge badge-blue no-dot">${esc(costCenter.companyCode || costCenter.companyName || '—')}</span>` : '<span class="badge badge-gray no-dot">Ohne Gesellschaft</span>'}</td>
         <td><span class="badge badge-gray no-dot">${esc(costCenter.code)}</span></td>
         <td><span class="table-main">${esc(costCenter.name)}</span><span class="table-sub">${esc(costCenter.description || 'Keine Beschreibung')}</span></td>
         <td>${costCenter.active ? '<span class="badge badge-green no-dot">Aktiv</span>' : '<span class="badge badge-gray no-dot">Inaktiv</span>'}</td>
@@ -1541,16 +1546,25 @@ function renderCostCentersCard() {
   return `
     <section class="card" id="costCentersCard">
       <div class="card-head bordered">
-        <div><h3 class="card-title">Kostenstellen</h3><p class="card-sub">Stammdaten, Zuordnungen und Nutzung verwalten.</p></div>
+        <div><h3 class="card-title">Kostenstellen</h3><p class="card-sub">Stammdaten, Zuordnungen und Nutzung je Gesellschaft verwalten.</p></div>
         ${canManage ? `<button class="btn btn-primary btn-sm" type="button" data-action="new-cost-center">${icon('plus')} Kostenstelle anlegen</button>` : '<span class="badge badge-gray no-dot">Nur lesen</span>'}
       </div>
       <div class="card-body">
+        <div class="toolbar" style="margin-bottom:16px">
+          <select class="select select-sm" id="costCenterCompanyFilter" aria-label="Nach Gesellschaft filtern">
+            <option value="all" ${companyFilter === 'all' ? 'selected' : ''}>Alle Gesellschaften</option>
+            ${companies.map((company) => `<option value="${company.id}" ${companyFilter === company.id ? 'selected' : ''}>${esc(company.code)} · ${esc(company.name)}${company.active ? '' : ' · inaktiv'}</option>`).join('')}
+          </select>
+          <input class="input input-sm" id="costCenterSearch" type="search" value="${esc(query)}" placeholder="Code oder Bezeichnung suchen …" aria-label="Kostenstellen durchsuchen">
+          <div class="toolbar-spacer"></div>
+          <span class="toolbar-label">${centers.length} Kostenstelle(n)</span>
+        </div>
         ${centers.length ? `<div class="table-wrap"><table class="data-table">
-          <thead><tr><th>Code</th><th>Bezeichnung</th><th>Status</th><th>Nutzung</th><th class="num"></th></tr></thead>
+          <thead><tr><th>Gesellschaft</th><th>Code</th><th>Bezeichnung</th><th>Status</th><th>Nutzung</th><th class="num"></th></tr></thead>
           <tbody>${rows}</tbody>
-        </table></div>` : emptyState('receipt', 'Noch keine Kostenstellen', 'Legen Sie Kostenstellen an, um Fahrzeuge, Fahrer:innen, Buchungen und Kosten zuzuordnen.', canManage ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-cost-center">Kostenstelle anlegen</button>' : '')}
+        </table></div><p class="empty empty-sm" id="costCenterNoMatches" hidden>Keine Kostenstelle passt zu den Filtern.</p>` : emptyState('receipt', 'Noch keine Kostenstellen', 'Legen Sie Kostenstellen an, um Fahrzeuge, Fahrer:innen, Buchungen und Kosten zuzuordnen.', canManage ? '<button class="btn btn-primary btn-sm" type="button" data-action="new-cost-center">Kostenstelle anlegen</button>' : '')}
       </div>
-      <div class="card-footer"><span class="text-muted">Löschen ist nur ohne Zuordnungen möglich; sonst bitte deaktivieren.</span></div>
+      <div class="card-footer"><span class="text-muted">Codes sind je Gesellschaft eindeutig. Löschen ist nur ohne Zuordnungen möglich; sonst bitte deaktivieren.</span></div>
     </section>`;
 }
 
@@ -2153,6 +2167,38 @@ function renderIntegrations() {
   return `
     ${pageHead('Einstellungen', 'Integrationen', 'SSO, Teams, Virenscan, Passkeys, Aufbewahrung und Standorte zentral verwalten.', '<span class="badge badge-blue no-dot">ENV hat Vorrang</span>')}
     <div class="stack">${cards}</div>`;
+}
+
+function renderCompanies() {
+  const companies = db.companies || [];
+  const rows = companies.map((company) => `
+    <tr>
+      <td><span class="badge badge-gray no-dot">${esc(company.code)}</span></td>
+      <td><span class="table-main">${esc(company.name)}</span></td>
+      <td>${company.active ? '<span class="badge badge-green no-dot">Aktiv</span>' : '<span class="badge badge-gray no-dot">Inaktiv</span>'}</td>
+      <td><span class="table-main">${Number(company.costCenterCount) || 0}</span><span class="table-sub">Kostenstelle(n)</span></td>
+      <td><div class="table-actions">
+        <button class="table-action" type="button" title="Gesellschaft bearbeiten" aria-label="Gesellschaft bearbeiten" data-action="edit-company" data-id="${company.id}">${icon('edit')}</button>
+        <button class="table-action" type="button" title="${company.active ? 'Gesellschaft deaktivieren' : 'Gesellschaft aktivieren'}" aria-label="${company.active ? 'Gesellschaft deaktivieren' : 'Gesellschaft aktivieren'}" data-action="toggle-company-active" data-id="${company.id}">${icon(company.active ? 'x' : 'check-circle')}</button>
+        ${Number(company.costCenterCount) === 0 && company.code !== 'STANDARD' ? `<button class="table-action danger" type="button" title="Gesellschaft löschen" aria-label="Gesellschaft löschen" data-action="delete-company" data-id="${company.id}">${icon('trash')}</button>` : ''}
+      </div></td>
+    </tr>`).join('');
+  return `
+    ${pageHead('Einstellungen', 'Gesellschaften', 'Kostenstellencodes je Gesellschaft eindeutig halten. Keine Mandantentrennung für Fahrzeuge, Konten oder Buchungen.', '<span class="badge badge-blue no-dot">Stammdatum</span>')}
+    <section class="card" id="companiesCard">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Gesellschaften</h3><p class="card-sub">Codes werden je Gesellschaft case-insensitiv geprüft.</p></div>
+        <button class="btn btn-primary btn-sm" type="button" data-action="new-company">${icon('plus')} Gesellschaft anlegen</button>
+      </div>
+      <div class="card-body">
+        ${companies.length ? `<div class="table-wrap"><table class="data-table">
+          <thead><tr><th>Code</th><th>Name</th><th>Status</th><th>Kostenstellen</th><th class="num">Aktion</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>` : emptyState('building', 'Noch keine Gesellschaften', 'Legen Sie eine Gesellschaft an, um Kostenstellencodes zu gruppieren.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-company">Gesellschaft anlegen</button>')}
+        <div class="info-banner" style="margin-top:16px">${icon('info')}<div><strong>Gesellschaften gruppieren nur Kostenstellen</strong><p>Fahrzeuge, Benutzer, Buchungen und Kosten bleiben gesellschaftsneutral. Es gibt bewusst keine Sichtbarkeitseinschränkung nach Gesellschaft.</p></div></div>
+      </div>
+      <div class="card-footer"><span class="text-muted">Löschen ist nur ohne Kostenstellen möglich; sonst bitte deaktivieren.</span></div>
+    </section>`;
 }
 
 function renderSettings() {
@@ -2945,6 +2991,7 @@ const ROUTES = {
   rollen: renderRoles,
   einstellungen: renderSettings,
   integrationen: renderIntegrations,
-  erweitert: renderAdvanced
+  erweitert: renderAdvanced,
+  gesellschaften: renderCompanies
 };
 

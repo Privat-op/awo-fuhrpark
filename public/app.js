@@ -21,6 +21,8 @@ let ui = {
   costCategory: 'all',
   costVehicle: 'all',
   costCenter: 'all',
+  costCenterCompany: 'all',
+  costCenterQuery: '',
   logPeriod: '30',
   logCostCenter: 'all',
   auditQuery: '',
@@ -129,7 +131,7 @@ function firstAllowedRoute() {
     if (routeAllowed('meine-fahrten')) return 'meine-fahrten';
     if (routeAllowed('anfragen')) return 'anfragen';
   }
-  const order = ['dashboard', 'meine-fahrten', 'anfragen', 'fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'einstellungen', 'integrationen', 'erweitert'];
+  const order = ['dashboard', 'meine-fahrten', 'anfragen', 'fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'einstellungen', 'integrationen', 'erweitert', 'gesellschaften'];
   return order.find((route) => routeAllowed(route)) || 'dashboard';
 }
 
@@ -287,6 +289,7 @@ function applyState(state) {
     vehicles: Array.isArray(state.vehicles) ? state.vehicles : [],
     drivers: Array.isArray(state.drivers) ? state.drivers : [],
     costCenters: Array.isArray(state.costCenters) ? state.costCenters : [],
+    companies: Array.isArray(state.companies) ? state.companies : [],
     bookings: Array.isArray(state.bookings) ? state.bookings : [],
     maintenance: Array.isArray(state.maintenance) ? state.maintenance : [],
     costs: Array.isArray(state.costs) ? state.costs : [],
@@ -901,6 +904,7 @@ function renderCurrentView() {
   if (!view) return;
   view.innerHTML = ROUTES[ui.route]();
   updatePasskeySupport();
+  if (ui.route === 'einstellungen' && $('#costCentersCard')) filterCostCenterRows();
   if (ui.route === 'audit') loadAuditLog();
 }
 
@@ -1553,6 +1557,10 @@ function dispatchAction(element) {
     case 'edit-location': openLocationModal(id); break;
     case 'toggle-location-active': toggleLocationActive(id); break;
     case 'delete-location': deleteLocation(id); break;
+    case 'new-company': openCompanyModal(); break;
+    case 'edit-company': openCompanyModal(id); break;
+    case 'toggle-company-active': toggleCompanyActive(id); break;
+    case 'delete-company': deleteCompany(id); break;
     case 'toggle-cost-center-active': toggleCostCenterActive(id); break;
     case 'delete-cost-center': deleteCostCenter(id); break;
     case 'new-maintenance': openMaintenanceModal(); break;
@@ -1624,6 +1632,22 @@ function dispatchAction(element) {
       break;
     default: break;
   }
+}
+
+function filterCostCenterRows() {
+  const search = String($('#costCenterSearch')?.value || '').trim().toLowerCase();
+  const companyId = $('#costCenterCompanyFilter')?.value || 'all';
+  ui.costCenterQuery = search;
+  ui.costCenterCompany = companyId;
+  let visible = 0;
+  $$('[data-cost-center-row]').forEach((row) => {
+    const matchesCompany = companyId === 'all' || row.dataset.companyId === companyId;
+    const matchesSearch = !search || String(row.dataset.search || '').includes(search);
+    row.hidden = !(matchesCompany && matchesSearch);
+    if (!row.hidden) visible += 1;
+  });
+  const empty = $('#costCenterNoMatches');
+  if (empty) empty.hidden = visible > 0;
 }
 
 function refreshVehicleGrid() {
@@ -1845,6 +1869,8 @@ function bindEvents() {
     if (event.target.id === 'vehicleSearch') {
       ui.vehicleQuery = event.target.value;
       refreshVehicleGrid();
+    } else if (event.target.id === 'costCenterSearch') {
+      filterCostCenterRows();
     } else if (event.target.id === 'brandingAccent') {
       updateAccentSelection();
     } else if (['brandingPageBackground', 'brandingSurface', 'brandingText', 'brandingMuted', 'brandingBorder'].includes(event.target.id)) {
@@ -1891,6 +1917,8 @@ function bindEvents() {
     } else if (event.target.id === 'costCenterFilter') {
       ui.costCenter = event.target.value;
       renderCurrentView();
+    } else if (event.target.id === 'costCenterCompanyFilter') {
+      filterCostCenterRows();
     } else if (event.target.id === 'logPeriod') {
       ui.logPeriod = event.target.value;
       renderCurrentView();

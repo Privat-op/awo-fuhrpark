@@ -63,18 +63,27 @@ function defaultCostCostCenterId({ vehicle = null, user = null } = {}) {
     .find((id) => isActiveCostCenter(id)) || '';
 }
 
+function costCenterLabel(costCenter) {
+  const parts = [costCenter?.companyCode, costCenter?.code, costCenter?.name].filter(Boolean);
+  return parts.length ? parts.join(' · ') : (costCenter?.code || 'Kostenstelle');
+}
+
 function costCenterOptionsMarkup(selectedId = '', { noneLabel = 'Keine Kostenstelle', includeInactiveSelected = true } = {}) {
   const selected = selectedId || '';
   const options = (db.costCenters || [])
     .filter((costCenter) => costCenter.active || (includeInactiveSelected && costCenter.id === selected))
-    .map((costCenter) => `<option value="${esc(costCenter.id)}" ${costCenter.id === selected ? 'selected' : ''}>${esc(costCenter.code)} · ${esc(costCenter.name)}${costCenter.active ? '' : ' · inaktiv'}</option>`)
+    .map((costCenter) => `<option value="${esc(costCenter.id)}" ${costCenter.id === selected ? 'selected' : ''}>${esc(costCenterLabel(costCenter))}${costCenter.active ? '' : ' · inaktiv'}</option>`)
     .join('');
   return `<option value="">${noneLabel}</option>${options}`;
 }
 
 function costCenterBadge(entity, emptyLabel = 'Ohne Kostenstelle') {
   if (!entity?.costCenterId) return `<span class="badge badge-gray no-dot">${esc(emptyLabel)}</span>`;
-  const label = entity.costCenterCode ? `${entity.costCenterCode}${entity.costCenterName ? ` · ${entity.costCenterName}` : ''}` : 'Kostenstelle';
+  const label = costCenterLabel({
+    companyCode: entity.companyCode,
+    code: entity.costCenterCode,
+    name: entity.costCenterName
+  });
   return `<span class="badge badge-gray no-dot" title="${esc(entity.costCenterName || '')}">${esc(label)}</span>`;
 }
 
@@ -337,5 +346,6 @@ const ROUTE_PERMISSIONS = {
   benutzer: 'users_manage',
   rollen: 'roles_manage',
   integrationen: 'settings_manage',
-  erweitert: 'settings_manage'
+  erweitert: 'settings_manage',
+  gesellschaften: 'settings_manage'
 };

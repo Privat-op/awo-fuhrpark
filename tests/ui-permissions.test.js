@@ -31,19 +31,19 @@ const EMAILS = {
 const NAV_GROUPS = [
   ['dashboard', 'buchungen', 'meine-fahrten', 'anfragen', 'fahrtenbuch'],
   ['fahrzeuge', 'wartung', 'kosten'],
-  ['fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen', 'erweitert']
+  ['fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen', 'erweitert', 'gesellschaften']
 ];
 const ALL_NAV_ROUTES = NAV_GROUPS.flat();
 
 const SESSION_ROLES = {
   admin: {
-    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen', 'erweitert'],
+    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen', 'erweitert', 'gesellschaften'],
     settings: { organisation: true, branding: true, costCenters: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: true },
     eyebrow: 'Organisation',
     subtitle: 'Organisation, Erscheinungsbild, Kostenstellen, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
   },
   manager: {
-    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen', 'erweitert'],
+    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen', 'erweitert', 'gesellschaften'],
     settings: { organisation: true, branding: false, costCenters: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Organisation',
     subtitle: 'Organisation, Kostenstellen, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
@@ -79,7 +79,7 @@ const SESSION_ROLES = {
     subtitle: 'Erscheinungsbild sowie Ihr Konto verwalten.'
   },
   settingsOnly: {
-    nav: ['dashboard', 'audit', 'einstellungen', 'integrationen', 'erweitert'],
+    nav: ['dashboard', 'audit', 'einstellungen', 'integrationen', 'erweitert', 'gesellschaften'],
     settings: { organisation: true, branding: false, export: false, users: false, roles: false, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Organisation',
     subtitle: 'Organisation sowie Ihr Konto verwalten.'
@@ -614,6 +614,32 @@ test('Erweitert rendert eingeklappte Karten und Systemstatus ohne Secrets', () =
   applyClientSession(settingsOnly, clients.settingsOnly);
   const restricted = vm.runInContext('renderAdvanced()', settingsOnly.context);
   assert.match(restricted, /id="advanced-general"/);
+});
+
+test('Gesellschaften: Liste und Kostenstellen-Dropdown zeigen Gesellschaft, Code und Name', () => {
+  const client = {
+    ...clients.admin,
+    state: JSON.parse(JSON.stringify(clients.admin.state))
+  };
+  client.state.companies = [
+    { id: 'company-a', code: 'AWO-HB', name: 'AWO Bremerhaven', active: true, costCenterCount: 1 },
+    { id: 'company-b', code: 'AWO-CX', name: 'AWO Cuxhaven', active: false, costCenterCount: 0 }
+  ];
+  client.state.costCenters = [
+    { id: 'cc-a', companyId: 'company-a', companyCode: 'AWO-HB', companyName: 'AWO Bremerhaven', code: 'KST-100', name: 'Pflege', description: '', active: true, usage: { total: 0 } }
+  ];
+  const harness = createClientHarness();
+  applyClientSession(harness, client);
+  const settingsHtml = vm.runInContext('renderSettings()', harness.context);
+  assert.match(settingsHtml, /id="costCenterCompanyFilter"/);
+  assert.match(settingsHtml, /id="costCenterSearch"/);
+  assert.match(settingsHtml, /AWO-HB/);
+  const companyHtml = vm.runInContext('renderCompanies()', harness.context);
+  assert.match(companyHtml, /AWO Bremerhaven/);
+  assert.match(companyHtml, /AWO-CX/);
+  assert.match(companyHtml, /data-action="new-company"/);
+  const optionHtml = vm.runInContext("costCenterOptionsMarkup('cc-a')", harness.context);
+  assert.match(optionHtml, /AWO-HB · KST-100 · Pflege/);
 });
 
 test('Mobile-Sidebar öffnet und schließt weiterhin korrekt', () => {

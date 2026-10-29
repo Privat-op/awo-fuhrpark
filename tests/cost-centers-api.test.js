@@ -124,6 +124,11 @@ async function apiJson(email, method, endpoint, body) {
   return { status: response.status, data, text };
 }
 
+async function standardCompanyId(email = ADMIN_EMAIL) {
+  const response = await apiGet(email, '/api/companies');
+  return response.data.companies.find((company) => company.code === 'STANDARD').id;
+}
+
 function isoDay(offsetDays) {
   const date = new Date();
   date.setDate(date.getDate() + offsetDays);
@@ -285,10 +290,13 @@ after(async () => {
   try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* Windows-Sperre */ }
 });
 
-test('Migration 8, Manager-Rechte und Kostenstellen-Tabellen sind aktiv', () => {
-  assert.equal(Number(db.pragma('user_version', { simple: true })), 16);
+test('Migration 17, Manager-Rechte und Kostenstellen-Tabellen sind aktiv', () => {
+  assert.equal(Number(db.pragma('user_version', { simple: true })), 17);
   const columns = db.prepare('PRAGMA table_info(vehicles)').all().map((column) => column.name);
   assert.ok(columns.includes('cost_center_id'));
+  const companyColumns = db.prepare('PRAGMA table_info(companies)').all().map((column) => column.name);
+  assert.ok(companyColumns.includes('code'));
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM companies WHERE code = 'STANDARD'").get().count, 1);
   const managerPermissions = JSON.parse(db.prepare("SELECT permissions FROM roles WHERE id = 'manager'").get().permissions);
   assert.ok(managerPermissions.includes('cost_centers_view'));
   assert.ok(managerPermissions.includes('cost_centers_manage'));
@@ -297,7 +305,9 @@ test('Migration 8, Manager-Rechte und Kostenstellen-Tabellen sind aktiv', () => 
 test('CRUD, Code-Normalisierung, Konflikt, Deaktivieren und Löschsperre', async () => {
   insertVehicle('vehicle-used', 'Verwendetes Fahrzeug', 'HB-CC 9');
   insertVehicle('vehicle-inactive-target', 'Inaktiv-Ziel', 'HB-CC 10');
+  const companyId = await standardCompanyId(MANAGER_EMAIL);
   const created = await apiJson(MANAGER_EMAIL, 'POST', '/api/cost-centers', {
+    companyId,
     code: ' kst 100 ',
     name: 'Ambulante Pflege',
     description: 'Testkostenstelle',
@@ -307,20 +317,26 @@ test('CRUD, Code-Normalisierung, Konflikt, Deaktivieren und Löschsperre', async
   const createdCc = created.data.costCenters.find((entry) => entry.code === 'KST-100');
   assert.ok(createdCc);
   assert.equal(createdCc.name, 'Ambulante Pflege');
+  assert.equal(createdCc.companyId, companyId);
+  assert.equal(createdCc.companyCode, 'STANDARD');
 
   const duplicate = await apiJson(MANAGER_EMAIL, 'POST', '/api/cost-centers', {
+    companyId,
     code: 'kst-100',
     name: 'Doppelt'
   });
   assert.equal(duplicate.status, 409);
+  assert.match(duplicate.data.error, /in dieser Gesellschaft/);
 
   const invalid = await apiJson(MANAGER_EMAIL, 'POST', '/api/cost-centers', {
+    companyId,
     code: '-ungültig',
     name: 'Ungültig'
   });
   assert.equal(invalid.status, 400);
 
   const updated = await apiJson(MANAGER_EMAIL, 'PATCH', `/api/cost-centers/${encodeURIComponent(createdCc.id)}`, {
+    companyId,
     code: 'KST-100',
     name: 'Ambulante Pflege neu',
     description: 'Aktualisiert',
@@ -354,6 +370,98 @@ test('CRUD, Code-Normalisierung, Konflikt, Deaktivieren und Löschsperre', async
   db.prepare('UPDATE vehicles SET cost_center_id = NULL WHERE id = ?').run('vehicle-used');
   const deleted = await apiJson(MANAGER_EMAIL, 'DELETE', `/api/cost-centers/${encodeURIComponent(createdCc.id)}`);
   assert.equal(deleted.status, 200, deleted.text);
+});
+
+test('Gesellschaften: CRUD, Rechte und gleicher Kostenstellencode in zwei Gesellschaften', async () => {
+  const denied = await apiJson(CCVIEW_EMAIL, 'POST', '/api/companies', { code: 'MGR', name: 'Nicht erlaubt' });
+  assert.equal(denied.status, 403);
+  const viewList = await apiGet(CCVIEW_EMAIL, '/api/companies');
+  assert.equal(viewList.status, 200);
+  const viewerCompanies = await apiGet(VIEWER_EMAIL, '/api/companies');
+  assert.equal(viewerCompanies.status, 403);
+
+  const listed = await apiGet(ADMIN_EMAIL, '/api/companies');
+  assert.equal(listed.status, 200);
+  const standard = listed.data.companies.find((company) => company.code === 'STANDARD');
+  assert.ok(standard);
+
+  const createdCompany = await apiJson(ADMIN_EMAIL, 'POST', '/api/companies', { code: 'awo-hb', name: 'AWO Bremerhaven', active: true });
+  assert.equal(createdCompany.status, 201, createdCompany.text);
+  const company = createdCompany.data.companies.find((entry) => entry.code === 'AWO-HB');
+  assert.ok(company);
+
+  const duplicateCompany = await apiJson(ADMIN_EMAIL, 'POST', '/api/companies', { code: 'awo-hb', name: 'Doppelt' });
+  assert.equal(duplicateCompany.status, 409);
+
+  const invalidCompany = await apiJson(ADMIN_EMAIL, 'POST', '/api/companies', { code: '-X', name: 'Ungültig' });
+  assert.equal(invalidCompany.status, 400);
+
+  const first = await apiJson(ADMIN_EMAIL, 'POST', '/api/cost-centers', {
+    companyId: standard.id,
+    code: 'SHARED',
+    name: 'Standardkostenstelle',
+    active: true
+  });
+  assert.equal(first.status, 201, first.text);
+
+  const second = await apiJson(ADMIN_EMAIL, 'POST', '/api/cost-centers', {
+    companyId: company.id,
+    code: 'shared',
+    name: 'Gesellschaftskostenstelle',
+    active: true
+  });
+  assert.equal(second.status, 201, second.text);
+  const secondCc = second.data.costCenters.find((entry) => entry.companyId === company.id && entry.code === 'SHARED');
+  assert.ok(secondCc);
+  assert.equal(secondCc.companyName, 'AWO Bremerhaven');
+
+  const sameCompanyDuplicate = await apiJson(ADMIN_EMAIL, 'POST', '/api/cost-centers', {
+    companyId: company.id,
+    code: 'shared',
+    name: 'Nochmal'
+  });
+  assert.equal(sameCompanyDuplicate.status, 409);
+
+  const moveConflict = await apiJson(ADMIN_EMAIL, 'PATCH', `/api/cost-centers/${encodeURIComponent(secondCc.id)}`, {
+    companyId: standard.id,
+    code: 'SHARED',
+    name: 'Konflikt'
+  });
+  assert.equal(moveConflict.status, 409);
+
+  const deactivated = await apiJson(ADMIN_EMAIL, 'PATCH', `/api/companies/${encodeURIComponent(company.id)}`, {
+    code: company.code,
+    name: company.name,
+    active: false
+  });
+  assert.equal(deactivated.status, 200, deactivated.text);
+  const inactiveAssign = await apiJson(ADMIN_EMAIL, 'POST', '/api/cost-centers', {
+    companyId: company.id,
+    code: 'INACTIVE',
+    name: 'Nicht erlaubt'
+  });
+  assert.equal(inactiveAssign.status, 400);
+
+  const blockedDelete = await apiJson(ADMIN_EMAIL, 'DELETE', `/api/companies/${encodeURIComponent(company.id)}`);
+  assert.equal(blockedDelete.status, 409);
+
+  const emptyCompany = await apiJson(ADMIN_EMAIL, 'POST', '/api/companies', { code: 'EMPTY', name: 'Leer' });
+  const emptyId = emptyCompany.data.companies.find((entry) => entry.code === 'EMPTY').id;
+  const deleted = await apiJson(ADMIN_EMAIL, 'DELETE', `/api/companies/${encodeURIComponent(emptyId)}`);
+  assert.equal(deleted.status, 200, deleted.text);
+
+  const state = await apiGet(ADMIN_EMAIL, '/api/state');
+  assert.ok(state.data.companies.some((entry) => entry.code === 'AWO-HB'));
+  const shared = state.data.costCenters.find((entry) => entry.id === secondCc.id);
+  assert.equal(shared.companyCode, 'AWO-HB');
+  assert.equal(shared.companyName, 'AWO Bremerhaven');
+
+  const audits = db.prepare("SELECT action, details FROM audit_logs WHERE entity_type = 'company'").all();
+  assert.ok(audits.some((entry) => entry.action === 'create'));
+  assert.ok(audits.some((entry) => entry.action === 'delete'));
+  for (const entry of audits) {
+    assert.doesNotMatch(entry.details || '', /password|secret|token/i);
+  }
 });
 
 test('Rechte: Manager verwaltet, Viewer sieht keine Stammdaten, View-only darf nur lesen', async () => {
@@ -397,6 +505,7 @@ test('Zuordnungen und Default-Präzedenz für Buchungen', async () => {
   insertVehicle('vehicle-booking', 'Buchungsfahrzeug', 'HB-CC 20');
   insertDriver('driver-booking', 'Buchungsfahrer');
   const created = await apiJson(ADMIN_EMAIL, 'POST', '/api/cost-centers', {
+    companyId: await standardCompanyId(ADMIN_EMAIL),
     code: 'KST-DEFAULT',
     name: 'Default-Test',
     active: true
@@ -466,6 +575,7 @@ test('Zuordnungen und Default-Präzedenz für Buchungen', async () => {
 
 test('Default-Präzedenz für Buchungsanfragen und Kosten', async () => {
   const created = await apiJson(ADMIN_EMAIL, 'POST', '/api/cost-centers', {
+    companyId: await standardCompanyId(ADMIN_EMAIL),
     code: 'KST-REQUEST',
     name: 'Anfrage-Test',
     active: true
@@ -513,6 +623,7 @@ test('Default-Präzedenz für Buchungsanfragen und Kosten', async () => {
 
 test('JSON- und CSV-Export enthalten Kostenstellen; Filter und Formel-Injection bleiben korrekt', async () => {
   const created = await apiJson(ADMIN_EMAIL, 'POST', '/api/cost-centers', {
+    companyId: await standardCompanyId(ADMIN_EMAIL),
     code: 'KST-EXPORT',
     name: 'Export-Test',
     active: true
@@ -536,12 +647,13 @@ test('JSON- und CSV-Export enthalten Kostenstellen; Filter und Formel-Injection 
   const json = await apiGet(ADMIN_EMAIL, '/api/export/data.json');
   assert.equal(json.status, 200);
   const payload = JSON.parse(json.text);
-  assert.ok(payload.costCenters.some((entry) => entry.code === 'KST-EXPORT'));
-  assert.ok(payload.bookings.some((entry) => entry.costCenterCode === 'KST-EXPORT'));
+  assert.ok(payload.costCenters.some((entry) => entry.code === 'KST-EXPORT' && entry.companyCode === 'STANDARD'));
+  assert.ok(payload.bookings.some((entry) => entry.costCenterCode === 'KST-EXPORT' && entry.companyCode === 'STANDARD'));
 
   const csv = await apiGet(ADMIN_EMAIL, '/api/export/logbook.csv?period=all');
   assert.equal(csv.status, 200);
-  assert.match(csv.text.split(/\r?\n/)[0], /Kostenstelle$/);
+  assert.match(csv.text.split(/\r?\n/)[0], /Gesellschaft;Kostenstelle$/);
+  assert.match(csv.text, /STANDARD/);
   assert.match(csv.text, /KST-EXPORT/);
   assert.match(csv.text, /'=1\+1/);
 

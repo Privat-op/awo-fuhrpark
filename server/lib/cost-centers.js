@@ -13,11 +13,16 @@ function normalizeCostCenterCode(value) {
 }
 
 function parseCostCenterPayload(body, existing = null) {
+  const companyId = requiredString(
+    body.companyId === undefined ? existing?.company_id : body.companyId,
+    'Gesellschaft',
+    { max: 120 }
+  );
   const code = normalizeCostCenterCode(body.code === undefined ? existing?.code : body.code);
   const name = requiredString(body.name === undefined ? existing?.name : body.name, 'Bezeichnung', { max: 160 });
   const description = optionalString(body.description === undefined ? existing?.description : body.description, { max: 500 });
   const active = body.active === undefined ? Boolean(existing?.active ?? true) : booleanValue(body.active, true);
-  return { code, name, description, active };
+  return { companyId, code, name, description, active };
 }
 
 function getCostCenter(db, id) {

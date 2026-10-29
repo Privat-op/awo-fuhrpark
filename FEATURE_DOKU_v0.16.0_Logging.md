@@ -78,4 +78,4 @@ Wenn bereits eine `webhooks`-Zeile existiert, entfernt die Migration den Legacy-
 - Request-Log-Format, Request-ID, maskierte IP, Asset-/Health-Skip, 404-Debug.
 - Mail-Log ohne Adressen; Rotation mit Temp-Dateien.
 - Migration 16: Legacy-Cleanup bei vorhandener Webhook-Zeile.
-- Vollständige Regression: **207/207 Tests**.
+- Vollständige Regression: **213/213 Tests**.

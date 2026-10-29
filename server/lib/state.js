@@ -3,6 +3,7 @@
 const { calculateLeasingState } = require('./leasing');
 const { getPublicSmtpConfig } = require('./smtp');
 const { getAllCostCenterUsage } = require('./cost-centers');
+const { listCompanies } = require('./companies');
 const { getDefaultColorMode, getResolvedColorMode, getUserColorMode } = require('./color-mode');
 const { getWebAuthnConfig, listPasskeys } = require('./webauthn');
 const { isLocationsEnabled, listLocations } = require('./locations');
@@ -12,7 +13,10 @@ function costCenterFields(row, costCenter = null) {
   return {
     costCenterId: row?.cost_center_id || null,
     costCenterCode: costCenter?.code || '',
-    costCenterName: costCenter?.name || ''
+    costCenterName: costCenter?.name || '',
+    companyId: costCenter?.company_id || null,
+    companyCode: costCenter?.company_code || '',
+    companyName: costCenter?.company_name || ''
   };
 }
 
@@ -226,7 +230,17 @@ function getState(db, user, auth = null) {
     || ['admin', 'superadmin', 'manager'].includes(user.role)
     || !actorLocationId;
   const locationVisible = (row) => locationGlobal || !row?.location_id || row.location_id === actorLocationId;
-  const costCenterRows = db.prepare('SELECT * FROM cost_centers ORDER BY active DESC, code, id').all();
+  const hasCompaniesTable = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'companies'").get());
+  const costCenterColumns = db.prepare('PRAGMA table_info(cost_centers)').all();
+  const costCenterHasCompany = costCenterColumns.some((column) => column.name === 'company_id');
+  const costCenterRows = hasCompaniesTable && costCenterHasCompany
+    ? db.prepare(`
+        SELECT cc.*, co.code AS company_code, co.name AS company_name
+        FROM cost_centers cc
+        LEFT JOIN companies co ON co.id = cc.company_id
+        ORDER BY co.code, cc.active DESC, cc.code, cc.id
+      `).all()
+    : db.prepare('SELECT * FROM cost_centers ORDER BY active DESC, code, id').all();
   const costCenterById = new Map(costCenterRows.map((row) => [row.id, row]));
   const costCenterUsage = getAllCostCenterUsage(db);
   const costCenterFor = (row) => costCenterById.get(row?.cost_center_id) || null;
@@ -234,6 +248,9 @@ function getState(db, user, auth = null) {
     const usage = costCenterUsage.get(row.id) || {};
     return {
       id: row.id,
+      companyId: row.company_id || null,
+      companyCode: row.company_code || '',
+      companyName: row.company_name || '',
       code: row.code,
       name: row.name,
       description: row.description || '',
@@ -487,6 +504,9 @@ function getState(db, user, auth = null) {
     passkeys
   };
 
+  if ((moduleAccess.cost_centers_view || moduleAccess.settings_manage) && hasCompaniesTable) {
+    state.companies = listCompanies(db);
+  }
   if (moduleAccess.cost_centers_view) {
     state.costCenters = costCenterRows.map(mapCostCenter);
   }
