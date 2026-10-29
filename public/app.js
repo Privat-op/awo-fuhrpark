@@ -129,7 +129,7 @@ function firstAllowedRoute() {
     if (routeAllowed('meine-fahrten')) return 'meine-fahrten';
     if (routeAllowed('anfragen')) return 'anfragen';
   }
-  const order = ['dashboard', 'meine-fahrten', 'anfragen', 'fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'einstellungen'];
+  const order = ['dashboard', 'meine-fahrten', 'anfragen', 'fahrzeuge', 'buchungen', 'fahrtenbuch', 'wartung', 'kosten', 'fahrer', 'einstellungen', 'integrationen'];
   return order.find((route) => routeAllowed(route)) || 'dashboard';
 }
 
@@ -298,6 +298,7 @@ function applyState(state) {
       ? { locationsEnabled: Boolean(state.features.locationsEnabled) }
       : { locationsEnabled: false },
     locations: Array.isArray(state.locations) ? state.locations : [],
+    integrations: state.integrations && typeof state.integrations === 'object' ? state.integrations : null,
     security: state.security && typeof state.security === 'object'
       ? {
           totpEnabled: Boolean(state.security.totpEnabled),
@@ -1364,6 +1365,105 @@ async function testSmtpSettings() {
   }
 }
 
+function integrationPayload(form) {
+  const kind = form.dataset.integration;
+  const data = new FormData(form);
+  const text = (key) => String(data.get(key) || '').trim();
+  const bool = (key) => data.get(key) === 'on';
+  if (kind === 'sso') {
+    return {
+      ssoEnabled: bool('ssoEnabled'),
+      ssoIssuer: text('ssoIssuer'),
+      ssoClientId: text('ssoClientId'),
+      ssoRedirectUri: text('ssoRedirectUri'),
+      ssoScopes: text('ssoScopes'),
+      ssoAllowedDomains: text('ssoAllowedDomains'),
+      ssoAutoProvision: bool('ssoAutoProvision'),
+      ssoDefaultRole: text('ssoDefaultRole'),
+      ssoGroupClaim: text('ssoGroupClaim'),
+      ssoAdminGroup: text('ssoAdminGroup'),
+      ssoManagerGroup: text('ssoManagerGroup'),
+      ...(text('ssoClientSecret') ? { ssoClientSecret: text('ssoClientSecret') } : {}),
+      clearSsoClientSecret: bool('clearSsoClientSecret')
+    };
+  }
+  if (kind === 'teams') {
+    return {
+      teamsEnabled: bool('teamsEnabled'),
+      teamsSendLeasing: bool('teamsSendLeasing'),
+      teamsSendBookingRequests: bool('teamsSendBookingRequests'),
+      teamsSendMaintenance: bool('teamsSendMaintenance'),
+      ...(text('teamsWebhookUrl') ? { teamsWebhookUrl: text('teamsWebhookUrl') } : {}),
+      clearTeamsWebhook: bool('clearTeamsWebhook')
+    };
+  }
+  if (kind === 'clamav') {
+    return {
+      clamavEnabled: bool('clamavEnabled'),
+      clamavHost: text('clamavHost'),
+      clamavPort: Number(data.get('clamavPort')) || 3310,
+      clamavFailClosed: bool('clamavFailClosed')
+    };
+  }
+  if (kind === 'webauthn') {
+    return {
+      webauthnRpId: text('webauthnRpId'),
+      webauthnRpName: text('webauthnRpName'),
+      webauthnOrigin: text('webauthnOrigin')
+    };
+  }
+  if (kind === 'locations') {
+    return { locationsEnabled: bool('locationsEnabled') };
+  }
+  return {};
+}
+
+async function saveIntegrationForm(form) {
+  const kind = form.dataset.integration;
+  const errorBox = form.querySelector('.form-alert');
+  if (errorBox) errorBox.hidden = true;
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const state = await apiFetch('/api/integrations', {
+      method: 'PATCH',
+      body: integrationPayload(form)
+    });
+    applyServerState(state);
+    renderCurrentView();
+    toast('Integration gespeichert', 'Die Konfiguration wurde aktualisiert und gilt sofort.');
+  } catch (error) {
+    if (errorBox) {
+      errorBox.hidden = false;
+      const message = errorBox.querySelector('p');
+      if (message) message.textContent = error.message;
+    }
+    toast('Speichern fehlgeschlagen', error.message, 'error');
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
+}
+
+async function runIntegrationTest(kind, button) {
+  if (!['sso', 'teams', 'clamav', 'webauthn'].includes(kind)) return;
+  if (button) button.disabled = true;
+  try {
+    const result = await apiFetch(`/api/integrations/test/${kind}`, { method: 'POST', body: {} });
+    const detail = kind === 'sso'
+      ? 'Discovery und JWKS wurden erfolgreich geladen.'
+      : kind === 'teams'
+        ? 'Die Testkarte wurde zugestellt.'
+        : kind === 'clamav'
+          ? 'clamd hat die Testdatei ohne Befund geprüft.'
+          : (result.warning || 'RP-ID und Origins sind gültig.');
+    toast('Integrationstest erfolgreich', detail);
+  } catch (error) {
+    toast('Integrationstest fehlgeschlagen', error.message, 'error');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function runRetentionDryRun() {
   try {
     const result = await apiFetch('/api/retention/run', { method: 'POST', body: { dryRun: true } });
@@ -1448,6 +1548,7 @@ function dispatchAction(element) {
     case 'set-color-mode': setColorMode(element.dataset.mode); break;
     case 'cycle-color-mode': cycleColorMode(); break;
     case 'smtp-test': testSmtpSettings(); break;
+    case 'integration-test': runIntegrationTest(element.dataset.kind, element); break;
     case 'unlink-admin-driver': unlinkAdminDriver(); break;
     case 'remove-branding-logo': removeBrandingLogoPreview(); break;
     case 'set-brand-accent': setBrandAccent(element.dataset.color); break;
@@ -1857,6 +1958,12 @@ function bindEvents() {
       } finally {
         if (submitButton) submitButton.disabled = false;
       }
+      return;
+    }
+
+    if (form.dataset.integration) {
+      event.preventDefault();
+      await saveIntegrationForm(form);
       return;
     }
 

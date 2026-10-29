@@ -176,6 +176,34 @@ test('Entscheidung: nur die anfragende Person erhält Genehmigung oder Ablehnung
   }
 });
 
+test('Teams-Kanal respektiert den Schalter für Buchungsanfragen', async () => {
+  process.env.TEAMS_WEBHOOK_URL = 'https://teams.example.invalid/hook';
+  const db = createDb();
+  try {
+    db.prepare(`
+      INSERT INTO integration_settings (id, teams_enabled, teams_send_booking_requests, updated_at)
+      VALUES (1, 1, 0, '2026-01-01')
+    `).run();
+    const calls = [];
+    const transport = fakeTransport();
+    const result = await notifyBookingRequestCreated(db, 'r-1', {
+      dataDir: DATA_DIR,
+      transportFactory: transport.factory,
+      teamsFetch: async (...args) => {
+        calls.push(args);
+        return { ok: true };
+      }
+    });
+    assert.equal(calls.length, 0);
+    assert.equal(result.teamsSent, 0);
+    assert.equal(result.sent, 1);
+    assert.equal(transport.messages.length, 1);
+  } finally {
+    delete process.env.TEAMS_WEBHOOK_URL;
+    db.close();
+  }
+});
+
 test('SMTP aus oder Versandfehler blockieren die Aktion nicht', async () => {
   const db = createDb();
   try {

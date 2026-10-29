@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { writeAudit } = require('./audit');
+const { getSsoIntegrationConfig } = require('./integrations');
 
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
 const FLOW_TTL_MS = 10 * 60 * 1000;
@@ -14,50 +15,27 @@ const ALGORITHMS = {
 const discoveryCache = new Map();
 const jwksCache = new Map();
 
-function truthy(value) {
-  return ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase());
-}
-
 function normalizeIssuer(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
-function splitList(value) {
-  return [...new Set(String(value || '').split(',').map((entry) => entry.trim()).filter(Boolean))];
-}
-
-function getSsoConfig() {
-  const enabled = truthy(process.env.SSO_ENABLED);
-  const issuer = normalizeIssuer(process.env.SSO_ISSUER);
-  const clientId = String(process.env.SSO_CLIENT_ID || '').trim();
-  const clientSecret = String(process.env.SSO_CLIENT_SECRET || '');
-  const redirectUri = String(process.env.SSO_REDIRECT_URI || '').trim();
-  const scopes = String(process.env.SSO_SCOPES || 'openid profile email').trim();
-  const allowedDomains = splitList(process.env.SSO_ALLOWED_DOMAINS).map((entry) => entry.toLowerCase());
-  const autoProvision = truthy(process.env.SSO_AUTO_PROVISION);
-  const defaultRole = String(process.env.SSO_DEFAULT_ROLE || 'user').trim();
-  const groupClaim = String(process.env.SSO_GROUP_CLAIM || 'groups').trim();
-  const adminGroup = String(process.env.SSO_ADMIN_GROUP || '').trim();
-  const managerGroup = String(process.env.SSO_MANAGER_GROUP || '').trim();
-  const missing = [];
-  if (!issuer) missing.push('SSO_ISSUER');
-  if (!clientId) missing.push('SSO_CLIENT_ID');
-  if (!redirectUri) missing.push('SSO_REDIRECT_URI');
+function getSsoConfig(db) {
+  const config = getSsoIntegrationConfig(db);
   return {
-    enabled,
-    configured: enabled && missing.length === 0,
-    missing,
-    issuer,
-    clientId,
-    clientSecret,
-    redirectUri,
-    scopes,
-    allowedDomains,
-    autoProvision,
-    defaultRole,
-    groupClaim,
-    adminGroup,
-    managerGroup
+    enabled: config.enabled,
+    configured: config.configured,
+    missing: config.missing,
+    issuer: config.issuer,
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    redirectUri: config.redirectUri,
+    scopes: config.scopes,
+    allowedDomains: config.allowedDomains,
+    autoProvision: config.autoProvision,
+    defaultRole: config.defaultRole,
+    groupClaim: config.groupClaim,
+    adminGroup: config.adminGroup,
+    managerGroup: config.managerGroup
   };
 }
 
@@ -330,6 +308,7 @@ module.exports = {
   randomFlowValue,
   pkceChallenge,
   getDiscovery,
+  getJwks,
   clearSsoCache,
   verifyIdToken,
   buildAuthorizationUrl,

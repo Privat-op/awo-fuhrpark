@@ -18,6 +18,8 @@ const ENTITY_LABELS = {
   user_policy: 'Benutzerrichtlinie',
   settings: 'Einstellungen',
   smtp: 'E-Mail-Versand',
+  integrations: 'Integrationen',
+  retention_settings: 'Datenaufbewahrung',
   cost_center: 'Kostenstelle',
   branding: 'Erscheinungsbild',
   logbook: 'Fahrtenbuch',
@@ -45,6 +47,7 @@ const ACTION_LABELS = {
   leasing_update: 'Leasingdaten aktualisiert',
   leasing_notification: 'Leasing-Benachrichtigung',
   smtp_test: 'SMTP-Test',
+  integration_test: 'Integrationstest',
   assign_cost_center: 'Kostenstelle zugeordnet',
   activate: 'Aktiviert',
   deactivate: 'Deaktiviert',
@@ -313,7 +316,9 @@ function targetVisibleFor(req, db, cache, entityType, entityId, row) {
   }
   if (entityType === 'user') return hasEffectivePermission(req, 'users_manage');
   if (entityType === 'role' || entityType === 'role_object_permissions') return hasEffectivePermission(req, 'roles_manage');
-  if (entityType === 'settings' || entityType === 'user_policy') return hasEffectivePermission(req, 'settings_manage');
+  if (entityType === 'settings' || entityType === 'user_policy' || entityType === 'integrations' || entityType === 'retention_settings') {
+    return hasEffectivePermission(req, 'settings_manage');
+  }
   if (entityType === 'smtp') return Boolean(req.auth?.isAdmin || req.auth?.isSuperadmin);
   if (entityType === 'cost_center') return hasEffectivePermission(req, 'cost_centers_view');
   if (entityType === 'branding') return hasEffectivePermission(req, 'branding_manage');

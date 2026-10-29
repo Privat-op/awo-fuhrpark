@@ -10,6 +10,7 @@ const {
   validateSmtpConfig
 } = require('./smtp');
 const { teamsConfigured, deliverTeams } = require('./teams');
+const { getTeamsIntegrationConfig } = require('./integrations');
 
 const KM_THRESHOLDS = [80, 90, 100];
 const END_THRESHOLDS = [90, 30];
@@ -218,7 +219,7 @@ async function runLeasingNotifications(db, options = {}) {
   const now = options.now || new Date();
   const config = loadSmtpConfig(db, { dataDir });
   const smtpReady = config.enabled && validateSmtpConfig(config, { requireEnabled: true }).length === 0;
-  const teamsReady = teamsConfigured();
+  const teamsReady = teamsConfigured(db) && getTeamsIntegrationConfig(db).sendLeasing;
   if (!smtpReady && !teamsReady) {
     return { skipped: 'smtp_not_configured', sent: 0, failed: 0, notifications: [] };
   }

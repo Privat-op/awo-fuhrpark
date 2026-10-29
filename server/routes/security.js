@@ -102,7 +102,7 @@ function failureResponse(req, res, result, row, context, method) {
 }
 
 function passkeyConfigOrNull(res) {
-  const config = getWebAuthnConfig();
+  const config = getWebAuthnConfig(db);
   if (!config.enabled) {
     res.set('Cache-Control', 'no-store').status(503).json({
       error: config.reason || 'Passkeys sind auf dieser Installation nicht konfiguriert.'
@@ -120,7 +120,7 @@ function passkeyLockedResponse(res, userId) {
 }
 
 router.get('/', (req, res) => {
-  const config = getWebAuthnConfig();
+  const config = getWebAuthnConfig(db);
   res.set('Cache-Control', 'no-store');
   res.json({
     security: {

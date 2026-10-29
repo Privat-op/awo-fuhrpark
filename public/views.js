@@ -1691,11 +1691,241 @@ function renderRetentionCard() {
     </form>`;
 }
 
+function integrationField({
+  id,
+  label,
+  value = '',
+  locked = false,
+  type = 'text',
+  hint = '',
+  placeholder = '',
+  min = 0,
+  max = 65535,
+  required = false,
+  autocomplete = ''
+}) {
+  const typeAttr = type === 'number' ? `type="number" min="${min}" max="${max}" step="1"` : `type="${type}"`;
+  const attrs = [
+    typeAttr,
+    locked ? 'disabled aria-disabled="true"' : '',
+    required && !locked ? 'required' : '',
+    placeholder ? `placeholder="${esc(placeholder)}"` : '',
+    autocomplete ? `autocomplete="${esc(autocomplete)}"` : ''
+  ].filter(Boolean).join(' ');
+  return `<div class="field">
+    <label for="${id}">${label}${locked ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+    <input class="input" id="${id}" name="${id}" ${attrs} value="${esc(value)}">
+    ${hint ? `<p class="field-hint">${hint}</p>` : ''}
+  </div>`;
+}
+
+function integrationSecretField({ id, label, clearName, set, locked, hint }) {
+  return `<div class="field">
+    <label for="${id}">${label}${locked ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+    <input class="input" id="${id}" name="${id}" type="password" autocomplete="new-password" ${locked ? 'disabled aria-disabled="true"' : ''}
+      placeholder="${set ? '•••••••• (gesetzt)' : 'Noch kein Secret gesetzt'}">
+    ${hint ? `<p class="field-hint">${hint}</p>` : ''}
+    ${!locked && set ? `<label class="check-row" style="margin-top:6px"><input type="checkbox" name="${clearName}"> Secret entfernen</label>` : ''}
+  </div>`;
+}
+
+function integrationStatusBadge({ enabled, configured, missing = false }) {
+  if (enabled && configured) return '<span class="badge badge-green no-dot">Aktiv</span>';
+  if (enabled || missing) return '<span class="badge badge-amber no-dot">Unvollständig</span>';
+  return '<span class="badge badge-gray no-dot">Inaktiv</span>';
+}
+
+function integrationTestButton(kind, label = 'Testen') {
+  return `<button class="btn btn-ghost btn-sm" type="button" data-action="integration-test" data-kind="${kind}">${icon('play')} ${label}</button>`;
+}
+
+function renderSsoIntegrationCard(integrations) {
+  const sso = integrations.sso || {};
+  const locked = sso.envLocked || {};
+  const roles = (db.roles || []).filter((role) => role.id !== 'superadmin');
+  return `
+    <form class="card settings-card" id="integrationSsoForm" data-integration="sso">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">SSO / Entra ID</h3><p class="card-sub">OIDC-Anmeldung mit PKCE, State und Nonce.</p></div>
+        ${integrationStatusBadge({ enabled: Boolean(sso.enabled), configured: Boolean(sso.configured) })}
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" name="ssoEnabled" ${sso.enabled ? 'checked' : ''} ${locked.enabled ? 'disabled' : ''}> SSO aktivieren${locked.enabled ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+          </div>
+          ${integrationField({ id: 'ssoIssuer', label: 'Issuer', value: sso.issuer || '', locked: locked.issuer, placeholder: 'https://login.microsoftonline.com/<tenant>/v2.0', hint: 'Nur http(s); der Issuer wird ohne abschließenden Schrägstrich gespeichert.' })}
+          ${integrationField({ id: 'ssoRedirectUri', label: 'Redirect-URI', value: sso.redirectUri || '', locked: locked.redirectUri, placeholder: 'https://fuhrpark.example.de/auth/sso/callback' })}
+          ${integrationField({ id: 'ssoClientId', label: 'Client-ID', value: sso.clientId || '', locked: locked.clientId })}
+          ${integrationSecretField({ id: 'ssoClientSecret', label: 'Client-Secret', clearName: 'clearSsoClientSecret', set: Boolean(sso.clientSecretSet), locked: locked.clientSecret, hint: 'Wird verschlüsselt gespeichert und nie angezeigt.' })}
+          ${integrationField({ id: 'ssoScopes', label: 'Scopes', value: sso.scopes || '', locked: locked.scopes })}
+          ${integrationField({ id: 'ssoAllowedDomains', label: 'Erlaubte Domains', value: sso.allowedDomains || '', locked: locked.allowedDomains, placeholder: 'awo-bremerhaven.de, example.de', hint: 'Kommagetrennt. Leer = alle vom IdP bestätigten Domains.' })}
+          <div class="field">
+            <label class="check-row"><input type="checkbox" name="ssoAutoProvision" ${sso.autoProvision ? 'checked' : ''} ${locked.autoProvision ? 'disabled' : ''}> JIT-Provisioning aktivieren${locked.autoProvision ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+          </div>
+          <div class="field">
+            <label for="ssoDefaultRole">Standardrolle für JIT</label>
+            ${roles.length ? `<select class="select" id="ssoDefaultRole" name="ssoDefaultRole" ${locked.defaultRole ? 'disabled' : ''}>
+              ${sso.defaultRole && !roles.some((role) => role.id === sso.defaultRole) ? `<option value="${esc(sso.defaultRole)}" selected>${esc(sso.defaultRole)}</option>` : ''}
+              ${roles.map((role) => `<option value="${esc(role.id)}" ${role.id === (sso.defaultRole || 'user') ? 'selected' : ''}>${esc(role.name)}</option>`).join('')}
+            </select>` : `<input class="input" id="ssoDefaultRole" name="ssoDefaultRole" value="${esc(sso.defaultRole || 'user')}" ${locked.defaultRole ? 'disabled' : ''}>`}
+            ${locked.defaultRole ? '<p class="field-hint">durch Umgebung gesetzt</p>' : '<p class="field-hint">Die Rolle <code>user</code> legt zusätzlich ein verknüpftes Fahrerprofil an.</p>'}
+          </div>
+          ${integrationField({ id: 'ssoGroupClaim', label: 'Gruppen-Claim', value: sso.groupClaim || '', locked: locked.groupClaim })}
+          ${integrationField({ id: 'ssoAdminGroup', label: 'Admin-Gruppe', value: sso.adminGroup || '', locked: locked.adminGroup })}
+          ${integrationField({ id: 'ssoManagerGroup', label: 'Fuhrparkleitungs-Gruppe', value: sso.managerGroup || '', locked: locked.managerGroup })}
+        </div>
+        <div class="info-banner" style="margin-top:16px">${icon('shield')}<div><strong>ENV hat Vorrang</strong><p>Felder mit „durch Umgebung gesetzt“ werden aus der Serverumgebung gelesen und können hier nicht geändert werden. Änderungen wirken ohne Neustart.</p></div></div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">Der Test prüft Discovery und JWKS, ohne eine Anmeldung auszulösen.</span>
+        <div class="setting-actions" style="margin-top:0">
+          ${integrationTestButton('sso', 'Discovery testen')}
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+        </div>
+      </div>
+    </form>`;
+}
+
+function renderTeamsIntegrationCard(integrations) {
+  const teams = integrations.teams || {};
+  const locked = teams.envLocked || {};
+  return `
+    <form class="card settings-card" id="integrationTeamsForm" data-integration="teams">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Microsoft Teams</h3><p class="card-sub">Benachrichtigungen über einen Incoming Webhook.</p></div>
+        ${integrationStatusBadge({ enabled: Boolean(teams.enabled), configured: Boolean(teams.configured) })}
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" name="teamsEnabled" ${teams.enabled ? 'checked' : ''} ${locked.enabled ? 'disabled' : ''}> Teams-Benachrichtigungen aktivieren${locked.enabled ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+          </div>
+          ${integrationSecretField({ id: 'teamsWebhookUrl', label: 'Webhook-URL', clearName: 'clearTeamsWebhook', set: Boolean(teams.webhookSet), locked: locked.webhookUrl, hint: 'Die URL ist ein Secret und wird verschlüsselt gespeichert.' })}
+          <div class="field">
+            <label class="check-row"><input type="checkbox" name="teamsSendLeasing" ${teams.sendLeasing ? 'checked' : ''}> Leasing-Schwellen senden</label>
+          </div>
+          <div class="field">
+            <label class="check-row"><input type="checkbox" name="teamsSendBookingRequests" ${teams.sendBookingRequests ? 'checked' : ''}> Buchungsanfragen senden</label>
+          </div>
+          <div class="field">
+            <label class="check-row"><input type="checkbox" name="teamsSendMaintenance" ${teams.sendMaintenance ? 'checked' : ''}> Wartung/TÜV senden</label>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">Der Test sendet eine Testkarte an den konfigurierten Webhook.</span>
+        <div class="setting-actions" style="margin-top:0">
+          ${integrationTestButton('teams', 'Testkarte senden')}
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+        </div>
+      </div>
+    </form>`;
+}
+
+function renderClamavIntegrationCard(integrations) {
+  const clamav = integrations.clamav || {};
+  const locked = clamav.envLocked || {};
+  return `
+    <form class="card settings-card" id="integrationClamavForm" data-integration="clamav">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">ClamAV</h3><p class="card-sub">Virenscan für Uploads über clamd.</p></div>
+        ${integrationStatusBadge({ enabled: Boolean(clamav.enabled), configured: Boolean(clamav.enabled) })}
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" name="clamavEnabled" ${clamav.enabled ? 'checked' : ''} ${locked.enabled ? 'disabled' : ''}> Virenscan aktivieren${locked.enabled ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+          </div>
+          ${integrationField({ id: 'clamavHost', label: 'clamd-Host', value: clamav.host || '', locked: locked.host })}
+          ${integrationField({ id: 'clamavPort', label: 'clamd-Port', value: Number(clamav.port) || 3310, locked: locked.port, type: 'number', min: 1, max: 65535 })}
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" name="clamavFailClosed" ${clamav.failClosed ? 'checked' : ''} ${locked.failClosed ? 'disabled' : ''}> Fail-closed: Uploads bei Scanfehler ablehnen${locked.failClosed ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">Der Test scannt eine harmlose Testdatei.</span>
+        <div class="setting-actions" style="margin-top:0">
+          ${integrationTestButton('clamav', 'clamd testen')}
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+        </div>
+      </div>
+    </form>`;
+}
+
+function renderWebauthnIntegrationCard(integrations) {
+  const webauthn = integrations.webauthn || {};
+  const locked = webauthn.envLocked || {};
+  return `
+    <form class="card settings-card" id="integrationWebauthnForm" data-integration="webauthn">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">WebAuthn / Passkeys</h3><p class="card-sub">Relying-Party für Passkey-Anmeldung.</p></div>
+        ${integrationStatusBadge({ enabled: Boolean(webauthn.enabled), configured: Boolean(webauthn.enabled), missing: Boolean(webauthn.rpID || webauthn.origins) })}
+      </div>
+      <div class="card-body">
+        <div class="form-grid">
+          ${integrationField({ id: 'webauthnRpId', label: 'RP-ID', value: webauthn.rpID || '', locked: locked.rpID, placeholder: 'fuhrpark.example.de' })}
+          ${integrationField({ id: 'webauthnRpName', label: 'RP-Name', value: webauthn.rpName || '', locked: locked.rpName, placeholder: 'AWO Fuhrparkmanagement' })}
+          ${integrationField({ id: 'webauthnOrigin', label: 'Origins', value: webauthn.origins || '', locked: locked.origins, placeholder: 'https://fuhrpark.example.de', hint: 'Kommagetrennt. Jede Origin muss zur RP-ID passen.' })}
+          <div class="info-banner field-full">${icon('alert')}<div><strong>Bestehende Passkeys können ungültig werden</strong><p>Eine Änderung von RP-ID oder Origin macht bereits registrierte Passkeys unbrauchbar. Prüfen Sie die Werte vor dem Speichern.</p></div></div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">Der Test validiert RP-ID und Origins ohne Netzwerkzugriff.</span>
+        <div class="setting-actions" style="margin-top:0">
+          ${integrationTestButton('webauthn', 'Konfiguration prüfen')}
+          <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+        </div>
+      </div>
+    </form>`;
+}
+
+function renderLocationsToggleCard(integrations) {
+  const locations = integrations.locations || {};
+  const locked = locations.envLocked || {};
+  return `
+    <form class="card settings-card" id="integrationLocationsForm" data-integration="locations">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Standorte</h3><p class="card-sub">Sichtbarkeit und Freigaberouting nach Standort.</p></div>
+        ${integrationStatusBadge({ enabled: Boolean(locations.enabled), configured: Boolean(locations.enabled) })}
+      </div>
+      <div class="card-body">
+        <label class="check-row"><input type="checkbox" name="locationsEnabled" ${locations.enabled ? 'checked' : ''} ${locked.enabled ? 'disabled' : ''}> Standortfunktion aktivieren${locked.enabled ? ' <span class="badge badge-amber no-dot">durch Umgebung gesetzt</span>' : ''}</label>
+        <div class="info-banner" style="margin-top:16px">${icon('map-pin')}<div><strong>Standortfilter nur bei aktivem Feature</strong><p>Bei aktivierter Funktion sehen Nicht-Administrator:innen mit Standort nur Daten ihres Standorts. Bestehende Konten und Fahrzeuge ohne Standort bleiben global sichtbar. Die Standort-Stammdaten verwalten Sie anschließend unter Einstellungen.</p></div></div>
+      </div>
+      <div class="card-footer">
+        <span class="text-muted">Änderungen wirken sofort, ohne Neustart.</span>
+        <button class="btn btn-primary btn-sm" type="submit">${icon('check')} Speichern</button>
+      </div>
+    </form>`;
+}
+
+function renderIntegrations() {
+  const integrations = db.integrations;
+  if (!integrations) {
+    return `${pageHead('Einstellungen', 'Integrationen', 'Zentrale Konfiguration für SSO, Teams, ClamAV, WebAuthn, Aufbewahrung und Standorte.', '')}
+      <section class="card">${emptyState('shield', 'Keine Integrationsdaten verfügbar', 'Diese Seite ist für Rollen mit der Berechtigung „Organisation bearbeiten“ vorgesehen.')}</section>`;
+  }
+  const cards = [
+    renderSsoIntegrationCard(integrations),
+    renderTeamsIntegrationCard(integrations),
+    renderClamavIntegrationCard(integrations),
+    renderWebauthnIntegrationCard(integrations),
+    privileged() ? renderRetentionCard() : '',
+    privileged() ? renderLocationsToggleCard(integrations) : ''
+  ].filter(Boolean).join('');
+  return `
+    ${pageHead('Einstellungen', 'Integrationen', 'SSO, Teams, Virenscan, Passkeys, Aufbewahrung und Standorte zentral verwalten.', '<span class="badge badge-blue no-dot">ENV hat Vorrang</span>')}
+    <div class="stack">${cards}</div>`;
+}
+
 function renderSettings() {
   const roleDisplay = currentUser?.roleName || roleLabel(currentUser?.role);
   const canEditSettings = can('settings_manage');
   const canManageBranding = can('branding_manage');
   const canManageSmtp = Boolean(capabilities.isAdmin || capabilities.isSuperadmin);
+  const canManageIntegrations = can('settings_manage');
   const canViewCostCenters = can('cost_centers_view');
   const canExport = can('export_data');
   const canManageUsers = can('users_manage');
@@ -1732,7 +1962,20 @@ function renderSettings() {
     canManageBranding ? renderBrandingCard() : '',
     canManageSmtp ? renderSmtpCard() : '',
     db.features?.locationsEnabled && privileged() ? renderLocationsCard() : '',
-    privileged() ? renderRetentionCard() : '',
+    canManageIntegrations ? `
+      <section class="card settings-card" id="integrationsLinkCard">
+        <div class="card-head bordered">
+          <div><h3 class="card-title">Integrationen</h3><p class="card-sub">SSO, Teams, ClamAV, WebAuthn, Aufbewahrung und Standorte.</p></div>
+          <span class="badge badge-blue no-dot">Zentral</span>
+        </div>
+        <div class="card-body">
+          <p class="text-muted">Diese Einstellungen sind auf einer eigenen Seite gebündelt. Gesetzte Umgebungsvariablen haben Vorrang und werden dort schreibgeschützt angezeigt.</p>
+        </div>
+        <div class="card-footer">
+          <span class="text-muted">Secrets werden verschlüsselt gespeichert und nie im Browser angezeigt.</span>
+          <a class="btn btn-ghost btn-sm" href="#/integrationen">Integrationen öffnen ${icon('arrow-right')}</a>
+        </div>
+      </section>` : '',
     canEditSettings ? `
       <form class="card settings-card" id="settingsForm">
         <div class="card-head bordered">
@@ -2451,6 +2694,7 @@ const ROUTES = {
   audit: renderAudit,
   benutzer: renderUsers,
   rollen: renderRoles,
-  einstellungen: renderSettings
+  einstellungen: renderSettings,
+  integrationen: renderIntegrations
 };
 

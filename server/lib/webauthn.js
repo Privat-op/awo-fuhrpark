@@ -9,6 +9,7 @@ const {
 } = require('@simplewebauthn/server');
 const { HttpError } = require('./validation');
 const { writeAudit } = require('./audit');
+const { getWebAuthnIntegrationConfig } = require('./integrations');
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -22,34 +23,12 @@ const DEFAULT_VERIFIER = {
   verifyAuthenticationResponse
 };
 
-function getWebAuthnConfig() {
-  const rpID = String(process.env.WEBAUTHN_RP_ID || '').trim().toLowerCase();
-  const rpName = String(process.env.WEBAUTHN_RP_NAME || '').trim();
-  const rawOrigins = String(process.env.WEBAUTHN_ORIGIN || '').trim();
-  if (!rpID || !rpName || !rawOrigins) {
-    return { enabled: false, reason: 'WebAuthn ist nicht konfiguriert.' };
+function getWebAuthnConfig(db) {
+  const config = getWebAuthnIntegrationConfig(db);
+  if (!config.enabled) {
+    return { enabled: false, reason: config.reason || 'WebAuthn ist nicht konfiguriert.' };
   }
-  if (!/^[a-z0-9.-]+$/.test(rpID) || rpID.startsWith('.') || rpID.endsWith('.') || rpID.includes('..')) {
-    return { enabled: false, reason: 'WEBAUTHN_RP_ID ist ungültig.' };
-  }
-  const origins = [];
-  for (const value of rawOrigins.split(',').map((entry) => entry.trim()).filter(Boolean)) {
-    let url;
-    try {
-      url = new URL(value);
-    } catch {
-      return { enabled: false, reason: 'WEBAUTHN_ORIGIN ist ungültig.' };
-    }
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
-      return { enabled: false, reason: 'WEBAUTHN_ORIGIN ist ungültig.' };
-    }
-    if (url.hostname !== rpID && !url.hostname.endsWith(`.${rpID}`)) {
-      return { enabled: false, reason: 'WEBAUTHN_ORIGIN passt nicht zu WEBAUTHN_RP_ID.' };
-    }
-    origins.push(url.origin);
-  }
-  if (!origins.length) return { enabled: false, reason: 'WEBAUTHN_ORIGIN ist ungültig.' };
-  return { enabled: true, rpID, rpName, origins: [...new Set(origins)] };
+  return { enabled: true, rpID: config.rpID, rpName: config.rpName, origins: config.origins };
 }
 
 function safeTransports(value) {

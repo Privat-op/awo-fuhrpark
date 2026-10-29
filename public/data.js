@@ -335,5 +335,6 @@ const ROUTE_PERMISSIONS = {
   kosten: 'costs_view',
   fahrer: 'drivers_view',
   benutzer: 'users_manage',
-  rollen: 'roles_manage'
+  rollen: 'roles_manage',
+  integrationen: 'settings_manage'
 };

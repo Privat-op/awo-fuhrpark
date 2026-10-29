@@ -15,6 +15,7 @@ const {
   validateSmtpConfig
 } = require('./smtp');
 const { teamsConfigured, deliverTeams } = require('./teams');
+const { getTeamsIntegrationConfig } = require('./integrations');
 const { isLocationsEnabled } = require('./locations');
 
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
@@ -46,7 +47,7 @@ function approverRecipients(db, { excludeUserId = null, locationId = null } = {}
     WHERE active = 1 AND anonymized_at IS NULL AND email <> ''
     ORDER BY role DESC, email
   `).all();
-  const locationFilter = isLocationsEnabled() && locationId;
+  const locationFilter = isLocationsEnabled(db) && locationId;
   return [...new Set(users
     .filter((user) => user.id !== excludeUserId && userCanApprove(db, user))
     .filter((user) => {
@@ -128,7 +129,7 @@ async function sendNotification(db, {
   if (!recipients.length) return { skipped: 'no_recipients' };
   const config = loadSmtpConfig(db, { dataDir });
   const smtpReady = config.enabled && validateSmtpConfig(config, { requireEnabled: true }).length === 0;
-  const teamsReady = teamsConfigured();
+  const teamsReady = teamsConfigured(db) && getTeamsIntegrationConfig(db).sendBookingRequests;
   if (!smtpReady && !teamsReady) return { skipped: 'smtp_not_configured' };
   const nowISO = now.toISOString();
   let sent = 0;

@@ -10,6 +10,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - **Optionale Passkeys:** WebAuthn/Passkey als zweiter Faktor nach dem Passwort, mehrere Geräte pro Konto, Fallback auf TOTP/Recovery; kein passwordless Login
 - **Optionales SSO:** generischer OIDC-Authorization-Code-Flow mit PKCE, State und Nonce, Entra-ID-Gruppenmapping, optionalem JIT-Provisioning; lokaler Login bleibt Fallback
 - **Optionale Standorte:** Stammdaten, Benutzer-/Fahrzeugzuordnung, standortbezogene Sichtbarkeit und Freigaberouting; standardmäßig aus (`LOCATIONS_ENABLED=false`)
+- **Integrationsseite:** SSO, Teams, ClamAV, WebAuthn, Retention und Standorte zentral unter **Einstellungen → Integrationen**; ENV-Variablen bleiben Override, Secrets werden AES-256-GCM verschlüsselt
 - Rollen: **Administrator**, **Fuhrparkleitung**, **Standardbenutzer** sowie frei anlegbare Rollen
 - Feine Rechteverwaltung: Modulrechte, Objekt-Ausnahmen pro Fahrzeug, Fahrer:in, Buchung, Kostenposition und Wartung sowie persönliche Benutzer-Ausnahmen
 - Delegierbare Benutzer- und Rollenverwaltung mit Rangfolge, Grant Ceiling, Passwort-Reset, Deaktivierung und Anonymisierung deaktivierter Konten
@@ -353,7 +354,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 13`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 14`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`; die Integrations-Migration ergänzt `integration_settings` mit einer Zeile. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 
@@ -388,6 +389,20 @@ Mit `VIRUS_SCAN_ENABLED=1` werden PDF-Belege und Bilder vor dem Speichern über 
 - Befund oder Fail-Closed: HTTP `422` mit „Upload wurde aus Sicherheitsgründen abgelehnt.“, Audit `upload_blocked` mit Kategorie/Reason, keine Dateiinhalte in Logs.
 - Ohne aktivierte Prüfung bleibt der Uploadpfad unverändert; PDF-/Logo-/Bildgrößenlimits bleiben bestehen.
 - ClamAV ist nicht im Repository enthalten und muss als Dienst betrieben werden.
+
+## Integrationen (Admin)
+
+Unter **Einstellungen → Integrationen** bündelt die Anwendung SSO, Teams, ClamAV, WebAuthn, Retention und die Standortfunktion. Voraussetzung ist `settings_manage` (Administrator:innen und Fuhrparkleitung).
+
+- **ENV-Vorrang:** Ist eine Variable gesetzt und nicht leer, gewinnt sie gegenüber der Datenbank. Das Feld erscheint schreibgeschützt mit „durch Umgebung gesetzt“. Nicht gesetzte Variablen werden aus der Datenbank gelesen.
+- **Sofort wirksam:** Die Konfiguration wird pro Anfrage gelesen; Änderungen benötigen keinen Neustart.
+- **Secrets:** SSO-Client-Secret und Teams-Webhook werden mit AES-256-GCM verschlüsselt in `integration_settings` gespeichert. Der Schlüssel kommt aus `INTEGRATIONS_ENCRYPTION_KEY` oder wird als `DATA_DIR/integrations.key` erzeugt (Dateirechte `0600`). **DB und Schlüsseldatei gehören zusammen** und müssen gemeinsam gesichert werden; ohne Schlüssel sind die Secrets nicht entschlüsselbar.
+- **Keine Secret-Ausgabe:** API, State, Export und Audit enthalten nur `clientSecretSet`/`webhookSet` sowie Quellenangaben. Secret-Felder sind maskiert; Änderungen nur durch Eingabe eines neuen Werts, Entfernen über „Secret entfernen“.
+- **Testfunktionen:** SSO prüft Discovery und JWKS ohne Login, Teams sendet eine Testkarte, ClamAV scannt eine harmlose Testdatei, WebAuthn validiert RP-ID und Origins lokal.
+- **Retention:** Die bisherige Karte ist in die Integrationsseite integriert; `0 = aus` bleibt unverändert, Geschäftsdaten werden nicht gelöscht.
+- **Standorte:** `LOCATIONS_ENABLED` ist als Feature-Toggle enthalten, inklusive Hinweis auf Sichtbarkeit und Freigaberouting.
+
+Änderungen an RP-ID/Origin können bestehende Passkeys ungültig machen; die Seite warnt davor. Infrastruktur- und Bootstrap-Werte (`SESSION_SECRET`, `DATA_DIR`, `PORT`, `HOST`, `SUPERADMIN_FILE`, `MFA_ENCRYPTION_KEY`, `TRUST_PROXY`, `COOKIE_SECURE`, `NODE_ENV`) bleiben ausschließlich ENV-verwaltet.
 
 ## Teams-Benachrichtigungen (optional)
 
@@ -554,6 +569,7 @@ Der Lasttest ist kein Produktions-Benchmark und darf nicht gegen den Produktivse
 | `APP_PORT` | Host-Port für Docker Compose, Standard `3000` |
 | `DATA_DIR` | Datenverzeichnis im Container, Standard `/app/data` |
 | `MFA_ENCRYPTION_KEY` | Optional; 32 Byte als Base64 oder 64 Hex-Zeichen. Fehlt sie, wird `DATA_DIR/mfa.key` automatisch erzeugt. Ein gesetzter, ungültiger Wert bricht den Start ab. |
+| `INTEGRATIONS_ENCRYPTION_KEY` | Optional; 32 Byte als Base64 oder 64 Hex-Zeichen für SSO-Client-Secret und Teams-Webhook. Fehlt sie, wird `DATA_DIR/integrations.key` erzeugt (`0600`). Schlüssel und DB gemeinsam sichern. |
 | `WEBAUTHN_RP_ID` | RP-ID der Passkey-Domain, z. B. `fuhrpark.example.org`; ohne Schema/Port. |
 | `WEBAUTHN_RP_NAME` | Anzeigename für den Passkey-Dialog. |
 | `WEBAUTHN_ORIGIN` | Erlaubte Origin(s) inklusive Schema, mehrere kommagetrennt. Muss zur RP-ID passen. |
@@ -567,6 +583,7 @@ Der Lasttest ist kein Produktions-Benchmark und darf nicht gegen den Produktivse
 | `SSO_DEFAULT_ROLE` | Rolle für JIT-Konten, Standard `user` (Standardbenutzer, inkl. Fahrerprofil); `superadmin` ist nie zulässig. |
 | `SSO_GROUP_CLAIM`, `SSO_ADMIN_GROUP`, `SSO_MANAGER_GROUP` | Gruppen-Claim und Gruppen-IDs für das Rollenmapping. |
 | `TEAMS_WEBHOOK_URL` | Optionaler Incoming-Webhook für Teams; leer = deaktiviert. Nicht loggen/committen. |
+| `TEAMS_ENABLED` | Optional; explizit `true`/`false`. Ohne Wert bleibt ein per ENV gesetzter Webhook wie bisher aktiv. |
 | `VIRUS_SCAN_ENABLED` | `1` aktiviert die ClamAV-Prüfung; Standard aus. |
 | `CLAMAV_HOST`, `CLAMAV_PORT` | clamd-Ziel, Standard `127.0.0.1:3310`. |
 | `VIRUS_SCAN_FAIL_CLOSED` | `true` (Standard bei aktivierter Prüfung) blockiert bei Scannerfehlern. |

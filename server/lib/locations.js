@@ -1,9 +1,10 @@
 'use strict';
 
 const { HttpError } = require('./validation');
+const { getLocationsIntegrationConfig } = require('./integrations');
 
-function isLocationsEnabled() {
-  return ['1', 'true', 'yes', 'on'].includes(String(process.env.LOCATIONS_ENABLED || '').toLowerCase());
+function isLocationsEnabled(db) {
+  return getLocationsIntegrationConfig(db).enabled;
 }
 
 function listLocations(db) {

@@ -46,7 +46,7 @@ function isRequestVisibleToApprover(db, actorUser, request, requesterUser, { isA
   if (!request || !actorUser) return false;
   if (request.requested_by && request.requested_by === actorUser.id) return false;
   if (isAdmin || actorUser.role === 'superadmin') return true;
-  if (isLocationsEnabled()) {
+  if (isLocationsEnabled(db)) {
     const vehicle = db.prepare('SELECT location_id FROM vehicles WHERE id = ?').get(request.vehicle_id);
     const actor = db.prepare('SELECT location_id FROM users WHERE id = ?').get(actorUser.id);
     if (vehicle?.location_id && actor?.location_id && actor.location_id !== vehicle.location_id) return false;

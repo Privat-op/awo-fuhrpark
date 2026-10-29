@@ -14,7 +14,7 @@
 - Lokaler Login bleibt Fallback. Session-Regeneration nach Erfolg; Audit `sso_login`, `sso_provision`, `sso_failed` ohne Tokens/Secrets.
 - Kein passwordless Login; SSO ist ein primärer Loginweg, Passkeys bleiben zweiter Faktor des lokalen Logins.
 
-Konfiguration: `SSO_ENABLED`, `SSO_ISSUER`, `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET`, `SSO_REDIRECT_URI`, `SSO_SCOPES`, `SSO_ALLOWED_DOMAINS`, `SSO_AUTO_PROVISION`, `SSO_DEFAULT_ROLE`, `SSO_GROUP_CLAIM`, `SSO_ADMIN_GROUP`, `SSO_MANAGER_GROUP`.
+Konfiguration: `SSO_ENABLED`, `SSO_ISSUER`, `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET`, `SSO_REDIRECT_URI`, `SSO_SCOPES`, `SSO_ALLOWED_DOMAINS`, `SSO_AUTO_PROVISION`, `SSO_DEFAULT_ROLE`, `SSO_GROUP_CLAIM`, `SSO_ADMIN_GROUP`, `SSO_MANAGER_GROUP`. Diese Werte können seit v0.13.0 zusätzlich unter **Einstellungen → Integrationen** gepflegt werden; eine gesetzte ENV-Variable hat Vorrang. Siehe [Feature-Doku v0.13.0 Integrationen](FEATURE_DOKU_v0.13.0_Integrationen.md).
 
 Entra-App-Registrierung:
 

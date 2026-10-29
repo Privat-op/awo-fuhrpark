@@ -1,29 +1,24 @@
 'use strict';
 
 const net = require('node:net');
+const { getClamavIntegrationConfig } = require('./integrations');
 
-function truthy(value, fallback = false) {
-  if (value === undefined || value === null || value === '') return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
-}
-
-function isVirusScanEnabled() {
-  return truthy(process.env.VIRUS_SCAN_ENABLED, false);
+function isVirusScanEnabled(db) {
+  return getClamavIntegrationConfig(db).enabled;
 }
 
 function scanConfig(options = {}) {
+  const config = getClamavIntegrationConfig(options.db);
   return {
-    host: options.host || process.env.CLAMAV_HOST || '127.0.0.1',
-    port: Number(options.port || process.env.CLAMAV_PORT || 3310),
+    host: options.host || config.host,
+    port: Number(options.port || config.port),
     timeout: Number(options.timeout || 10000),
-    failClosed: options.failClosed === undefined
-      ? truthy(process.env.VIRUS_SCAN_FAIL_CLOSED, true)
-      : Boolean(options.failClosed)
+    failClosed: options.failClosed === undefined ? config.failClosed : Boolean(options.failClosed)
   };
 }
 
 function scanBuffer(buffer, options = {}) {
-  if (!isVirusScanEnabled() && options.enabled !== true) {
+  if (!isVirusScanEnabled(options.db) && options.enabled !== true) {
     return Promise.resolve({ ok: true, scanned: false });
   }
   const config = scanConfig(options);
@@ -76,5 +71,6 @@ function scanBuffer(buffer, options = {}) {
 
 module.exports = {
   isVirusScanEnabled,
+  scanConfig,
   scanBuffer
 };

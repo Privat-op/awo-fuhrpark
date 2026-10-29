@@ -33,6 +33,7 @@ const { migratePasskeySchema } = require('./lib/passkey-schema');
 const { migrateSsoSchema } = require('./lib/sso-schema');
 const { migrateRetentionSchema } = require('./lib/retention-schema');
 const { migrateLocationsSchema } = require('./lib/locations-schema');
+const { migrateIntegrationsSchema } = require('./lib/integrations-schema');
 const {
   FLOW_TTL_MS: SSO_FLOW_TTL_MS,
   getSsoConfig,
@@ -45,6 +46,7 @@ const {
 } = require('./lib/sso');
 const { requestPasswordReset, resetPasswordWithToken, validatePasswordResetToken } = require('./lib/password-reset');
 const { getMfaKey } = require('./lib/mfa-crypto');
+const { getIntegrationsKey } = require('./lib/integrations-crypto');
 const {
   getMfaRow,
   isTotpEnabled,
@@ -164,7 +166,7 @@ function noticeMarkup(notice) {
 }
 
 function ssoLoginMarkup() {
-  const config = getSsoConfig();
+  const config = getSsoConfig(db);
   if (!config.enabled || !config.configured) return '';
   return `
     <div class="login-sso">
@@ -253,7 +255,7 @@ function loginMfaFactors(userId) {
   const row = getMfaRow(db, userId);
   return {
     totpEnabled: isTotpEnabled(row),
-    passkeyEnabled: getWebAuthnConfig().enabled && countPasskeys(db, userId) > 0
+    passkeyEnabled: getWebAuthnConfig(db).enabled && countPasskeys(db, userId) > 0
   };
 }
 
@@ -282,7 +284,13 @@ migratePasskeySchema(db);
 migrateSsoSchema(db);
 migrateRetentionSchema(db);
 migrateLocationsSchema(db);
+migrateIntegrationsSchema(db);
 getMfaKey(DATA_DIR);
+try {
+  getIntegrationsKey(DATA_DIR);
+} catch (error) {
+  console.warn(`Warnung: Integrations-Secrets sind nicht verfügbar: ${error.message}`);
+}
 bootstrap(db);
 try {
   ensureSuperadmin(db, { projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR });
@@ -471,7 +479,7 @@ function ssoFailure(req, res, reason, status = 401) {
 
 app.get('/auth/sso/start', ssoLimiter, async (req, res, next) => {
   try {
-    const config = getSsoConfig();
+    const config = getSsoConfig(db);
     if (!config.enabled) return res.status(404).type('text').send('SSO ist nicht aktiviert.');
     if (!config.configured) {
       return renderLogin(req, res, {
@@ -496,7 +504,7 @@ app.get('/auth/sso/start', ssoLimiter, async (req, res, next) => {
 
 app.get('/auth/sso/callback', ssoLimiter, async (req, res, next) => {
   try {
-    const config = getSsoConfig();
+    const config = getSsoConfig(db);
     if (!config.enabled) return res.status(404).type('text').send('SSO ist nicht aktiviert.');
     if (!config.configured) return ssoFailure(req, res, 'configuration', 503);
     const flow = req.session?.ssoFlow;
@@ -869,7 +877,7 @@ function passkeyLoginError(res, status = 401) {
 
 app.post('/api/auth/passkey/options', passkeyLimiter, csrfProtection, async (req, res, next) => {
   try {
-    const config = getWebAuthnConfig();
+    const config = getWebAuthnConfig(db);
     if (!config.enabled) {
       return res.status(503).json({ error: 'Passkeys sind auf dieser Installation nicht konfiguriert.' });
     }
@@ -892,7 +900,7 @@ app.post('/api/auth/passkey/options', passkeyLimiter, csrfProtection, async (req
 
 app.post('/api/auth/passkey/verify', passkeyLimiter, csrfProtection, async (req, res, next) => {
   try {
-    const config = getWebAuthnConfig();
+    const config = getWebAuthnConfig(db);
     if (!config.enabled) {
       return res.status(503).json({ error: 'Passkeys sind auf dieser Installation nicht konfiguriert.' });
     }

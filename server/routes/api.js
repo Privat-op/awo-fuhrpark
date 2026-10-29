@@ -71,6 +71,18 @@ const {
 } = require('../lib/smtp');
 const { getRetentionSettings, setRetentionSettings, runRetention } = require('../lib/retention');
 const {
+  safeIntegrationsConfig,
+  updateIntegrations,
+  getSsoIntegrationConfig,
+  getTeamsIntegrationConfig,
+  getClamavIntegrationConfig,
+  getWebAuthnIntegrationConfig,
+  validHttpUrl
+} = require('../lib/integrations');
+const { getDiscovery, getJwks } = require('../lib/sso');
+const { deliverTeams } = require('../lib/teams');
+const { scanBuffer } = require('../lib/virus-scan');
+const {
   isLocationsEnabled,
   getLocation,
   assertLocationAssignable
@@ -126,7 +138,7 @@ function requireCostCenterViewForSelection(req, id) {
 }
 
 function locationIdForPayload(req, body, existingId = null) {
-  if (!isLocationsEnabled()) return existingId;
+  if (!isLocationsEnabled(db)) return existingId;
   const provided = Object.prototype.hasOwnProperty.call(body || {}, 'locationId');
   const raw = provided ? body.locationId : existingId;
   if (raw === undefined || raw === null || raw === '') return null;
@@ -686,7 +698,7 @@ router.delete('/cost-centers/:id', requirePermission('cost_centers_manage'), (re
    ========================================================= */
 router.post('/locations', requireAdmin, (req, res, next) => {
   try {
-    if (!isLocationsEnabled()) throw new HttpError(404, 'Standorte sind nicht aktiviert.');
+    if (!isLocationsEnabled(db)) throw new HttpError(404, 'Standorte sind nicht aktiviert.');
     const name = requiredString(req.body?.name, 'Standortname', { max: 120 });
     const duplicate = db.prepare('SELECT id FROM locations WHERE name = ? COLLATE NOCASE').get(name);
     if (duplicate) throw new HttpError(409, 'Ein Standort mit diesem Namen existiert bereits.');
@@ -703,7 +715,7 @@ router.post('/locations', requireAdmin, (req, res, next) => {
 
 router.patch('/locations/:id', requireAdmin, (req, res, next) => {
   try {
-    if (!isLocationsEnabled()) throw new HttpError(404, 'Standorte sind nicht aktiviert.');
+    if (!isLocationsEnabled(db)) throw new HttpError(404, 'Standorte sind nicht aktiviert.');
     const existing = getLocation(db, req.params.id);
     if (!existing) throw new HttpError(404, 'Standort wurde nicht gefunden.');
     const name = requiredString(req.body?.name ?? existing.name, 'Standortname', { max: 120 });
@@ -721,7 +733,7 @@ router.patch('/locations/:id', requireAdmin, (req, res, next) => {
 
 router.delete('/locations/:id', requireAdmin, (req, res, next) => {
   try {
-    if (!isLocationsEnabled()) throw new HttpError(404, 'Standorte sind nicht aktiviert.');
+    if (!isLocationsEnabled(db)) throw new HttpError(404, 'Standorte sind nicht aktiviert.');
     const existing = getLocation(db, req.params.id);
     if (!existing) throw new HttpError(404, 'Standort wurde nicht gefunden.');
     const users = db.prepare('SELECT COUNT(*) AS count FROM users WHERE location_id = ?').get(existing.id).count;
@@ -1995,6 +2007,141 @@ router.patch('/user-policy', requireAdmin, (req, res, next) => {
     })();
     runAutoAnonymization();
     sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* =========================================================
+   Integrationen
+   ========================================================= */
+router.get('/integrations', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    res.json({ integrations: safeIntegrationsConfig(db, { dataDir: DATA_DIR }) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/integrations', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const result = updateIntegrations(db, req.body || {}, { dataDir: DATA_DIR });
+    audit(req, 'update', 'integrations', '1', {
+      changed: result.changed,
+      ssoEnabled: result.config.sso.enabled,
+      teamsEnabled: result.config.teams.enabled,
+      clamavEnabled: result.config.clamav.enabled,
+      webAuthnEnabled: result.config.webauthn.enabled,
+      locationsEnabled: result.config.locations.enabled
+    });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/integrations/test/sso', requirePermission('settings_manage'), async (req, res, next) => {
+  try {
+    const config = getSsoIntegrationConfig(db, { dataDir: DATA_DIR });
+    if (!config.issuer) throw new HttpError(400, 'SSO-Issuer ist nicht konfiguriert.');
+    if (!validHttpUrl(config.issuer)) throw new HttpError(400, 'SSO-Issuer muss eine gültige http(s)-URL sein.');
+    let discovery;
+    try {
+      discovery = await getDiscovery({ issuer: config.issuer });
+    } catch {
+      audit(req, 'integration_test', 'integrations', '1', { kind: 'sso', ok: false, step: 'discovery' });
+      throw new HttpError(502, 'Die OIDC-Discovery konnte nicht geladen werden.');
+    }
+    try {
+      const keys = await getJwks(discovery.jwks_uri);
+      if (!keys.length) throw new Error('empty');
+    } catch {
+      audit(req, 'integration_test', 'integrations', '1', { kind: 'sso', ok: false, step: 'jwks' });
+      throw new HttpError(502, 'Die JWKS des OIDC-Providers konnten nicht geladen werden.');
+    }
+    audit(req, 'integration_test', 'integrations', '1', { kind: 'sso', ok: true });
+    res.json({
+      ok: true,
+      issuer: config.issuer,
+      endpoints: {
+        authorization: discovery.authorization_endpoint,
+        token: discovery.token_endpoint,
+        jwks: discovery.jwks_uri
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/integrations/test/teams', requirePermission('settings_manage'), async (req, res, next) => {
+  try {
+    const config = getTeamsIntegrationConfig(db, { dataDir: DATA_DIR });
+    if (!config.webhookUrl) throw new HttpError(400, 'Teams-Webhook ist nicht konfiguriert.');
+    if (!validHttpUrl(config.webhookUrl)) throw new HttpError(400, 'Teams-Webhook muss eine gültige http(s)-URL sein.');
+    const result = await deliverTeams(db, {
+      dedupeKey: `integration-test:${Date.now()}`,
+      title: 'AWO Fuhrparkmanagement – Testnachricht',
+      text: 'Diese Testkarte bestätigt die Verbindung des Teams-Webhooks.',
+      kind: 'integration_test',
+      entityType: 'integrations',
+      entityId: '1',
+      webhookUrl: config.webhookUrl
+    });
+    if (!result.sent) {
+      audit(req, 'integration_test', 'integrations', '1', { kind: 'teams', ok: false });
+      throw new HttpError(502, 'Die Teams-Testkarte konnte nicht zugestellt werden.');
+    }
+    audit(req, 'integration_test', 'integrations', '1', { kind: 'teams', ok: true });
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/integrations/test/clamav', requirePermission('settings_manage'), async (req, res, next) => {
+  try {
+    const config = getClamavIntegrationConfig(db);
+    const result = await scanBuffer(Buffer.from('AWO Fuhrparkmanagement ClamAV-Test'), {
+      db,
+      enabled: true,
+      host: config.host,
+      port: config.port,
+      timeout: 5000,
+      failClosed: true
+    });
+    if (result.found) {
+      audit(req, 'integration_test', 'integrations', '1', { kind: 'clamav', ok: false, code: 'found' });
+      throw new HttpError(422, 'Der Testscan wurde als bedrohlich eingestuft. Bitte ClamAV prüfen.');
+    }
+    if (!result.scanned) {
+      audit(req, 'integration_test', 'integrations', '1', { kind: 'clamav', ok: false, code: result.error || 'unavailable' });
+      throw new HttpError(502, 'clamd ist nicht erreichbar oder hat nicht geantwortet.');
+    }
+    audit(req, 'integration_test', 'integrations', '1', { kind: 'clamav', ok: true });
+    res.json({ ok: true, scanned: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/integrations/test/webauthn', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const config = getWebAuthnIntegrationConfig(db);
+    if (!config.rpID && !config.rpName && !config.rawOrigins) {
+      throw new HttpError(400, 'WebAuthn ist nicht konfiguriert.');
+    }
+    if (!config.enabled) throw new HttpError(400, config.reason || 'WebAuthn-Konfiguration ist ungültig.');
+    const passkeyCount = db.prepare('SELECT COUNT(*) AS count FROM user_passkeys').get().count;
+    audit(req, 'integration_test', 'integrations', '1', { kind: 'webauthn', ok: true });
+    res.json({
+      ok: true,
+      rpID: config.rpID,
+      origins: config.origins,
+      warning: passkeyCount > 0
+        ? 'Bereits registrierte Passkeys können nach einer Änderung von RP-ID oder Origin nicht mehr funktionieren.'
+        : null
+    });
   } catch (error) {
     next(error);
   }

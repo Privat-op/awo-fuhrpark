@@ -31,19 +31,19 @@ const EMAILS = {
 const NAV_GROUPS = [
   ['dashboard', 'buchungen', 'meine-fahrten', 'anfragen', 'fahrtenbuch'],
   ['fahrzeuge', 'wartung', 'kosten'],
-  ['fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen']
+  ['fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen']
 ];
 const ALL_NAV_ROUTES = NAV_GROUPS.flat();
 
 const SESSION_ROLES = {
   admin: {
-    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen'],
+    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen'],
     settings: { organisation: true, branding: true, costCenters: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: true },
     eyebrow: 'Organisation',
     subtitle: 'Organisation, Erscheinungsbild, Kostenstellen, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
   },
   manager: {
-    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen'],
+    nav: ['dashboard', 'buchungen', 'anfragen', 'fahrtenbuch', 'fahrzeuge', 'wartung', 'kosten', 'fahrer', 'audit', 'benutzer', 'rollen', 'einstellungen', 'integrationen'],
     settings: { organisation: true, branding: false, costCenters: true, export: true, users: true, roles: true, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Organisation',
     subtitle: 'Organisation, Kostenstellen, Datenexport, Benutzer, Rollen sowie Ihr Konto verwalten.'
@@ -79,7 +79,7 @@ const SESSION_ROLES = {
     subtitle: 'Erscheinungsbild sowie Ihr Konto verwalten.'
   },
   settingsOnly: {
-    nav: ['dashboard', 'audit', 'einstellungen'],
+    nav: ['dashboard', 'audit', 'einstellungen', 'integrationen'],
     settings: { organisation: true, branding: false, export: false, users: false, roles: false, about: true, shortcuts: true, driverLink: false },
     eyebrow: 'Organisation',
     subtitle: 'Organisation sowie Ihr Konto verwalten.'
@@ -533,6 +533,34 @@ test('Admin-Fahrerprofilkarte zeigt einen Leerzustand ohne Fahrer:innen', () => 
   const { html } = settingsHtmlFor(client);
   assert.ok(html.includes('Noch keine Fahrer:innen'), 'Leerzustand ohne Fahrer:innen fehlt');
   assert.ok(!html.includes('id="driverLinkForm"'), 'Ohne Fahrer:innen darf kein Auswahlformular erscheinen');
+});
+
+test('Integrationsseite rendert Karten, maskiert Secrets und bleibt Berechtigten vorbehalten', () => {
+  const admin = createClientHarness();
+  applyClientSession(admin, clients.admin);
+  const html = vm.runInContext('renderIntegrations()', admin.context);
+  assert.match(html, /id="integrationSsoForm"/);
+  assert.match(html, /id="integrationTeamsForm"/);
+  assert.match(html, /id="integrationClamavForm"/);
+  assert.match(html, /id="integrationWebauthnForm"/);
+  assert.match(html, /id="integrationLocationsForm"/);
+  assert.match(html, /id="retentionForm"/);
+  assert.match(html, /data-integration="sso"/);
+  assert.doesNotMatch(html, /type="password"[^>]*value="[^"]+"/);
+  assert.doesNotMatch(html, /localStorage/);
+
+  const manager = createClientHarness();
+  applyClientSession(manager, clients.manager);
+  const managerHtml = vm.runInContext('renderIntegrations()', manager.context);
+  assert.match(managerHtml, /id="integrationSsoForm"/);
+  assert.doesNotMatch(managerHtml, /id="retentionForm"/);
+
+  const settingsOnly = createClientHarness();
+  applyClientSession(settingsOnly, clients.settingsOnly);
+  const restricted = vm.runInContext('renderIntegrations()', settingsOnly.context);
+  assert.match(restricted, /id="integrationSsoForm"/);
+  assert.doesNotMatch(restricted, /id="retentionForm"/);
+  assert.doesNotMatch(restricted, /id="integrationLocationsForm"/);
 });
 
 test('Mobile-Sidebar öffnet und schließt weiterhin korrekt', () => {

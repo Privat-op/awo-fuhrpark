@@ -1,12 +1,13 @@
 'use strict';
 
 const { writeAudit } = require('./audit');
+const { getTeamsIntegrationConfig } = require('./integrations');
 
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
 const PENDING_TIMEOUT_MS = 15 * 60 * 1000;
 
-function teamsConfigured() {
-  return Boolean(String(process.env.TEAMS_WEBHOOK_URL || '').trim());
+function teamsConfigured(db) {
+  return getTeamsIntegrationConfig(db).configured;
 }
 
 function deliveryIsDue(delivery, nowMs) {
@@ -40,9 +41,9 @@ async function deliverTeams(db, {
   vehicleId = null,
   now = new Date(),
   fetchImpl = fetch,
-  webhookUrl = process.env.TEAMS_WEBHOOK_URL
+  webhookUrl = undefined
 } = {}) {
-  const url = String(webhookUrl || '').trim();
+  const url = String(webhookUrl ?? getTeamsIntegrationConfig(db).webhookUrl ?? '').trim();
   if (!url) return { skipped: 'not_configured' };
   const key = `teams:${dedupeKey}`;
   const nowMs = now.getTime();

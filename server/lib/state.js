@@ -6,6 +6,7 @@ const { getAllCostCenterUsage } = require('./cost-centers');
 const { getDefaultColorMode, getResolvedColorMode, getUserColorMode } = require('./color-mode');
 const { getWebAuthnConfig, listPasskeys } = require('./webauthn');
 const { isLocationsEnabled, listLocations } = require('./locations');
+const { safeIntegrationsConfig } = require('./integrations');
 
 function costCenterFields(row, costCenter = null) {
   return {
@@ -216,7 +217,7 @@ function getState(db, user, auth = null) {
     db.prepare('SELECT user_id, COUNT(*) AS count FROM user_passkeys GROUP BY user_id').all()
       .map((row) => [row.user_id, Number(row.count) || 0])
   );
-  const locationsEnabled = isLocationsEnabled();
+  const locationsEnabled = isLocationsEnabled(db);
   const locationRows = locationsEnabled ? listLocations(db) : [];
   const locationById = new Map(locationRows.map((row) => [row.id, row]));
   const locationFor = (row) => locationById.get(row?.location_id) || null;
@@ -481,7 +482,7 @@ function getState(db, user, auth = null) {
     lastVerifiedAt: ownMfa?.last_verified_at || null,
     recoveryCodesRemaining: recoveryCountByUserId.get(user.id) || 0,
     lockedUntil: ownMfa?.locked_until || null,
-    passkeyEnabled: getWebAuthnConfig().enabled,
+    passkeyEnabled: getWebAuthnConfig(db).enabled,
     passkeyCount: passkeys.length,
     passkeys
   };
@@ -492,6 +493,10 @@ function getState(db, user, auth = null) {
 
   if (isPrivileged) {
     state.smtp = getPublicSmtpConfig(db);
+  }
+
+  if (can('settings_manage')) {
+    state.integrations = safeIntegrationsConfig(db);
   }
 
   const canManageUsers = isPrivileged || can('users_manage');

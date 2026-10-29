@@ -40,7 +40,7 @@ function relativePath(fullPath) {
 }
 
 async function scanUpload(buffer, kind, actorId) {
-  const result = await scanBuffer(buffer);
+  const result = await scanBuffer(buffer, { db });
   if (!result.scanned || result.ok) return;
   writeAudit(db, {
     userId: actorId || null,
