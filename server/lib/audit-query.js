@@ -20,6 +20,7 @@ const ENTITY_LABELS = {
   smtp: 'E-Mail-Versand',
   integrations: 'Integrationen',
   retention_settings: 'Datenaufbewahrung',
+  webhook: 'Webhook',
   cost_center: 'Kostenstelle',
   branding: 'Erscheinungsbild',
   logbook: 'Fahrtenbuch',
@@ -48,6 +49,11 @@ const ACTION_LABELS = {
   leasing_notification: 'Leasing-Benachrichtigung',
   smtp_test: 'SMTP-Test',
   integration_test: 'Integrationstest',
+  webhook_added: 'Webhook angelegt',
+  webhook_updated: 'Webhook aktualisiert',
+  webhook_deleted: 'Webhook gelöscht',
+  webhook_test: 'Webhook-Test',
+  webhook_delivery: 'Webhook-Zustellung',
   assign_cost_center: 'Kostenstelle zugeordnet',
   activate: 'Aktiviert',
   deactivate: 'Deaktiviert',
@@ -316,7 +322,7 @@ function targetVisibleFor(req, db, cache, entityType, entityId, row) {
   }
   if (entityType === 'user') return hasEffectivePermission(req, 'users_manage');
   if (entityType === 'role' || entityType === 'role_object_permissions') return hasEffectivePermission(req, 'roles_manage');
-  if (entityType === 'settings' || entityType === 'user_policy' || entityType === 'integrations' || entityType === 'retention_settings') {
+  if (entityType === 'settings' || entityType === 'user_policy' || entityType === 'integrations' || entityType === 'retention_settings' || entityType === 'webhook') {
     return hasEffectivePermission(req, 'settings_manage');
   }
   if (entityType === 'smtp') return Boolean(req.auth?.isAdmin || req.auth?.isSuperadmin);

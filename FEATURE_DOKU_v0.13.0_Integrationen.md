@@ -81,7 +81,7 @@ Alle Endpunkte benötigen CSRF und `settings_manage`.
 - Validierungsfehler und Rollback.
 - API: ENV-Sperre, Secret setzen/entfernen, Auto-Deaktivierung von Teams.
 - Test-Endpunkte gegen lokale Mocks: OIDC-Discovery/JWKS, Teams-Webhook, clamd, WebAuthn.
-- Vollständige Regression: 187/187 Tests.
+- Vollständige Regression: 196/196 Tests.
 
 ## 9. Offene Punkte
 

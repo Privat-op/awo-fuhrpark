@@ -16,6 +16,7 @@ const {
 } = require('./smtp');
 const { teamsConfigured, deliverTeams } = require('./teams');
 const { getTeamsIntegrationConfig } = require('./integrations');
+const { dispatchWebhooks, webhooksConfiguredForEvent } = require('./webhooks');
 const { isLocationsEnabled } = require('./locations');
 
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
@@ -121,21 +122,28 @@ async function sendNotification(db, {
   recipients,
   subject,
   text,
+  webhookText = null,
+  webhookData = {},
   dataDir,
   transportFactory,
   teamsFetch,
+  webhookFetch,
+  webhookLookup,
   now = new Date()
 }) {
-  if (!recipients.length) return { skipped: 'no_recipients' };
+  const webhooksReady = webhooksConfiguredForEvent(db, 'booking_request');
+  if (!recipients.length && !webhooksReady) return { skipped: 'no_recipients' };
   const config = loadSmtpConfig(db, { dataDir });
   const smtpReady = config.enabled && validateSmtpConfig(config, { requireEnabled: true }).length === 0;
   const teamsReady = teamsConfigured(db) && getTeamsIntegrationConfig(db).sendBookingRequests;
-  if (!smtpReady && !teamsReady) return { skipped: 'smtp_not_configured' };
+  if (!smtpReady && !teamsReady && !webhooksReady) return { skipped: 'smtp_not_configured' };
   const nowISO = now.toISOString();
   let sent = 0;
   let failed = 0;
   let teamsSent = 0;
   let teamsFailed = 0;
+  let webhookSent = 0;
+  let webhookFailed = 0;
 
   if (teamsReady) {
     const teamResult = await deliverTeams(db, {
@@ -154,9 +162,28 @@ async function sendNotification(db, {
     teamsFailed += teamResult.failed || 0;
   }
 
-  if (smtpReady) {
+  if (webhooksReady) {
+    const webhookResult = await dispatchWebhooks(db, 'booking_request', {
+      dedupeKey: key,
+      vehicleId,
+      kind,
+      title: `[${organizationName(db)}] ${subject}`,
+      text: webhookText || text,
+      data: webhookData
+    }, {
+      dataDir,
+      now,
+      actorId: null,
+      fetchImpl: webhookFetch,
+      lookupImpl: webhookLookup
+    });
+    webhookSent += webhookResult.sent || 0;
+    webhookFailed += webhookResult.failed || 0;
+  }
+
+  if (smtpReady && recipients.length) {
     if (!beginDelivery(db, { key, vehicleId, kind }, nowISO)) {
-      return { skipped: teamsSent ? null : 'already_sent', sent, failed, teamsSent, teamsFailed };
+      return { skipped: teamsSent || webhookSent ? null : 'already_sent', sent, failed, teamsSent, teamsFailed, webhookSent, webhookFailed };
     }
     try {
       await sendMail({
@@ -194,7 +221,7 @@ async function sendNotification(db, {
     }
   }
 
-  return { skipped: null, sent, failed, teamsSent, teamsFailed };
+  return { skipped: null, sent, failed, teamsSent, teamsFailed, webhookSent, webhookFailed };
 }
 
 async function notifyBookingRequestCreated(db, requestId, options = {}) {
@@ -222,6 +249,19 @@ async function notifyBookingRequestCreated(db, requestId, options = {}) {
       `Zweck: ${request.purpose || '-'}`,
       request.notes ? `Hinweise: ${request.notes}` : ''
     ].filter(Boolean).join('\n'),
+    webhookText: [
+      'Neue Buchungsanfrage',
+      `Fahrzeug: ${vehicle}`,
+      `Zeitraum: ${request.start_at} bis ${request.end_at}`,
+      `Zweck: ${request.purpose || '-'}`
+    ].join('\n'),
+    webhookData: {
+      requestId,
+      vehicleId: request.vehicle_id,
+      purpose: request.purpose || '',
+      start: request.start_at,
+      end: request.end_at
+    },
     ...options
   });
 }
@@ -230,7 +270,7 @@ async function notifyBookingRequestDecision(db, requestId, decision, options = {
   const request = requestContext(db, requestId);
   if (!request) return { skipped: 'not_found' };
   const recipient = requesterRecipient(db, request.requested_by);
-  if (!recipient) return { skipped: 'no_recipients' };
+  if (!recipient && !webhooksConfiguredForEvent(db, 'booking_request')) return { skipped: 'no_recipients' };
   const approved = decision === 'approved';
   const vehicle = request.vehicle_name
     ? `${request.vehicle_name} (${request.vehicle_plate || 'ohne Kennzeichen'})`
@@ -240,7 +280,7 @@ async function notifyBookingRequestDecision(db, requestId, decision, options = {
     vehicleId: request.vehicle_id,
     kind: `booking_request_${decision}`,
     requestId,
-    recipients: [recipient],
+    recipients: recipient ? [recipient] : [],
     subject: `Buchungsanfrage ${approved ? 'genehmigt' : 'abgelehnt'}: ${headerSafe(vehicle)}`,
     text: [
       `Ihre Buchungsanfrage wurde ${approved ? 'genehmigt' : 'abgelehnt'}.`,
@@ -250,6 +290,20 @@ async function notifyBookingRequestDecision(db, requestId, decision, options = {
       `Zweck: ${request.purpose || '-'}`,
       request.decision_note ? `Entscheidung: ${request.decision_note}` : ''
     ].filter(Boolean).join('\n'),
+    webhookText: [
+      `Buchungsanfrage ${approved ? 'genehmigt' : 'abgelehnt'}`,
+      `Fahrzeug: ${vehicle}`,
+      `Zeitraum: ${request.start_at} bis ${request.end_at}`,
+      `Zweck: ${request.purpose || '-'}`
+    ].join('\n'),
+    webhookData: {
+      requestId,
+      vehicleId: request.vehicle_id,
+      purpose: request.purpose || '',
+      start: request.start_at,
+      end: request.end_at,
+      decision
+    },
     ...options
   });
 }

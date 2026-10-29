@@ -2445,6 +2445,167 @@ function deleteLocation(locationId) {
   });
 }
 
+function openWebhookModal(webhookId = null) {
+  const existing = webhookId
+    ? (db.integrations?.webhooks || []).find((entry) => entry.id === webhookId)
+    : null;
+  if (webhookId && !existing) return;
+  const webhook = existing || {
+    name: '',
+    format: 'generic',
+    events: ['leasing', 'booking_request', 'maintenance'],
+    enabled: true,
+    secretSet: false,
+    host: ''
+  };
+  const eventOptions = [
+    ['leasing', 'Leasing'],
+    ['booking_request', 'Buchungsanfragen'],
+    ['maintenance', 'Wartung/TÜV']
+  ];
+  const formats = [
+    ['generic', 'Generisch'],
+    ['teams', 'Microsoft Teams (MessageCard)'],
+    ['discord', 'Discord'],
+    ['slack', 'Slack']
+  ];
+  showModal({
+    title: existing ? 'Webhook bearbeiten' : 'Webhook hinzufügen',
+    eyebrow: 'Integrationen',
+    subtitle: 'URL und Secret werden verschlüsselt gespeichert.',
+    body: `
+      <form id="webhookForm" novalidate>
+        ${formAlertMarkup()}
+        <div class="form-grid">
+          <div class="field field-full">
+            <label for="webhookName">Name <span class="optional">*</span></label>
+            <input class="input" id="webhookName" name="name" type="text" maxlength="120" value="${esc(webhook.name)}" required data-autofocus>
+          </div>
+          <div class="field field-full">
+            <label for="webhookUrl">Webhook-URL ${existing ? '' : '<span class="optional">*</span>'}</label>
+            <input class="input" id="webhookUrl" name="url" type="password" autocomplete="new-password"
+              placeholder="${existing ? `•••••••• (${esc(webhook.host || 'gesetzt')})` : 'https://…'}">
+            <p class="field-hint">${existing ? 'Leer lassen, um die gespeicherte URL beizubehalten.' : 'Nur http(s). Private/lokale Ziele sind blockiert, sofern nicht per Allowlist freigegeben.'}</p>
+          </div>
+          <div class="field">
+            <label for="webhookFormat">Format</label>
+            <select class="select" id="webhookFormat" name="format">
+              ${formats.map(([value, label]) => `<option value="${value}" ${webhook.format === value ? 'selected' : ''}>${label}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field field-full">
+            <label>Events</label>
+            <div class="checkbox-grid">
+              ${eventOptions.map(([value, label]) => `<label class="check-row"><input type="checkbox" name="events" value="${value}" ${webhook.events.includes(value) ? 'checked' : ''}> ${label}</label>`).join('')}
+            </div>
+          </div>
+          <div class="field field-full">
+            <label for="webhookSecret">HMAC-Secret (optional)</label>
+            <input class="input" id="webhookSecret" name="secret" type="password" autocomplete="new-password"
+              placeholder="${webhook.secretSet ? '•••••••• (gesetzt)' : 'Kein Secret'}">
+            ${webhook.secretSet ? '<label class="check-row" style="margin-top:6px"><input type="checkbox" name="clearSecret"> Secret entfernen</label>' : ''}
+            <p class="field-hint">Signiert Payloads mit <code>X-AWO-Signature: sha256=…</code> über Zeitstempel und Body.</p>
+          </div>
+          <div class="field field-full">
+            <label class="check-row"><input type="checkbox" name="enabled" ${webhook.enabled ? 'checked' : ''}> Webhook aktiv</label>
+          </div>
+          <div class="info-banner field-full">${icon('shield')}<div><strong>SSRF-Schutz</strong><p>Loopback-, private, Link-Local- und Metadaten-Adressen werden blockiert. Interne Ziele nur explizit über <code>WEBHOOK_ALLOW_PRIVATE_HOSTS</code> freigeben.</p></div></div>
+        </div>
+      </form>`,
+    footer: `
+      <button class="btn btn-ghost" type="button" data-close-modal>Abbrechen</button>
+      <button class="btn btn-primary" type="submit" form="webhookForm">${icon('check')} Speichern</button>`
+  });
+  const form = $('#webhookForm');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearFormError(form);
+    const data = new FormData(form);
+    const name = String(data.get('name') || '').trim();
+    const url = String(data.get('url') || '').trim();
+    const secret = String(data.get('secret') || '').trim();
+    const events = data.getAll('events').map(String);
+    if (!name) {
+      showFormError(form, 'Bitte geben Sie einen Namen an.');
+      return;
+    }
+    if (!existing && !url) {
+      showFormError(form, 'Bitte geben Sie eine Webhook-URL an.');
+      return;
+    }
+    if (!events.length) {
+      showFormError(form, 'Bitte wählen Sie mindestens ein Event aus.');
+      return;
+    }
+    const submitButton = modalRoot.querySelector('button[form="webhookForm"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const payload = {
+        name,
+        format: String(data.get('format') || 'generic'),
+        events,
+        enabled: data.get('enabled') === 'on',
+        ...(url ? { url } : {}),
+        ...(secret ? { secret } : {}),
+        ...(data.get('clearSecret') === 'on' ? { clearSecret: true } : {})
+      };
+      const state = await apiFetch(existing ? `/api/webhooks/${encodeURIComponent(existing.id)}` : '/api/webhooks', {
+        method: existing ? 'PATCH' : 'POST',
+        body: payload
+      });
+      applyServerState(state);
+      closeModal(false);
+      renderCurrentView();
+      toast(existing ? 'Webhook gespeichert' : 'Webhook angelegt', 'Die Konfiguration wurde aktualisiert.');
+    } catch (error) {
+      showFormError(form, error.message);
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  });
+}
+
+function deleteWebhookConfirm(webhookId) {
+  const webhook = (db.integrations?.webhooks || []).find((entry) => entry.id === webhookId);
+  if (!webhook) return;
+  openConfirm({
+    title: 'Webhook löschen?',
+    text: `<strong>${esc(webhook.name)}</strong> (${esc(webhook.host || 'ohne Host')}) wird dauerhaft entfernt. Bestehende Delivery-Einträge bleiben erhalten.`,
+    confirmLabel: 'Webhook löschen',
+    danger: true,
+    onConfirm: async () => {
+      try {
+        const state = await apiFetch(`/api/webhooks/${encodeURIComponent(webhook.id)}`, { method: 'DELETE' });
+        applyServerState(state);
+        renderCurrentView();
+        toast('Webhook gelöscht', 'Der Endpunkt wurde entfernt.');
+      } catch (error) {
+        toast('Löschen fehlgeschlagen', error.message, 'error');
+      }
+    }
+  });
+}
+
+function webhookTestErrorLabel(code) {
+  if (code === 'WEBHOOK_BLOCKED') return 'Ziel blockiert (SSRF/Allowlist).';
+  if (code === 'WEBHOOK_TIMEOUT') return 'Zeitüberschreitung nach 8 Sekunden.';
+  if (code === 'WEBHOOK_ERROR') return 'Endpunkt nicht erreichbar.';
+  if (code?.startsWith('WEBHOOK_HTTP_')) return `Endpunkt antwortete mit HTTP ${code.slice('WEBHOOK_HTTP_'.length)}.`;
+  return code || 'Unbekannter Fehler.';
+}
+
+async function testWebhookById(webhookId) {
+  const webhook = (db.integrations?.webhooks || []).find((entry) => entry.id === webhookId);
+  if (!webhook) return;
+  try {
+    const result = await apiFetch(`/api/webhooks/${encodeURIComponent(webhook.id)}/test`, { method: 'POST' });
+    if (result.ok) toast('Webhook-Test erfolgreich', `${webhook.name} hat die Testnachricht angenommen.`);
+    else toast('Webhook-Test fehlgeschlagen', webhookTestErrorLabel(result.errorCode), 'error');
+  } catch (error) {
+    toast('Webhook-Test fehlgeschlagen', error.message, 'error');
+  }
+}
+
 /* =========================================================
    Benutzerverwaltung
    ========================================================= */

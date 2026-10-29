@@ -1798,7 +1798,7 @@ function renderTeamsIntegrationCard(integrations) {
   return `
     <form class="card settings-card" id="integrationTeamsForm" data-integration="teams">
       <div class="card-head bordered">
-        <div><h3 class="card-title">Microsoft Teams</h3><p class="card-sub">Benachrichtigungen über einen Incoming Webhook.</p></div>
+        <div><h3 class="card-title">Microsoft Teams <span class="badge badge-gray no-dot">Legacy/Preset</span></h3><p class="card-sub">Bestehender Teams-Webhook. Neue Endpunkte bitte unter Webhooks verwalten.</p></div>
         ${integrationStatusBadge({ enabled: Boolean(teams.enabled), configured: Boolean(teams.configured) })}
       </div>
       <div class="card-body">
@@ -2097,6 +2097,44 @@ function renderAdvanced() {
     </div>`;
 }
 
+function webhookFormatLabel(format) {
+  return { generic: 'Generisch', teams: 'Teams', discord: 'Discord', slack: 'Slack' }[format] || format;
+}
+
+function webhookEventLabel(event) {
+  return { leasing: 'Leasing', booking_request: 'Buchungsanfragen', maintenance: 'Wartung/TÜV', test: 'Test' }[event] || event;
+}
+
+function renderWebhooksCard(integrations) {
+  const webhooks = Array.isArray(integrations.webhooks) ? integrations.webhooks : [];
+  return `
+    <section class="card settings-card" id="webhooksCard">
+      <div class="card-head bordered">
+        <div><h3 class="card-title">Webhooks</h3><p class="card-sub">Ereignisse an generische, Teams-, Discord- oder Slack-Endpunkte senden.</p></div>
+        <button class="btn btn-primary btn-sm" type="button" data-action="new-webhook">${icon('plus')} Webhook hinzufügen</button>
+      </div>
+      <div class="card-body">
+        ${webhooks.length ? `<div class="table-wrap"><table class="data-table">
+          <thead><tr><th>Name</th><th>Host</th><th>Format</th><th>Events</th><th>Status</th><th class="num">Aktion</th></tr></thead>
+          <tbody>${webhooks.map((webhook) => `<tr>
+            <td><span class="table-main">${esc(webhook.name)}</span>${webhook.secretSet ? '<span class="badge badge-blue no-dot">HMAC</span>' : ''}</td>
+            <td><code>${esc(webhook.host || '—')}</code></td>
+            <td>${esc(webhookFormatLabel(webhook.format))}</td>
+            <td><div class="summary-chips">${webhook.events.map((event) => `<span class="badge badge-gray no-dot">${esc(webhookEventLabel(event))}</span>`).join('')}</div></td>
+            <td>${webhook.enabled ? '<span class="badge badge-green no-dot">Aktiv</span>' : '<span class="badge badge-gray no-dot">Inaktiv</span>'}</td>
+            <td><div class="table-actions">
+              <button class="table-action" type="button" title="Webhook testen" aria-label="Webhook testen" data-action="test-webhook" data-id="${webhook.id}">${icon('play')}</button>
+              <button class="table-action" type="button" title="Webhook bearbeiten" aria-label="Webhook bearbeiten" data-action="edit-webhook" data-id="${webhook.id}">${icon('edit')}</button>
+              <button class="table-action danger" type="button" title="Webhook löschen" aria-label="Webhook löschen" data-action="delete-webhook" data-id="${webhook.id}">${icon('trash')}</button>
+            </div></td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : emptyState('zap', 'Noch keine Webhooks', 'Legen Sie einen Endpunkt an, um Leasing-, Buchungs- oder Wartungsereignisse zu senden.', '<button class="btn btn-primary btn-sm" type="button" data-action="new-webhook">Webhook hinzufügen</button>')}
+        <div class="info-banner" style="margin-top:16px">${icon('shield')}<div><strong>URLs und Secrets bleiben geschützt</strong><p>Webhook-URL und HMAC-Secret werden verschlüsselt gespeichert. Private, lokale und Metadaten-Ziele sind blockiert, sofern der Host nicht über <code>WEBHOOK_ALLOW_PRIVATE_HOSTS</code> freigegeben ist.</p></div></div>
+      </div>
+      <div class="card-footer"><span class="text-muted">Retry alle 6 Stunden; Dedupe über Benachrichtigungs-Deliveries.</span><span class="text-muted">Keine E-Mail-Adressen in Webhook-Payloads.</span></div>
+    </section>`;
+}
+
 function renderIntegrations() {
   const integrations = db.integrations;
   if (!integrations) {
@@ -2104,6 +2142,7 @@ function renderIntegrations() {
       <section class="card">${emptyState('shield', 'Keine Integrationsdaten verfügbar', 'Diese Seite ist für Rollen mit der Berechtigung „Organisation bearbeiten“ vorgesehen.')}</section>`;
   }
   const cards = [
+    renderWebhooksCard(integrations),
     renderSsoIntegrationCard(integrations),
     renderTeamsIntegrationCard(integrations),
     renderClamavIntegrationCard(integrations),

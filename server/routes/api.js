@@ -84,6 +84,13 @@ const { deliverTeams } = require('../lib/teams');
 const { scanBuffer } = require('../lib/virus-scan');
 const { restartAllSchedulers } = require('../lib/scheduler-control');
 const {
+  createWebhook,
+  updateWebhook,
+  deleteWebhook,
+  testWebhook,
+  listWebhooksSafe
+} = require('../lib/webhooks');
+const {
   isLocationsEnabled,
   getLocation,
   assertLocationAssignable
@@ -2010,6 +2017,77 @@ router.patch('/user-policy', requireAdmin, (req, res, next) => {
     sendState(req, res);
   } catch (error) {
     next(error);
+  }
+});
+
+/* =========================================================
+   Webhooks
+   ========================================================= */
+function webhookHttpError(error) {
+  if (error?.name === 'WebhookError') return new HttpError(400, error.message);
+  return error;
+}
+
+router.get('/webhooks', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    res.json({ webhooks: listWebhooksSafe(db, { dataDir: DATA_DIR }) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/webhooks', requirePermission('settings_manage'), async (req, res, next) => {
+  try {
+    const webhook = await createWebhook(db, req.body || {}, { dataDir: DATA_DIR });
+    audit(req, 'webhook_added', 'webhook', webhook.id, {
+      name: webhook.name,
+      format: webhook.format,
+      events: webhook.events,
+      enabled: webhook.enabled,
+      host: webhook.host
+    });
+    sendState(req, res, 201);
+  } catch (error) {
+    next(webhookHttpError(error));
+  }
+});
+
+router.patch('/webhooks/:id', requirePermission('settings_manage'), async (req, res, next) => {
+  try {
+    const webhook = await updateWebhook(db, req.params.id, req.body || {}, { dataDir: DATA_DIR });
+    audit(req, 'webhook_updated', 'webhook', webhook.id, {
+      name: webhook.name,
+      format: webhook.format,
+      events: webhook.events,
+      enabled: webhook.enabled,
+      urlChanged: Object.prototype.hasOwnProperty.call(req.body || {}, 'url') && Boolean(String(req.body?.url || '').trim()),
+      secretChanged: typeof req.body?.secret === 'string' && Boolean(req.body.secret.trim()),
+      secretCleared: req.body?.clearSecret === true
+    });
+    sendState(req, res);
+  } catch (error) {
+    next(webhookHttpError(error));
+  }
+});
+
+router.delete('/webhooks/:id', requirePermission('settings_manage'), (req, res, next) => {
+  try {
+    const webhook = deleteWebhook(db, req.params.id);
+    if (!webhook) throw new HttpError(404, 'Webhook wurde nicht gefunden.');
+    audit(req, 'webhook_deleted', 'webhook', webhook.id, { name: webhook.name });
+    sendState(req, res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/webhooks/:id/test', requirePermission('settings_manage'), async (req, res, next) => {
+  try {
+    const result = await testWebhook(db, req.params.id, { dataDir: DATA_DIR, actorId: req.user.id });
+    if (!result) throw new HttpError(404, 'Webhook wurde nicht gefunden.');
+    res.json(result);
+  } catch (error) {
+    next(webhookHttpError(error));
   }
 });
 

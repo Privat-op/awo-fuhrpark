@@ -5,6 +5,7 @@ const path = require('node:path');
 const { HttpError } = require('./validation');
 const { getRetentionSettings } = require('./retention');
 const { encryptIntegrationSecret, decryptIntegrationSecret } = require('./integrations-crypto');
+const { listWebhooksSafe } = require('./webhooks');
 
 const TRUTHY = new Set(['1', 'true', 'yes', 'on']);
 const MIN_INTERVAL_MS = 60000;
@@ -461,6 +462,13 @@ function safeIntegrationsConfig(db, { dataDir } = {}) {
       reminder: getReminderSchedulerConfig(db),
       retention: getRetentionSchedulerConfig(db)
     },
+    webhooks: (() => {
+      try {
+        return listWebhooksSafe(db);
+      } catch {
+        return [];
+      }
+    })(),
     system: getSystemStatus(),
     retention: getRetentionSettings(db)
   };

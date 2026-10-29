@@ -305,6 +305,18 @@ CREATE TABLE IF NOT EXISTS notification_deliveries (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS webhooks (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  url_enc TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  format TEXT NOT NULL DEFAULT 'generic' CHECK (format IN ('generic', 'teams', 'discord', 'slack')),
+  events TEXT NOT NULL DEFAULT '[]',
+  secret_enc TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS integration_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   sso_enabled INTEGER NOT NULL DEFAULT 0 CHECK (sso_enabled IN (0, 1)),

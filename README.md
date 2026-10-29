@@ -20,6 +20,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Leasingüberwachung mit Laufzeit, Gesamt-Kilometerlimit, Warnschwellen 80/90/100 % und Erinnerungen 90/30 Tage vor Leasingende
 - Optionaler E-Mail-Versand an Fuhrparkleitung und Administration bei Leasing-Schwellen, Buchungsanfragen sowie Wartungs-/TÜV-Erinnerungen; SMTP-Konfiguration ausschließlich für Administrator:innen
 - **Optionaler Teams-Webhook:** MessageCards für Leasing, Buchungsanfragen/-entscheidungen und Wartungs-/TÜV-Erinnerungen; ohne Graph/App-Registration, ohne URL in Logs
+- **Allgemeine Webhooks:** mehrere Endpunkte mit Format (generisch/Teams/Discord/Slack), Event-Abos, HMAC, SSRF-Schutz, Retry und Dedupe
 - **Optionale ClamAV-Prüfung:** Uploads (PDF-Belege und Bilder) per clamd INSTREAM vor dem Speichern, Fail-Closed und Audit `upload_blocked` ohne Dateiinhalte
 - **DSGVO-Retention (technisch):** konfigurierbare Aufbewahrung für Audit, Sessions, Reset-Tokens und Benachrichtigungs-Deliveries inklusive Dry-Run; keine automatische Löschung von Buchungen/Kosten/Fahrtenbuch
 - Dauerhafte Fahrzeug-Sperre mit Begründung, Audit und serverseitiger 409-Sperre für neue Buchungen und Anfragen
@@ -355,7 +356,7 @@ Das Audit-Log ist für **alle angemeldeten Nutzer** unter **Audit-Log** erreichb
 - Lesezugriffe auf das Audit-Log werden als Meta-Einträge ohne Inhalte der gelesenen Einträge protokolliert. Meta-Einträge sind nur für `audit_view_all` und Administrator:innen sichtbar.
 - Retention, Export und Löschung bleiben unverändert: Es gibt in dieser Version keine Lösch-, Rotations- oder Exportfunktion für Audit-Einträge.
 
-Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 15`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`; die Integrations-Migration ergänzt `integration_settings` mit einer Zeile; die Advanced-Migration ergänzt `app_base_url` und die Scheduler-Parameter. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
+Die Migrationen sind idempotent und führen die Datenbank auf `user_version = 16`: Die Audit-Migration ergänzt Snapshot-Spalten und Indizes und befüllt bestehende Einträge nach; die Superadmin-Migration legt die systemgeschützte Rolle `superadmin` mit Rang 2.000.000 an; die Leasing-Migration ergänzt Fahrzeug-Leasingfelder, SMTP-Einstellungen und die Dedupe-Tabelle für Benachrichtigungen; die Kostenstellen-Migration ergänzt `cost_centers`, die Zuordnungsfelder und die Manager-Rechte; die Dark-Mode-Migration ergänzt `users.color_mode` und `settings.default_color_mode`; die MFA-Migration ergänzt `user_mfa` und `mfa_recovery_codes`; die Passwort-Reset-Migration ergänzt `password_reset_tokens`; die Passkey-Migration ergänzt `user_passkeys` und `passkey_attempts`; die SSO-Migration ergänzt `user_sso`; die Retention-Migration ergänzt die vier Retention-Spalten in `settings`; die Standort-Migration ergänzt `locations` sowie `users.location_id` und `vehicles.location_id`; die Integrations-Migration ergänzt `integration_settings` mit einer Zeile; die Advanced-Migration ergänzt `app_base_url` und die Scheduler-Parameter; die Webhook-Migration ergänzt `webhooks` und übernimmt einen vorhandenen DB-Teams-Webhook. Das Superadmin-Konto selbst wird ausschließlich aus der Datei gebootstrappt.
 
 ## Leasing und E-Mail
 
@@ -405,6 +406,20 @@ Unter **Einstellungen → Integrationen** bündelt die Anwendung SSO, Teams, Cla
 
 Änderungen an RP-ID/Origin können bestehende Passkeys ungültig machen; die Seite warnt davor. Infrastruktur- und Bootstrap-Werte (`SESSION_SECRET`, `DATA_DIR`, `PORT`, `HOST`, `SUPERADMIN_FILE`, `MFA_ENCRYPTION_KEY`, `TRUST_PROXY`, `COOKIE_SECURE`, `NODE_ENV`) bleiben ausschließlich ENV-verwaltet.
 
+## Webhooks (Admin)
+
+Unter **Einstellungen → Integrationen → Webhooks** lassen sich mehrere Endpunkte verwalten. Die Liste ist die primäre Oberfläche; die Teams-Karte bleibt als **Legacy/Preset** für `TEAMS_WEBHOOK_URL` erhalten.
+
+- **Formate:** `generic` (`event`, `title`, `text`, `timestamp`, `data`), `teams` (MessageCard), `discord` (`content`, max. 2.000 Zeichen) und `slack` (`text`).
+- **Events:** Leasing, Buchungsanfragen und Wartung/TÜV pro Webhook abonnierbar; ein Test-Event steht für den Test-Button bereit.
+- **URL und Secret:** Webhook-URL und optionales HMAC-Secret werden mit AES-256-GCM verschlüsselt (`integration_settings`-Schlüssel bzw. `DATA_DIR/integrations.key`). UI, State, Export und Audit zeigen nur `urlSet`, `secretSet` und den Hostnamen.
+- **HMAC:** Bei gesetztem Secret werden `X-AWO-Timestamp`, `X-AWO-Event`, `X-AWO-Delivery` und `X-AWO-Signature: sha256=<hex>` über `${timestamp}.${body}` gesendet.
+- **SSRF-Schutz:** Nur `http`/`https`; Hostnamen werden aufgelöst. Loopback-, private, Link-Local- und Metadaten-Adressen sind blockiert. Interne Ziele nur explizit über `WEBHOOK_ALLOW_PRIVATE_HOSTS` (kommagetrennte Hostnamen, exakt). Redirects werden manuell verfolgt (max. 2) und jedes Ziel erneut geprüft.
+- **Zustellung:** Timeout 8 s, Antwort-Body wird max. 64 KB gelesen und verworfen, keine Response-Inhalte in Logs. Dedupe/Retry über `notification_deliveries` (`channel = webhook:<id>`, 6 h Retry, 15 min Pending-Timeout). Fehler blockieren API und Scheduler nicht.
+- **Payloads:** keine E-Mail-Adressen/Empfängerlisten, keine Secrets; Empfänger nur als Anzahl in internen Audit-Einträgen.
+- **Audit:** `webhook_added`, `webhook_updated`, `webhook_deleted`, `webhook_test`, `webhook_delivery` mit Status/Errorcode, ohne URL/Secret.
+- **Migration:** Ein vorhandener DB-Teams-Webhook wird einmalig übernommen (Discord-Hosts → `discord`, sonst `teams`) und aus `integration_settings` entfernt, damit nichts doppelt gesendet wird. `TEAMS_WEBHOOK_URL` bleibt als ENV-Fallback aktiv; nach der Übernahme die ENV-Variable entfernen, sonst sendet Teams weiterhin parallel.
+
 ## Erweitert (Admin)
 
 Unter **Einstellungen → Erweitert** liegen Basis-URL und Scheduler-Parameter. Die Seite ist für `settings_manage` sichtbar; alle Karten sind standardmäßig eingeklappt.
@@ -417,9 +432,9 @@ Unter **Einstellungen → Erweitert** liegen Basis-URL und Scheduler-Parameter. 
 - **Systemstatus:** Zeigt `NODE_ENV`, `HOST`, `PORT`, `DATA_DIR`, `TRUST_PROXY`, `COOKIE_SECURE`, den Superadmin-Dateistatus sowie die Schlüsselquelle für MFA und Integrationen. Es werden keine Secrets oder Schlüsselwerte ausgegeben.
 - **Warum ENV-only:** Diese Infrastruktur-, Bootstrap- und Sicherheitswerte betreffen Container, Datenverzeichnis und Schlüsselverwaltung. Sie sind bewusst nicht über die UI änderbar, damit eine kompromittierte Admin-Sitzung die Laufzeitumgebung nicht umkonfigurieren kann.
 
-## Teams-Benachrichtigungen (optional)
+## Teams-Benachrichtigungen (Legacy/Preset)
 
-Mit `TEAMS_WEBHOOK_URL` kann ein Incoming-Webhook für Microsoft Teams konfiguriert werden. Es wird kein Graph, keine App-Registration und kein Secret im Repository benötigt.
+Mit `TEAMS_WEBHOOK_URL` kann weiterhin ein Incoming-Webhook für Microsoft Teams konfiguriert werden. Für neue Endpunkte und Discord/Slack bitte **Einstellungen → Integrationen → Webhooks** verwenden; die Teams-Karte ist als Legacy/Preset markiert. Es wird kein Graph, keine App-Registration und kein Secret im Repository benötigt.
 
 - Sendet MessageCards für Leasing-Warnungen, neue/entschiedene Buchungsanfragen und Wartungs-/TÜV-Erinnerungen.
 - Ohne konfigurierte URL ist die Funktion ein No-op; Versandfehler blockieren weder API-Aktionen noch Scheduler.
@@ -595,8 +610,9 @@ Der Lasttest ist kein Produktions-Benchmark und darf nicht gegen den Produktivse
 | `SSO_AUTO_PROVISION` | `true` legt unbekannte Konten automatisch an; Standard aus. |
 | `SSO_DEFAULT_ROLE` | Rolle für JIT-Konten, Standard `user` (Standardbenutzer, inkl. Fahrerprofil); `superadmin` ist nie zulässig. |
 | `SSO_GROUP_CLAIM`, `SSO_ADMIN_GROUP`, `SSO_MANAGER_GROUP` | Gruppen-Claim und Gruppen-IDs für das Rollenmapping. |
-| `TEAMS_WEBHOOK_URL` | Optionaler Incoming-Webhook für Teams; leer = deaktiviert. Nicht loggen/committen. |
+| `TEAMS_WEBHOOK_URL` | Optionaler Incoming-Webhook für Teams (Legacy/Preset); leer = deaktiviert. Nicht loggen/committen. |
 | `TEAMS_ENABLED` | Optional; explizit `true`/`false`. Ohne Wert bleibt ein per ENV gesetzter Webhook wie bisher aktiv. |
+| `WEBHOOK_ALLOW_PRIVATE_HOSTS` | Kommagetrennte Hostnamen, für die private/interne Webhook-Ziele erlaubt sind; Standard leer. Nur für vertrauenswürdige interne Ziele setzen. |
 | `VIRUS_SCAN_ENABLED` | `1` aktiviert die ClamAV-Prüfung; Standard aus. |
 | `CLAMAV_HOST`, `CLAMAV_PORT` | clamd-Ziel, Standard `127.0.0.1:3310`. |
 | `VIRUS_SCAN_FAIL_CLOSED` | `true` (Standard bei aktivierter Prüfung) blockiert bei Scannerfehlern. |

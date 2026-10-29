@@ -9,6 +9,7 @@ const {
 } = require('./smtp');
 const { teamsConfigured, deliverTeams } = require('./teams');
 const { getTeamsIntegrationConfig, getReminderSchedulerConfig } = require('./integrations');
+const { dispatchWebhooks, webhooksConfiguredForEvent } = require('./webhooks');
 
 const THRESHOLDS = [30, 14, 7];
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
@@ -178,11 +179,12 @@ async function runMaintenanceNotifications(db, options = {}) {
   const config = loadSmtpConfig(db, { dataDir });
   const smtpReady = config.enabled && validateSmtpConfig(config, { requireEnabled: true }).length === 0;
   const teamsReady = teamsConfigured(db) && getTeamsIntegrationConfig(db).sendMaintenance;
-  if (!smtpReady && !teamsReady) {
+  const webhooksReady = webhooksConfiguredForEvent(db, 'maintenance');
+  if (!smtpReady && !teamsReady && !webhooksReady) {
     return { skipped: 'smtp_not_configured', sent: 0, failed: 0, reminders: [] };
   }
   const recipients = smtpReady ? getRecipients(db) : [];
-  if (smtpReady && !recipients.length && !teamsReady) {
+  if (smtpReady && !recipients.length && !teamsReady && !webhooksReady) {
     return { skipped: 'no_recipients', sent: 0, failed: 0, reminders: [] };
   }
   const items = collectMaintenanceReminders(db, now);
@@ -195,6 +197,8 @@ async function runMaintenanceNotifications(db, options = {}) {
   let failed = 0;
   let teamsSent = 0;
   let teamsFailed = 0;
+  let webhookSent = 0;
+  let webhookFailed = 0;
   for (const item of items) {
     const delivery = db.prepare('SELECT * FROM notification_deliveries WHERE dedupe_key = ?').get(item.dedupeKey);
     if (smtpReady && recipients.length && deliveryIsDue(delivery, nowMs)) {
@@ -259,6 +263,29 @@ async function runMaintenanceNotifications(db, options = {}) {
       teamsSent += teamResult.sent || 0;
       teamsFailed += teamResult.failed || 0;
     }
+
+    if (webhooksReady) {
+      const webhookResult = await dispatchWebhooks(db, 'maintenance', {
+        dedupeKey: item.dedupeKey,
+        vehicleId: item.vehicleId,
+        kind: item.kind,
+        title: `[${organization}] ${item.subject}`,
+        text: item.text,
+        data: {
+          vehicle: { id: item.vehicleId, name: item.vehicleName, plate: item.plate },
+          kind: item.kind,
+          dueDate: item.dueDate ? String(item.dueDate).slice(0, 10) : null
+        }
+      }, {
+        dataDir,
+        now,
+        actorId: null,
+        fetchImpl: options.webhookFetch,
+        lookupImpl: options.webhookLookup
+      });
+      webhookSent += webhookResult.sent || 0;
+      webhookFailed += webhookResult.failed || 0;
+    }
   }
   return {
     skipped: null,
@@ -266,6 +293,8 @@ async function runMaintenanceNotifications(db, options = {}) {
     failed,
     teamsSent,
     teamsFailed,
+    webhookSent,
+    webhookFailed,
     reminders: items.map((item) => item.dedupeKey)
   };
 }

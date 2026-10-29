@@ -11,6 +11,7 @@ const {
 } = require('./smtp');
 const { teamsConfigured, deliverTeams } = require('./teams');
 const { getTeamsIntegrationConfig, getLeasingSchedulerConfig } = require('./integrations');
+const { dispatchWebhooks, webhooksConfiguredForEvent } = require('./webhooks');
 
 const KM_THRESHOLDS = [80, 90, 100];
 const END_THRESHOLDS = [90, 30];
@@ -220,11 +221,12 @@ async function runLeasingNotifications(db, options = {}) {
   const config = loadSmtpConfig(db, { dataDir });
   const smtpReady = config.enabled && validateSmtpConfig(config, { requireEnabled: true }).length === 0;
   const teamsReady = teamsConfigured(db) && getTeamsIntegrationConfig(db).sendLeasing;
-  if (!smtpReady && !teamsReady) {
+  const webhooksReady = webhooksConfiguredForEvent(db, 'leasing');
+  if (!smtpReady && !teamsReady && !webhooksReady) {
     return { skipped: 'smtp_not_configured', sent: 0, failed: 0, notifications: [] };
   }
   const recipients = smtpReady ? getLeasingRecipients(db) : [];
-  if (smtpReady && !recipients.length && !teamsReady) {
+  if (smtpReady && !recipients.length && !teamsReady && !webhooksReady) {
     return { skipped: 'no_recipients', sent: 0, failed: 0, notifications: [] };
   }
   const notifications = collectLeasingNotifications(db, now);
@@ -239,6 +241,8 @@ async function runLeasingNotifications(db, options = {}) {
   let failed = 0;
   let teamsSent = 0;
   let teamsFailed = 0;
+  let webhookSent = 0;
+  let webhookFailed = 0;
 
   for (const notification of notifications) {
     const delivery = db.prepare('SELECT * FROM notification_deliveries WHERE dedupe_key = ?').get(notification.dedupeKey);
@@ -305,6 +309,29 @@ async function runLeasingNotifications(db, options = {}) {
       teamsSent += teamResult.sent || 0;
       teamsFailed += teamResult.failed || 0;
     }
+
+    if (webhooksReady) {
+      const webhookResult = await dispatchWebhooks(db, 'leasing', {
+        dedupeKey: notification.dedupeKey,
+        vehicleId: notification.vehicleId,
+        kind: notification.kind,
+        title: `[${organization}] ${notification.subject}`,
+        text: notification.text,
+        data: {
+          vehicle: { id: notification.vehicleId, name: notification.vehicleName, plate: notification.plate },
+          kind: notification.kind,
+          severity: notification.severity || null
+        }
+      }, {
+        dataDir,
+        now,
+        actorId: null,
+        fetchImpl: options.webhookFetch,
+        lookupImpl: options.webhookLookup
+      });
+      webhookSent += webhookResult.sent || 0;
+      webhookFailed += webhookResult.failed || 0;
+    }
   }
 
   return {
@@ -313,6 +340,8 @@ async function runLeasingNotifications(db, options = {}) {
     failed,
     teamsSent,
     teamsFailed,
+    webhookSent,
+    webhookFailed,
     notifications: notifications.map((notification) => notification.dedupeKey)
   };
 }

@@ -1607,6 +1607,10 @@ function dispatchAction(element) {
     case 'cycle-color-mode': cycleColorMode(); break;
     case 'smtp-test': testSmtpSettings(); break;
     case 'integration-test': runIntegrationTest(element.dataset.kind, element); break;
+    case 'new-webhook': openWebhookModal(); break;
+    case 'edit-webhook': openWebhookModal(id); break;
+    case 'delete-webhook': deleteWebhookConfirm(id); break;
+    case 'test-webhook': testWebhookById(id); break;
     case 'unlink-admin-driver': unlinkAdminDriver(); break;
     case 'remove-branding-logo': removeBrandingLogoPreview(); break;
     case 'set-brand-accent': setBrandAccent(element.dataset.color); break;

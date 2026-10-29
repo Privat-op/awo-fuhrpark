@@ -34,6 +34,7 @@ const { migrateSsoSchema } = require('./lib/sso-schema');
 const { migrateRetentionSchema } = require('./lib/retention-schema');
 const { migrateLocationsSchema } = require('./lib/locations-schema');
 const { migrateIntegrationsSchema, migrateAdvancedSchema } = require('./lib/integrations-schema');
+const { migrateWebhooksSchema } = require('./lib/webhook-schema');
 const {
   FLOW_TTL_MS: SSO_FLOW_TTL_MS,
   getSsoConfig,
@@ -293,6 +294,11 @@ try {
   getIntegrationsKey(DATA_DIR);
 } catch (error) {
   console.warn(`Warnung: Integrations-Secrets sind nicht verfügbar: ${error.message}`);
+}
+try {
+  migrateWebhooksSchema(db, { dataDir: DATA_DIR });
+} catch (error) {
+  console.warn(`Warnung: Webhook-Migration konnte nicht abgeschlossen werden: ${error.message}`);
 }
 bootstrap(db);
 try {

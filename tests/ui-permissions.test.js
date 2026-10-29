@@ -540,6 +540,8 @@ test('Integrationsseite rendert Karten, maskiert Secrets und bleibt Berechtigten
   applyClientSession(admin, clients.admin);
   const html = vm.runInContext('renderIntegrations()', admin.context);
   assert.match(html, /id="integrationSsoForm"/);
+  assert.match(html, /id="webhooksCard"/);
+  assert.match(html, /data-action="new-webhook"/);
   assert.match(html, /id="integrationTeamsForm"/);
   assert.match(html, /id="integrationClamavForm"/);
   assert.match(html, /id="integrationWebauthnForm"/);
@@ -562,6 +564,31 @@ test('Integrationsseite rendert Karten, maskiert Secrets und bleibt Berechtigten
   assert.match(restricted, /id="integrationSsoForm"/);
   assert.doesNotMatch(restricted, /id="retentionForm"/);
   assert.doesNotMatch(restricted, /id="integrationLocationsForm"/);
+
+  const withWebhook = {
+    ...clients.admin,
+    state: JSON.parse(JSON.stringify(clients.admin.state))
+  };
+  withWebhook.state.integrations = {
+    ...withWebhook.state.integrations,
+    webhooks: [{
+      id: 'webhook-1',
+      name: 'Ops Discord',
+      format: 'discord',
+      events: ['leasing', 'maintenance'],
+      enabled: true,
+      host: 'discord.com',
+      urlSet: true,
+      secretSet: true
+    }]
+  };
+  const webhookHarness = createClientHarness();
+  applyClientSession(webhookHarness, withWebhook);
+  const webhookHtml = vm.runInContext('renderIntegrations()', webhookHarness.context);
+  assert.match(webhookHtml, /Ops Discord/);
+  assert.match(webhookHtml, /discord\.com/);
+  assert.match(webhookHtml, /data-action="test-webhook"/);
+  assert.doesNotMatch(webhookHtml, /https:\/\/discord\.com/);
 });
 
 test('Erweitert rendert eingeklappte Karten und Systemstatus ohne Secrets', () => {

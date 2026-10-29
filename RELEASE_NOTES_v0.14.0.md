@@ -24,4 +24,4 @@
 ## Tests
 
 - Neue Tests für Migration 14→15, ENV-vor-DB, Validierung, Scheduler-Neustart, Passwort-Reset-Link, Systemstatus und UI-Sichtbarkeit.
-- Vollständige Regression: **187/187 Tests PASS**.
+- Vollständige Regression: **196/196 Tests PASS**.
