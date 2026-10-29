@@ -75,10 +75,21 @@ function migrateLegacyTeamsWebhook(db, { dataDir } = {}) {
   return true;
 }
 
+function cleanupLegacyWithExistingWebhooks(db) {
+  if (!tableExists(db, 'integration_settings')) return false;
+  const row = db.prepare('SELECT teams_webhook_enc FROM integration_settings WHERE id = 1').get();
+  if (!row?.teams_webhook_enc) return false;
+  const count = Number(db.prepare('SELECT COUNT(*) AS count FROM webhooks').get().count) || 0;
+  if (!count) return false;
+  db.prepare('UPDATE integration_settings SET teams_webhook_enc = NULL, teams_enabled = 0 WHERE id = 1').run();
+  return true;
+}
+
 function migrateWebhooksSchema(db, { dataDir } = {}) {
   const previous = Number(db.pragma('user_version', { simple: true })) || 0;
   db.transaction(() => {
     ensureWebhooksTable(db);
+    cleanupLegacyWithExistingWebhooks(db);
     if (previous < WEBHOOKS_SCHEMA_VERSION) {
       try {
         migrateLegacyTeamsWebhook(db, { dataDir });

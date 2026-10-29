@@ -226,6 +226,15 @@ test('Migration räumt den Legacy-Webhook auch bei vorhandenen Webhooks auf', ()
     const settings = database.prepare('SELECT teams_webhook_enc, teams_enabled FROM integration_settings WHERE id = 1').get();
     assert.equal(settings.teams_webhook_enc, null);
     assert.equal(settings.teams_enabled, 0);
+
+    // Already migrated databases (user_version = 16) are cleaned up on the next start.
+    database.prepare('UPDATE integration_settings SET teams_webhook_enc = ?, teams_enabled = 1 WHERE id = 1').run(legacy);
+    assert.equal(Number(database.pragma('user_version', { simple: true })), WEBHOOKS_SCHEMA_VERSION);
+    assert.equal(migrateWebhooksSchema(database, { dataDir }), false);
+    assert.equal(database.prepare('SELECT COUNT(*) AS count FROM webhooks').get().count, 1);
+    const cleaned = database.prepare('SELECT teams_webhook_enc, teams_enabled FROM integration_settings WHERE id = 1').get();
+    assert.equal(cleaned.teams_webhook_enc, null);
+    assert.equal(cleaned.teams_enabled, 0);
   } finally {
     database.close();
     fs.rmSync(dataDir, { recursive: true, force: true });

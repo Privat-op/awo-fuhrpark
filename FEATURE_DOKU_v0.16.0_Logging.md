@@ -69,7 +69,7 @@ Produktion: `LOG_LEVEL=info`, `LOG_REQUESTS=0`, `LOG_FORMAT=text`, `LOG_DIR=DATA
 
 ## 9. Migration-16-Cleanup
 
-Wenn bereits eine `webhooks`-Zeile existiert, entfernt die Migration den Legacy-DB-Teams-Webhook (`teams_webhook_enc = NULL`, `teams_enabled = 0`), ohne bestehende Webhook-Zeilen zu löschen. Damit entstehen keine doppelten Legacy-Zustellungen.
+Wenn bereits eine `webhooks`-Zeile existiert, entfernt die Migration den Legacy-DB-Teams-Webhook (`teams_webhook_enc = NULL`, `teams_enabled = 0`), ohne bestehende Webhook-Zeilen zu löschen. Die Bereinigung läuft auch bei bereits auf `user_version = 16` stehenden Datenbanken beim nächsten Start. Damit entstehen keine doppelten Legacy-Zustellungen.
 
 ## 10. Tests
 
