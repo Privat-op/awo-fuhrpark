@@ -18,6 +18,7 @@ const SQLiteSessionStore = require('./lib/session-store');
 const { randomToken, safeEqual, ensureCsrfToken, csrfProtection } = require('./lib/security');
 const { HttpError } = require('./lib/validation');
 const { writeAudit } = require('./lib/audit');
+const { logger, requestLogger, logRequestError } = require('./lib/logger');
 const { migrateAuditSchema } = require('./lib/audit-migration');
 const { getBranding } = require('./lib/branding');
 const { uploadPath } = require('./lib/files');
@@ -71,7 +72,16 @@ const { startLeasingScheduler } = require('./lib/leasing');
 const { startMaintenanceReminderScheduler } = require('./lib/maintenance-reminders');
 const { startRetentionScheduler } = require('./lib/retention');
 const { registerScheduler, startAllSchedulers } = require('./lib/scheduler-control');
-const { getRetentionSchedulerConfig, getAppBaseUrl } = require('./lib/integrations');
+const {
+  getRetentionSchedulerConfig,
+  getAppBaseUrl,
+  getSsoIntegrationConfig,
+  getTeamsIntegrationConfig,
+  getClamavIntegrationConfig,
+  getWebAuthnIntegrationConfig,
+  getLocationsIntegrationConfig,
+  getSystemStatus
+} = require('./lib/integrations');
 const {
   ensureRoles,
   getRolePermissions,
@@ -108,7 +118,7 @@ if (!sessionSecret || sessionSecret.length < 32) {
     throw new Error('SESSION_SECRET muss gesetzt sein und mindestens 32 Zeichen lang sein.');
   }
   sessionSecret = 'development-only-session-secret-change-me-now';
-  console.warn('Warnung: SESSION_SECRET fehlt. Es wird ein unsicherer Entwicklungswert verwendet.');
+  logger.warn('SESSION_SECRET fehlt; es wird ein unsicherer Entwicklungswert verwendet.');
 }
 
 const loginTemplate = fs.readFileSync(path.join(VIEWS_DIR, 'login.html'), 'utf8');
@@ -293,23 +303,23 @@ getMfaKey(DATA_DIR);
 try {
   getIntegrationsKey(DATA_DIR);
 } catch (error) {
-  console.warn(`Warnung: Integrations-Secrets sind nicht verfügbar: ${error.message}`);
+  logger.warn('Integrations-Secrets sind nicht verfügbar.', { error });
 }
 try {
   migrateWebhooksSchema(db, { dataDir: DATA_DIR });
 } catch (error) {
-  console.warn(`Warnung: Webhook-Migration konnte nicht abgeschlossen werden: ${error.message}`);
+  logger.warn('Webhook-Migration konnte nicht abgeschlossen werden.', { error });
 }
 bootstrap(db);
 try {
-  ensureSuperadmin(db, { projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR });
+  ensureSuperadmin(db, { projectRoot: PROJECT_ROOT, dataDir: DATA_DIR, uploadDir: UPLOAD_DIR, logger });
 } catch (error) {
-  console.warn('Warnung: Superadmin-Bootstrap konnte nicht abgeschlossen werden; der Superadmin-Login bleibt gesperrt. Das System läuft weiter.');
+  logger.warn('Superadmin-Bootstrap fehlgeschlagen; der Superadmin-Login bleibt gesperrt.', { error });
 }
 try {
   startAutoAnonymizer();
 } catch (error) {
-  console.warn('Automatische Anonymisierung konnte nicht gestartet werden:', error.message);
+  logger.warn('Automatische Anonymisierung konnte nicht gestartet werden.', { error });
 }
 registerScheduler('leasing', () => startLeasingScheduler(db, { dataDir: DATA_DIR }));
 registerScheduler('maintenance', () => startMaintenanceReminderScheduler(db, { dataDir: DATA_DIR }));
@@ -319,6 +329,8 @@ startAllSchedulers();
 app.disable('x-powered-by');
 if (trustProxy) app.set('trust proxy', 1);
 app.set('etag', 'strong');
+
+app.use(requestLogger());
 
 app.use((req, res, next) => {
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
@@ -634,7 +646,7 @@ app.post('/forgot-password', passwordResetRequestLimiter, async (req, res, next)
     }
     const baseUrl = getAppBaseUrl(db) || `${req.protocol}://${req.get('host')}`;
     requestPasswordReset(db, { email, dataDir: DATA_DIR, baseUrl })
-      .catch(() => console.warn('Passwort-Reset konnte nicht verarbeitet werden.'));
+      .catch((error) => logger.warn('Passwort-Reset konnte nicht verarbeitet werden.', { error }));
     return renderForgotPassword(req, res, { notice: PASSWORD_RESET_NOTICE, email });
   } catch (error) {
     return next(error);
@@ -682,8 +694,8 @@ app.post('/reset-password', passwordResetSubmitLimiter, (req, res) => {
   let result;
   try {
     result = resetPasswordWithToken(db, token, newPassword);
-  } catch {
-    console.warn('Passwort-Reset konnte nicht abgeschlossen werden.');
+  } catch (error) {
+    logger.error('Passwort-Reset konnte nicht abgeschlossen werden.', { error });
     return renderResetPassword(req, res, {
       status: 500,
       error: 'Das Passwort konnte nicht geändert werden. Bitte fordern Sie einen neuen Link an.',
@@ -698,7 +710,7 @@ app.post('/reset-password', passwordResetSubmitLimiter, (req, res) => {
     });
   }
   return req.session.destroy((error) => {
-    if (error) console.warn('Reset-Sitzung konnte nicht verworfen werden.');
+    if (error) logger.warn('Reset-Sitzung konnte nicht verworfen werden.', { error });
     res.clearCookie('awo.sid');
     return res.redirect(303, '/login?reset=1');
   });
@@ -856,7 +868,7 @@ app.post('/login/mfa', mfaLimiter, async (req, res, next) => {
 app.post('/login/mfa/cancel', (req, res) => {
   if (!csrfMatches(req, String(req.body?._csrf || ''))) return res.redirect('/login');
   req.session.destroy((error) => {
-    if (error) console.warn('MFA-Sitzung konnte nicht verworfen werden:', error.message);
+    if (error) logger.warn('MFA-Sitzung konnte nicht verworfen werden.', { error });
     res.clearCookie('awo.sid');
     res.redirect(303, '/login');
   });
@@ -1018,10 +1030,10 @@ app.use((req, res) => {
 });
 
 app.use((error, req, res, _next) => {
-  if (res.headersSent) return;
   const status = error instanceof HttpError ? error.status : Number(error.status) || 500;
+  logRequestError(req, status, error);
+  if (res.headersSent) return;
   const message = status >= 500 ? 'Interner Serverfehler.' : error.message;
-  if (status >= 500) console.error(error);
   if (wantsJson(req)) {
     return res.status(status).json({ error: message, details: error.details || null });
   }
@@ -1029,19 +1041,40 @@ app.use((error, req, res, _next) => {
 });
 
 const server = app.listen(PORT, HOST, () => {
-  console.log(`AWO Fuhrparkmanagement läuft auf http://${HOST}:${PORT}`);
-  console.log(`Datenverzeichnis: ${DATA_DIR}`);
-  if (!cookieSecure) console.log('Hinweis: Secure-Cookies sind deaktiviert (COOKIE_SECURE=false). Für HTTPS-Produktivbetrieb aktivieren.');
-  if (isProduction && !cookieSecure) console.warn('Warnung: NODE_ENV=production, aber COOKIE_SECURE ist nicht aktiviert. Bitte hinter HTTPS betreiben und COOKIE_SECURE=true setzen.');
+  const version = (() => {
+    try { return require('../package.json').version; } catch { return 'unknown'; }
+  })();
+  const system = getSystemStatus();
+  logger.info('Server gestartet', {
+    version,
+    commit: process.env.APP_COMMIT || 'unknown',
+    userVersion: Number(db.pragma('user_version', { simple: true })) || 0,
+    dataDir: DATA_DIR,
+    port: PORT,
+    nodeEnv: process.env.NODE_ENV || 'development',
+    features: {
+      ssoConfigured: Boolean(getSsoIntegrationConfig(db).configured),
+      teamsConfigured: Boolean(getTeamsIntegrationConfig(db).configured),
+      clamavEnabled: Boolean(getClamavIntegrationConfig(db).enabled),
+      webAuthnEnabled: Boolean(getWebAuthnIntegrationConfig(db).enabled),
+      locationsEnabled: Boolean(getLocationsIntegrationConfig(db).enabled)
+    },
+    keys: {
+      mfa: system.mfaKeySource,
+      integrations: system.integrationsKeySource
+    }
+  });
+  if (!cookieSecure) logger.warn('Secure-Cookies sind deaktiviert; für HTTPS-Produktivbetrieb COOKIE_SECURE=true setzen.');
+  if (isProduction && !cookieSecure) logger.warn('NODE_ENV=production, aber COOKIE_SECURE ist nicht aktiviert.');
 });
 
 function shutdown(signal) {
-  console.log(`${signal} empfangen, Server wird beendet …`);
+  logger.info('Server wird beendet.', { signal });
   server.close(() => {
     try {
       db.close();
     } catch (error) {
-      console.warn('Datenbank konnte nicht sauber geschlossen werden:', error.message);
+      logger.warn('Datenbank konnte nicht sauber geschlossen werden.', { error });
     }
     process.exit(0);
   });

@@ -21,6 +21,7 @@ Serverfähige Fuhrparkverwaltung für die AWO Bremerhaven auf Basis von Node.js,
 - Optionaler E-Mail-Versand an Fuhrparkleitung und Administration bei Leasing-Schwellen, Buchungsanfragen sowie Wartungs-/TÜV-Erinnerungen; SMTP-Konfiguration ausschließlich für Administrator:innen
 - **Optionaler Teams-Webhook:** MessageCards für Leasing, Buchungsanfragen/-entscheidungen und Wartungs-/TÜV-Erinnerungen; ohne Graph/App-Registration, ohne URL in Logs
 - **Allgemeine Webhooks:** mehrere Endpunkte mit Format (generisch/Teams/Discord/Slack), Event-Abos, HMAC, SSRF-Schutz, Retry und Dedupe
+- **DEV-Logging:** zentraler Logger mit Request-IDs, Redaction, separatem `mail.log` und Rotation; Produktion bleibt bei `info` ohne Request-Logs
 - **Optionale ClamAV-Prüfung:** Uploads (PDF-Belege und Bilder) per clamd INSTREAM vor dem Speichern, Fail-Closed und Audit `upload_blocked` ohne Dateiinhalte
 - **DSGVO-Retention (technisch):** konfigurierbare Aufbewahrung für Audit, Sessions, Reset-Tokens und Benachrichtigungs-Deliveries inklusive Dry-Run; keine automatische Löschung von Buchungen/Kosten/Fahrtenbuch
 - Dauerhafte Fahrzeug-Sperre mit Begründung, Audit und serverseitiger 409-Sperre für neue Buchungen und Anfragen
@@ -432,6 +433,17 @@ Unter **Einstellungen → Erweitert** liegen Basis-URL und Scheduler-Parameter. 
 - **Systemstatus:** Zeigt `NODE_ENV`, `HOST`, `PORT`, `DATA_DIR`, `TRUST_PROXY`, `COOKIE_SECURE`, den Superadmin-Dateistatus sowie die Schlüsselquelle für MFA und Integrationen. Es werden keine Secrets oder Schlüsselwerte ausgegeben.
 - **Warum ENV-only:** Diese Infrastruktur-, Bootstrap- und Sicherheitswerte betreffen Container, Datenverzeichnis und Schlüsselverwaltung. Sie sind bewusst nicht über die UI änderbar, damit eine kompromittierte Admin-Sitzung die Laufzeitumgebung nicht umkonfigurieren kann.
 
+## Logging
+
+- **Format:** `LOG_FORMAT=text|json` (Default `text`), `LOG_LEVEL=debug|info|warn|error` (Default `info`).
+- **Request-Logs:** `LOG_REQUESTS=1` (DEV) bzw. `0` (Produktion). Pro Request werden Methode, Pfad ohne Query, Status, Dauer, Request-ID, User-ID/Rolle und maskierte IP geloggt. `X-Request-Id` wird gesetzt bzw. übernommen. Statische Assets, `/healthz` und `/branding/*` werden übersprungen.
+- **Redaction:** Passwörter, Secrets, Tokens, Cookies, Authorization, CSRF, WebAuthn-Challenges, SSO-Codes/ID-Tokens, SMTP-Passwörter, Webhook-URLs, Session-IDs und E-Mail-Adressen werden nicht geloggt. Fehler werden auf `name`, `code`, `message`, `stack` reduziert.
+- **Mail-Log:** `LOG_DIR` (DEV `C:\awo-fuhrpark-local\logs`, Default `DATA_DIR/logs`); `mail.log` protokolliert SMTP-/Teams-/Retention-Versuche mit Kanal, Event, Empfängeranzahl, Status, Fehlercode und Dauer – ohne Adressen, Betreffzeilen oder Secrets. Rotation bei 5 MB, `mail.log` + zwei Archive.
+- **Startup:** loggt Version, `APP_COMMIT`, `user_version`, `DATA_DIR`, Port, `NODE_ENV`, Feature-Flags nur als `configured: true/false` sowie MFA-/Integrations-Schlüsselquelle (`env`/`file`/`missing`).
+- **DEV:** In `C:\awo-fuhrpark-local\admin.env` sind `LOG_LEVEL=debug`, `LOG_REQUESTS=1`, `LOG_FORMAT=text` und `LOG_DIR` gesetzt. Der Supervisor rotiert `dev-app.log` und `dev-supervisor.log` vor dem Start bei > 10 MB (maximal 5 Dateien).
+- **Sidecars:** `dev-http.log` und `mail-events.log` können übergangsweise parallel laufen; die Anwendung schreibt ausschließlich in `mail.log`, nicht in `mail-events.log`.
+- **Audit bleibt fachlich:** Audit-Inhalte werden durch das Logging nicht verändert.
+
 ## Teams-Benachrichtigungen (Legacy/Preset)
 
 Mit `TEAMS_WEBHOOK_URL` kann weiterhin ein Incoming-Webhook für Microsoft Teams konfiguriert werden. Für neue Endpunkte und Discord/Slack bitte **Einstellungen → Integrationen → Webhooks** verwenden; die Teams-Karte ist als Legacy/Preset markiert. Es wird kein Graph, keine App-Registration und kein Secret im Repository benötigt.
@@ -625,6 +637,10 @@ Der Lasttest ist kein Produktions-Benchmark und darf nicht gegen den Produktivse
 | `LEASING_SCHEDULER_DISABLED` | `true` deaktiviert den Leasing-Scheduler. |
 | `LOCATIONS_ENABLED` | `true` aktiviert Standorte, Sichtbarkeitsfilter und Freigaberouting; Standard aus. |
 | `APP_BASE_URL` | Öffentliche Basis-URL für Passwort-Reset-Links, z. B. `https://fuhrpark.example.org`. ENV gewinnt; sonst gilt der Wert aus **Erweitert**. Ohne Wert wird die Host-Information der Anfrage verwendet. |
+| `LOG_LEVEL` | `debug`, `info`, `warn` oder `error`; Default `info`. |
+| `LOG_REQUESTS` | `1` aktiviert Request-Logs; Default `0` in Produktion, sonst `1`. |
+| `LOG_FORMAT` | `text` oder `json`; Default `text`. |
+| `LOG_DIR` | Verzeichnis für `mail.log`; Default `DATA_DIR/logs`. |
 | `REMINDER_INTERVAL_MS` | Intervall des Wartungs-/TÜV-Schedulers in Millisekunden, Standard sechs Stunden; Minimum 60.000 ms. |
 | `REMINDER_INITIAL_DELAY_MS` | Verzögerung des ersten Wartungs-/TÜV-Laufs, Standard fünf Sekunden. |
 | `REMINDER_SCHEDULER_DISABLED` | `true` deaktiviert den Wartungs-/TÜV-Scheduler. |

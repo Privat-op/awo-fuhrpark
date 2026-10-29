@@ -36,10 +36,14 @@ function legacyEvents(row) {
 
 function migrateLegacyTeamsWebhook(db, { dataDir } = {}) {
   if (!tableExists(db, 'integration_settings')) return false;
-  const count = Number(db.prepare('SELECT COUNT(*) AS count FROM webhooks').get().count) || 0;
-  if (count > 0) return false;
   const row = db.prepare('SELECT * FROM integration_settings WHERE id = 1').get();
   if (!row?.teams_webhook_enc) return false;
+  const count = Number(db.prepare('SELECT COUNT(*) AS count FROM webhooks').get().count) || 0;
+  if (count > 0) {
+    // A webhook already exists (e.g. from an earlier migration); remove the legacy copy.
+    db.prepare('UPDATE integration_settings SET teams_webhook_enc = NULL, teams_enabled = 0 WHERE id = 1').run();
+    return false;
+  }
 
   const url = decryptIntegrationSecret(row.teams_webhook_enc, 'teams_webhook_url', { dataDir });
   if (!url) return false;

@@ -2,6 +2,9 @@
 
 const { writeAudit } = require('./audit');
 const { getTeamsIntegrationConfig } = require('./integrations');
+const { createLogger, logMailEvent } = require('./logger');
+
+const logger = createLogger('teams');
 
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
 const PENDING_TIMEOUT_MS = 15 * 60 * 1000;
@@ -17,6 +20,15 @@ function deliveryIsDue(delivery, nowMs) {
   if (delivery.status === 'pending' && Number.isFinite(lastAttempt) && nowMs - lastAttempt < PENDING_TIMEOUT_MS) return false;
   if (delivery.status === 'failed' && Number.isFinite(lastAttempt) && nowMs - lastAttempt < RETRY_AFTER_MS) return false;
   return true;
+}
+
+function mailEventFor(kind) {
+  const value = String(kind || '').toLowerCase();
+  if (value === 'test' || value.includes('integration_test')) return 'test';
+  if (value.startsWith('leasing') || value.startsWith('km_') || value.startsWith('end_')) return 'leasing';
+  if (value.startsWith('booking_request')) return 'booking_request';
+  if (value.startsWith('maintenance') || value === 'tuv' || value === 'service') return 'maintenance';
+  return 'notification';
 }
 
 function messageCard({ title, text, summary }) {
@@ -45,6 +57,7 @@ async function deliverTeams(db, {
 } = {}) {
   const url = String(webhookUrl ?? getTeamsIntegrationConfig(db).webhookUrl ?? '').trim();
   if (!url) return { skipped: 'not_configured' };
+  const startedAt = Date.now();
   const key = `teams:${dedupeKey}`;
   const nowMs = now.getTime();
   const delivery = db.prepare('SELECT * FROM notification_deliveries WHERE dedupe_key = ?').get(key);
@@ -81,14 +94,29 @@ async function deliverTeams(db, {
       entityId,
       details: { kind, status: 'sent' }
     });
+    logMailEvent({
+      channel: 'teams',
+      event: mailEventFor(kind),
+      recipientCount: 1,
+      status: 'sent',
+      durationMs: Date.now() - startedAt
+    });
     return { sent: 1, failed: 0 };
-  } catch {
+  } catch (error) {
     db.prepare(`
       UPDATE notification_deliveries
       SET status = 'failed', error_code = 'TEAMS_ERROR', last_attempt_at = ?, updated_at = ?
       WHERE dedupe_key = ?
     `).run(nowISO, nowISO, key);
-    console.warn(`Teams-Benachrichtigung konnte nicht versendet werden (${kind}).`);
+    logger.warn('Teams-Benachrichtigung konnte nicht versendet werden.', { error, kind });
+    logMailEvent({
+      channel: 'teams',
+      event: mailEventFor(kind),
+      recipientCount: 1,
+      status: 'failed',
+      errorCode: 'TEAMS_ERROR',
+      durationMs: Date.now() - startedAt
+    });
     writeAudit(db, {
       userId: null,
       action: 'teams_notification',

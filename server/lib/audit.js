@@ -1,6 +1,9 @@
 'use strict';
 
 const { isoNow } = require('./validation');
+const { createLogger } = require('./logger');
+
+const logger = createLogger('audit');
 
 const SECRET_KEYS = new Set([
   'password', 'passwords', 'passwort', 'passwordhash', 'hash', 'token', 'tokens', 'accesstoken', 'refreshtoken',
@@ -71,7 +74,7 @@ function writeAudit(db, {
       isoNow()
     );
   } catch (error) {
-    console.warn('Audit-Log konnte nicht geschrieben werden:', error.message);
+    logger.warn('Audit-Log konnte nicht geschrieben werden.', { error });
   }
 }
 

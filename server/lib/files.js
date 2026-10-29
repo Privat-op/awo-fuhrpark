@@ -8,6 +8,9 @@ const { db, UPLOAD_DIR } = require('../db');
 const { HttpError } = require('./validation');
 const { writeAudit } = require('./audit');
 const { scanBuffer } = require('./virus-scan');
+const { createLogger } = require('./logger');
+
+const logger = createLogger('files');
 
 const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const RECEIPT_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -130,7 +133,7 @@ function deleteUpload(relative) {
   try {
     fs.unlinkSync(fullPath);
   } catch (error) {
-    if (error.code !== 'ENOENT') console.warn('Upload konnte nicht gelöscht werden:', fullPath, error.message);
+    if (error.code !== 'ENOENT') logger.warn('Upload konnte nicht gelöscht werden.', { error, path: fullPath });
   }
 }
 

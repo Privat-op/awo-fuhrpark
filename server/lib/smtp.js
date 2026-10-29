@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { logMailEvent } = require('./logger');
 
 const SECRET_FILE = 'smtp-secret.json';
 
@@ -170,25 +171,48 @@ function createTransport(config, { transportFactory } = {}) {
   });
 }
 
-async function sendMail({ config, to, subject, text, transportFactory }) {
-  const errors = validateSmtpConfig(config, { requireEnabled: true });
-  if (errors.length) throw new Error(errors[0]);
-  const recipients = (Array.isArray(to) ? to : [to]).map((value) => String(value || '').trim()).filter(Boolean);
-  if (!recipients.length) throw new Error('Es sind keine Empfängeradressen hinterlegt.');
-  const transport = createTransport(config, { transportFactory });
+async function sendMail({ config, to, subject, text, transportFactory, event = 'notification' }) {
+  const startedAt = Date.now();
+  let recipientCount = 0;
   try {
-    return await transport.sendMail({
-      from: config.fromAddress,
-      to: recipients.join(', '),
-      subject,
-      text
-    });
-  } finally {
+    const errors = validateSmtpConfig(config, { requireEnabled: true });
+    if (errors.length) throw new Error(errors[0]);
+    const recipients = (Array.isArray(to) ? to : [to]).map((value) => String(value || '').trim()).filter(Boolean);
+    recipientCount = recipients.length;
+    if (!recipients.length) throw new Error('Es sind keine Empfängeradressen hinterlegt.');
+    const transport = createTransport(config, { transportFactory });
     try {
-      if (typeof transport.close === 'function') transport.close();
-    } catch {
-      // Ein fehlgeschlagenes Schließen darf einen erfolgreichen Versand nicht als Fehler werten.
+      const result = await transport.sendMail({
+        from: config.fromAddress,
+        to: recipients.join(', '),
+        subject,
+        text
+      });
+      logMailEvent({
+        channel: 'smtp',
+        event,
+        recipientCount,
+        status: 'sent',
+        durationMs: Date.now() - startedAt
+      });
+      return result;
+    } finally {
+      try {
+        if (typeof transport.close === 'function') transport.close();
+      } catch {
+        // Ein fehlgeschlagenes Schließen darf einen erfolgreichen Versand nicht als Fehler werten.
+      }
     }
+  } catch (error) {
+    logMailEvent({
+      channel: 'smtp',
+      event,
+      recipientCount,
+      status: 'failed',
+      errorCode: sanitizeSmtpError(error),
+      durationMs: Date.now() - startedAt
+    });
+    throw error;
   }
 }
 

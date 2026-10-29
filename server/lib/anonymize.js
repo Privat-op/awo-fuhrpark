@@ -7,6 +7,9 @@ const { writeAudit } = require('./audit');
 const { HttpError, isoNow } = require('./validation');
 const { cancelOpenBookingRequests } = require('./booking-requests');
 const { SUPERADMIN_USER_ID, SUPERADMIN_ROLE_ID } = require('./superadmin');
+const { createLogger } = require('./logger');
+
+const logger = createLogger('anonymize');
 
 function scrubAuditDetails(details) {
   if (!details) return details;
@@ -112,10 +115,10 @@ function runAutoAnonymization() {
       anonymizeUser(candidate.id, { actorId: null, reason: 'auto_after_inactivity' });
       anonymized += 1;
     } catch (error) {
-      console.warn('Automatische Anonymisierung fehlgeschlagen:', error.message);
+      logger.warn('Automatische Anonymisierung fehlgeschlagen.', { error });
     }
   }
-  if (anonymized > 0) console.log(`${anonymized} deaktivierte Konten automatisch anonymisiert.`);
+  if (anonymized > 0) logger.info('Deaktivierte Konten anonymisiert.', { anonymized });
   return anonymized;
 }
 

@@ -12,6 +12,9 @@ const {
 const { teamsConfigured, deliverTeams } = require('./teams');
 const { getTeamsIntegrationConfig, getLeasingSchedulerConfig } = require('./integrations');
 const { dispatchWebhooks, webhooksConfiguredForEvent } = require('./webhooks');
+const { createLogger } = require('./logger');
+
+const logger = createLogger('leasing');
 
 const KM_THRESHOLDS = [80, 90, 100];
 const END_THRESHOLDS = [90, 30];
@@ -252,6 +255,7 @@ async function runLeasingNotifications(db, options = {}) {
         await sendMail({
           config,
           to: recipients,
+          event: 'leasing',
           subject: `[${organization}] ${notification.subject}`,
           text: [
             notification.text,
@@ -281,7 +285,7 @@ async function runLeasingNotifications(db, options = {}) {
           SET status = 'failed', error_code = ?, last_attempt_at = ?, updated_at = ?
           WHERE dedupe_key = ?
         `).run(code, nowISO, nowISO, notification.dedupeKey);
-        console.warn(`Leasing-Benachrichtigung konnte nicht versendet werden (${code}).`);
+        logger.warn('Leasing-Benachrichtigung konnte nicht versendet werden.', { error, errorCode: code });
         writeAudit(db, {
           userId: null,
           action: 'leasing_notification',
@@ -354,12 +358,12 @@ function runSafely(db, options) {
   return runLeasingNotifications(db, options)
     .then((summary) => {
       if (summary.sent || summary.failed) {
-        console.log(`Leasing-Prüfung: ${summary.sent} Benachrichtigung(en) versendet, ${summary.failed} fehlgeschlagen.`);
+        logger.info('Leasing-Prüfung abgeschlossen.', { sent: summary.sent, failed: summary.failed });
       }
       return summary;
     })
     .catch((error) => {
-      console.warn('Leasing-Prüfung fehlgeschlagen:', error.message);
+      logger.error('Leasing-Prüfung fehlgeschlagen.', { error });
       return null;
     });
 }

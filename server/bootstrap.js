@@ -2,6 +2,9 @@
 
 const crypto = require('node:crypto');
 const bcrypt = require('bcryptjs');
+const { createLogger } = require('./lib/logger');
+
+const logger = createLogger('bootstrap');
 
 function ensureSettings(db) {
   const existing = db.prepare('SELECT id FROM settings WHERE id = 1').get();
@@ -45,7 +48,7 @@ function ensureAdmin(db) {
     INSERT INTO users (id, email, name, password_hash, role, active, created_at, updated_at)
     VALUES (?, ?, ?, ?, 'admin', 1, ?, ?)
   `).run(id, email, name || 'Fuhrparkleitung', hash, now, now);
-  console.log(`Administratorkonto angelegt: ${email}`);
+  logger.info('Administratorkonto angelegt.');
   return id;
 }
 

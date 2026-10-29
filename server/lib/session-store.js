@@ -1,6 +1,9 @@
 'use strict';
 
 const session = require('express-session');
+const { createLogger } = require('./logger');
+
+const logger = createLogger('session');
 
 class SQLiteSessionStore extends session.Store {
   constructor(db, options = {}) {
@@ -11,7 +14,7 @@ class SQLiteSessionStore extends session.Store {
       try {
         this.db.prepare('DELETE FROM sessions WHERE expire < ?').run(Date.now());
       } catch (error) {
-        console.error('Session-Bereinigung fehlgeschlagen:', error.message);
+        logger.error('Session-Bereinigung fehlgeschlagen.', { error });
       }
     }, 15 * 60 * 1000);
     this.cleanupTimer.unref?.();

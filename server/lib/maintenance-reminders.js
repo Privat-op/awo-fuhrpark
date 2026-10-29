@@ -10,6 +10,9 @@ const {
 const { teamsConfigured, deliverTeams } = require('./teams');
 const { getTeamsIntegrationConfig, getReminderSchedulerConfig } = require('./integrations');
 const { dispatchWebhooks, webhooksConfiguredForEvent } = require('./webhooks');
+const { createLogger } = require('./logger');
+
+const logger = createLogger('maintenance');
 
 const THRESHOLDS = [30, 14, 7];
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
@@ -207,6 +210,7 @@ async function runMaintenanceNotifications(db, options = {}) {
         await sendMail({
           config,
           to: recipients,
+          event: 'maintenance',
           subject: `[${organization}] ${item.subject}`,
           text: [
             item.text,
@@ -235,7 +239,7 @@ async function runMaintenanceNotifications(db, options = {}) {
           SET status = 'failed', error_code = ?, last_attempt_at = ?, updated_at = ?
           WHERE dedupe_key = ?
         `).run(code, nowISO, nowISO, item.dedupeKey);
-        console.warn(`Wartungs-Benachrichtigung konnte nicht versendet werden (${code}).`);
+        logger.warn('Wartungs-Benachrichtigung konnte nicht versendet werden.', { error, errorCode: code });
         writeAudit(db, {
           userId: null,
           action: 'maintenance_notification',
@@ -308,12 +312,12 @@ function runSafely(db, options) {
   return runMaintenanceNotifications(db, options)
     .then((summary) => {
       if (summary.sent || summary.failed) {
-        console.log(`Wartungs-Erinnerungen: ${summary.sent} versendet, ${summary.failed} fehlgeschlagen.`);
+        logger.info('Wartungs-Erinnerungen abgeschlossen.', { sent: summary.sent, failed: summary.failed });
       }
       return summary;
     })
     .catch((error) => {
-      console.warn('Wartungs-Erinnerungen fehlgeschlagen:', error.message);
+      logger.error('Wartungs-Erinnerungen fehlgeschlagen.', { error });
       return null;
     });
 }

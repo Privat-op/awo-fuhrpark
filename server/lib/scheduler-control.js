@@ -1,5 +1,9 @@
 'use strict';
 
+const { createLogger } = require('./logger');
+
+const logger = createLogger('scheduler');
+
 const entries = new Map();
 
 function stopEntry(entry) {
@@ -22,7 +26,7 @@ function startScheduler(name) {
   try {
     entry.handle = entry.starter() || null;
   } catch (error) {
-    console.warn(`Scheduler ${name} konnte nicht gestartet werden: ${error.message}`);
+    logger.warn('Scheduler konnte nicht gestartet werden.', { error, scheduler: name });
     entry.handle = null;
   }
   return entry.handle;

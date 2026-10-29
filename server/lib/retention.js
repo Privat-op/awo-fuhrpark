@@ -1,6 +1,9 @@
 'use strict';
 
 const { writeAudit } = require('./audit');
+const { createLogger, logMailEvent } = require('./logger');
+
+const logger = createLogger('retention');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_FIELDS = [
@@ -112,12 +115,28 @@ function schedulerDisabled(options = {}) {
 }
 
 function runSafely(db, options) {
+  const startedAt = Date.now();
   try {
     const result = runRetention(db, options);
-    if (result.total) console.log(`Retention: ${result.total} technische Datensätze bereinigt.`);
+    logMailEvent({
+      channel: 'system',
+      event: 'retention',
+      recipientCount: 0,
+      status: 'success',
+      durationMs: Date.now() - startedAt
+    });
+    if (result.total) logger.info('Retention-Lauf abgeschlossen.', { total: result.total });
     return result;
   } catch (error) {
-    console.warn('Retention-Lauf fehlgeschlagen:', error.message);
+    logMailEvent({
+      channel: 'system',
+      event: 'retention',
+      recipientCount: 0,
+      status: 'failed',
+      errorCode: 'RETENTION_ERROR',
+      durationMs: Date.now() - startedAt
+    });
+    logger.error('Retention-Lauf fehlgeschlagen.', { error });
     return null;
   }
 }

@@ -70,6 +70,9 @@ const {
   smtpErrorMessage
 } = require('../lib/smtp');
 const { getRetentionSettings, setRetentionSettings, runRetention } = require('../lib/retention');
+const { createLogger } = require('../lib/logger');
+
+const logger = createLogger('api');
 const {
   safeIntegrationsConfig,
   updateIntegrations,
@@ -503,7 +506,7 @@ router.get('/export/data.json', requirePermission('export_data'), (req, res, nex
 router.post('/auth/logout', (req, res) => {
   audit(req, 'logout', 'user', req.user.id);
   req.session.destroy((error) => {
-    if (error) console.warn('Session konnte beim Logout nicht gelöscht werden:', error.message);
+    if (error) logger.warn('Session konnte beim Logout nicht gelöscht werden.', { error });
     res.clearCookie('awo.sid');
     res.status(204).end();
   });
@@ -1234,7 +1237,7 @@ router.post('/booking-requests', (req, res, next) => {
       });
     })();
     notifyBookingRequestCreated(db, id, { dataDir: DATA_DIR })
-      .catch((error) => console.warn('Buchungsanfrage-Benachrichtigung fehlgeschlagen:', error.message));
+      .catch((error) => logger.warn('Buchungsanfrage-Benachrichtigung fehlgeschlagen.', { error }));
     const state = getState(db, req.user, req.auth);
     res.status(201).json({
       ...state,
@@ -1300,7 +1303,7 @@ router.post('/booking-requests/:id/approve', requirePermission('booking_requests
     });
     transaction();
     notifyBookingRequestDecision(db, req.params.id, 'approved', { dataDir: DATA_DIR })
-      .catch((error) => console.warn('Buchungsanfrage-Benachrichtigung fehlgeschlagen:', error.message));
+      .catch((error) => logger.warn('Buchungsanfrage-Benachrichtigung fehlgeschlagen.', { error }));
     sendState(req, res);
   } catch (error) {
     next(error);
@@ -1337,7 +1340,7 @@ router.post('/booking-requests/:id/reject', requirePermission('booking_requests_
     });
     transaction();
     notifyBookingRequestDecision(db, req.params.id, 'rejected', { dataDir: DATA_DIR })
-      .catch((error) => console.warn('Buchungsanfrage-Benachrichtigung fehlgeschlagen:', error.message));
+      .catch((error) => logger.warn('Buchungsanfrage-Benachrichtigung fehlgeschlagen.', { error }));
     sendState(req, res);
   } catch (error) {
     next(error);
@@ -1602,6 +1605,7 @@ router.post('/smtp/test', requireAdmin, async (req, res, next) => {
       await sendMail({
         config,
         to: req.user.email,
+        event: 'smtp_test',
         subject: `[${organization}] SMTP-Test`,
         text: 'Diese Testnachricht bestätigt den SMTP-Versand aus dem AWO Fuhrparkmanagement.'
       });

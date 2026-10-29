@@ -112,6 +112,7 @@ async function requestPasswordReset(db, {
     await sendMail({
       config,
       to: user.email,
+      event: 'password_reset',
       subject: `[${organization}] Passwort zurücksetzen`,
       text: [
         `Guten Tag ${user.name},`,

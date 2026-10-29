@@ -9,6 +9,9 @@ const { writeAudit } = require('../lib/audit');
 const { getRoleRank } = require('../lib/permissions');
 const { generateTotpSecret, otpauthUri } = require('../lib/totp');
 const { encryptSecret } = require('../lib/mfa-crypto');
+const { createLogger } = require('../lib/logger');
+
+const logger = createLogger('security');
 const {
   getWebAuthnConfig,
   listPasskeys,
@@ -308,7 +311,7 @@ router.delete('/passkeys/:id', (req, res, next) => {
     audit(req, 'passkey_removed', { name: passkey.name });
     const sessionsEnded = deleteUserSessions(db, req.user.id);
     return req.session.destroy((error) => {
-      if (error) console.warn('Passkey-Sitzung konnte nicht verworfen werden.');
+      if (error) logger.warn('Passkey-Sitzung konnte nicht verworfen werden.', { error });
       res.clearCookie('awo.sid');
       res.set('Cache-Control', 'no-store').json({ ok: true, loggedOut: true, sessionsEnded });
     });

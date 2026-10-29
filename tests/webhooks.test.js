@@ -206,6 +206,32 @@ test('Migration 15→16 ist idempotent und übernimmt den Discord-Webhook als Di
   }
 });
 
+test('Migration räumt den Legacy-Webhook auch bei vorhandenen Webhooks auf', () => {
+  const dataDir = fs.mkdtempSync(path.join(TEST_TMP_ROOT, 'awo-webhook-cleanup-'));
+  const database = createDb();
+  try {
+    database.pragma('user_version = 15');
+    const legacy = encryptIntegrationSecret('https://discord.com/api/webhooks/999/legacy', 'teams_webhook_url', { dataDir });
+    database.prepare(`
+      INSERT INTO integration_settings (id, teams_enabled, teams_webhook_enc, updated_at)
+      VALUES (1, 1, ?, '2026-01-01')
+    `).run(legacy);
+    database.prepare(`
+      INSERT INTO webhooks (id, name, url_enc, enabled, format, events, created_at, updated_at)
+      VALUES ('existing', 'Bestehend', ?, 1, 'generic', '["leasing"]', '2026-01-01', '2026-01-01')
+    `).run(encryptIntegrationSecret('https://hooks.example.invalid/existing', 'webhook_url', { dataDir }));
+
+    assert.equal(migrateWebhooksSchema(database, { dataDir }), true);
+    assert.equal(database.prepare('SELECT COUNT(*) AS count FROM webhooks').get().count, 1);
+    const settings = database.prepare('SELECT teams_webhook_enc, teams_enabled FROM integration_settings WHERE id = 1').get();
+    assert.equal(settings.teams_webhook_enc, null);
+    assert.equal(settings.teams_enabled, 0);
+  } finally {
+    database.close();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test('Migration erkennt Teams-Hosts und legt ohne Legacy-Webhook nichts an', () => {
   const dataDir = fs.mkdtempSync(path.join(TEST_TMP_ROOT, 'awo-webhook-teams-'));
   const database = createDb();

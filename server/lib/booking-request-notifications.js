@@ -17,6 +17,9 @@ const {
 const { teamsConfigured, deliverTeams } = require('./teams');
 const { getTeamsIntegrationConfig } = require('./integrations');
 const { dispatchWebhooks, webhooksConfiguredForEvent } = require('./webhooks');
+const { createLogger } = require('./logger');
+
+const logger = createLogger('notifications');
 const { isLocationsEnabled } = require('./locations');
 
 const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
@@ -189,6 +192,7 @@ async function sendNotification(db, {
       await sendMail({
         config,
         to: recipients,
+        event: 'booking_request',
         subject: `[${organizationName(db)}] ${subject}`,
         text: [
           text,
@@ -209,7 +213,7 @@ async function sendNotification(db, {
     } catch (error) {
       const code = sanitizeSmtpError(error);
       finishDelivery(db, key, 'failed', code, nowISO);
-      console.warn(`Buchungsanfrage-Benachrichtigung konnte nicht versendet werden (${code}).`);
+      logger.warn('Buchungsanfrage-Benachrichtigung konnte nicht versendet werden.', { error, errorCode: code });
       writeAudit(db, {
         userId: null,
         action: 'booking_request_notification',
